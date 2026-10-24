@@ -29,6 +29,7 @@ import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.web.domain.vo.LoginVo;
 import org.dromara.web.service.IAuthStrategy;
 import org.dromara.web.service.SysLoginService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
@@ -45,6 +46,12 @@ public class PasswordAuthStrategy implements IAuthStrategy {
     private final SysLoginService loginService;
     private final SysUserMapper userMapper;
 
+    /** 超管账号（不进数据库，走配置文件 .env 的 SUPER_ADMIN_*） */
+    @Value("${SUPER_ADMIN_USERNAME:}")
+    private String superAdminUsername;
+    @Value("${SUPER_ADMIN_PASSWORD:}")
+    private String superAdminPassword;
+
     /**
      * 执行账号密码登录，并按客户端配置生成访问令牌。
      *
@@ -58,22 +65,31 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         ValidatorUtils.validate(loginBody);
         String username = loginBody.getUsername();
         String password = loginBody.getPassword();
-        String code = loginBody.getCode();
-        String uuid = loginBody.getUuid();
 
-        boolean captchaEnabled = captchaProperties.getEnable();
-        // 验证码开关
-        if (captchaEnabled) {
-            validateCaptcha(username, code, uuid);
+        // 1) 超管账号走配置文件（不进数据库）：命中且密码对=超管
+        SysUserVo superUser = authenticateSuperAdmin(username, password);
+        if (superUser != null) {
+            return buildLoginVo(superUser, client);
         }
-        SysUserVo user = loadUserByUsername(username);
-        loginService.checkLogin(LoginType.PASSWORD, username, () -> !BCrypt.checkpw(password, user.getPassword()));
-        // 此处可根据登录用户的数据不同 自行创建 loginUser
+
+        // 2) 普通账号查库：username 同时支持 工号(6位数字) 或 手机号(11位)
+        SysUserVo user = loadUserByNoOrPhone(username);
+        // 默认密码校验（普通账号）
+        loginService.checkLogin(LoginType.PASSWORD, username,
+            () -> !BCrypt.checkpw(password, user.getPassword()));
+
+        // 3) 普通账号生成 token
+        return buildLoginVo(user, client);
+    }
+
+    /**
+     * 构建登录结果（超管与普通账号共用）。
+     */
+    private LoginVo buildLoginVo(SysUserVo user, SysClientVo client) {
         LoginUser loginUser = loginService.buildLoginUser(user);
         loginUser.setClientKey(client.getClientKey());
         loginUser.setDeviceType(client.getDeviceType());
         SaLoginParameter model = IAuthStrategy.buildLoginParameter(client);
-        // 生成token
         LoginHelper.login(loginUser, model);
 
         LoginVo loginVo = new LoginVo();
@@ -81,6 +97,57 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         loginVo.setExpireIn(StpUtil.getTokenTimeout());
         loginVo.setClientId(client.getClientId());
         return loginVo;
+    }
+
+    /**
+     * 超管账号认证：配置文件比对，命中返回超管身份（全厂全模块），否则返回 null。
+     * 超管不进 sys_user 表，密码明文比对（配置文件直配，简化超管初始化）。
+     */
+    private SysUserVo authenticateSuperAdmin(String username, String password) {
+        if (StringUtils.isBlank(superAdminUsername) || !superAdminUsername.equals(username)) {
+            return null;
+        }
+        // 配置了超管账号但密码不匹配 → 拒绝（不回退到查库，防配置错误放行）
+        if (StringUtils.isBlank(superAdminPassword) || !superAdminPassword.equals(password)) {
+            log.warn("超管账号密码不匹配，拒绝登录：{}", username);
+            throw new UserException("user.password.not.match");
+        }
+        log.info("超管账号登录成功（配置文件认证）：{}", username);
+        // 复用 sys_user 表的 admin 行作为超管身份载体（角色=superadmin，全厂全模块）
+        SysUserVo user = userMapper.lambda()
+            .eq(SysUser::getUserName, username)
+            .voOne();
+        if (ObjectUtil.isNull(user)) {
+            throw new UserException("user.not.exists", username);
+        }
+        return user;
+    }
+
+    /**
+     * 按 工号(6位数字) 或 手机号(11位) 查询用户。
+     * username 规则：6位纯数字=工号；11位纯数字=手机号；其他=按工号查（兼容旧数据）。
+     */
+    private SysUserVo loadUserByNoOrPhone(String username) {
+        SysUserVo user;
+        if (username != null && username.matches("^\\d{11}$")) {
+            // 11位纯数字 = 手机号登录
+            user = userMapper.lambda()
+                .eq(SysUser::getPhoneNumber, username)
+                .voOne();
+        } else {
+            // 6位数字（工号）或其他 = 按工号登录
+            user = userMapper.lambda()
+                .eq(SysUser::getUserName, username)
+                .voOne();
+        }
+        if (ObjectUtil.isNull(user)) {
+            log.info("登录用户：{} 不存在.", username);
+            throw new UserException("user.not.exists", username);
+        } else if (SystemConstants.DISABLE.equals(user.getStatus())) {
+            log.info("登录用户：{} 已被停用.", username);
+            throw new UserException("user.blocked", username);
+        }
+        return user;
     }
 
     /**
@@ -102,26 +169,6 @@ public class PasswordAuthStrategy implements IAuthStrategy {
             loginService.recordLoginInfo(username, Constants.LOGIN_FAIL, MessageUtils.message("user.jcaptcha.error"));
             throw new CaptchaException();
         }
-    }
-
-    /**
-     * 按用户名加载可登录用户，并校验是否存在或被停用。
-     *
-     * @param username 用户名
-     * @return 用户信息
-     */
-    private SysUserVo loadUserByUsername(String username) {
-        SysUserVo user = userMapper.lambda()
-            .eq(SysUser::getUserName, username)
-            .voOne();
-        if (ObjectUtil.isNull(user)) {
-            log.info("登录用户：{} 不存在.", username);
-            throw new UserException("user.not.exists", username);
-        } else if (SystemConstants.DISABLE.equals(user.getStatus())) {
-            log.info("登录用户：{} 已被停用.", username);
-            throw new UserException("user.blocked", username);
-        }
-        return user;
     }
 
 }

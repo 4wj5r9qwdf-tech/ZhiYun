@@ -69,6 +69,52 @@ WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:user:sensitive');
 -- 说明：不在此处 INSERT 数据行，超管角色-权限绑定由超管在管理端首次登录后配置
 --       （符合"不预置业务角色"原则，见 权限地基 3.2 / 8.1）
 
+-- ------------------------------------------------------------
+-- 5. 公司档案表（前端规范 A.1：登录页/首页显示公司名+logo）
+--    两个公司实体，名称可编辑、各配 logo；可增（加第三公司不改表）
+--    logo_oss_id → sys_oss.oss_id（走 MinIO），暂可空（logo 后续上传）
+--    is_default=是 的公司显示在登录页/首页（A.1 展示层）
+--    超管账号不进数据库（走配置文件，见 .env 的 SUPER_ADMIN_*）
+--    普通账号进 sys_user（工号6位数字/手机号+密码，BCrypt）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_company (
+    company_id    bigint        NOT NULL,
+    company_name  varchar(100)  NOT NULL,
+    logo_oss_id   bigint,
+    is_default    char(1)       NOT NULL DEFAULT '0',    -- 0否 1是（登录页/首页显示这家公司）
+    theme         varchar(50)   DEFAULT '',              -- A.5 主题（工业蓝/深色大屏/自定义色）
+    status        char(1)       NOT NULL DEFAULT '0',    -- 0正常 1停用
+    del_flag      char(1)       DEFAULT '0',
+    create_dept   bigint,
+    create_by     bigint,
+    create_time   timestamp     DEFAULT CURRENT_TIMESTAMP,
+    update_by     bigint,
+    update_time   timestamp,
+    remark        varchar(500),
+    CONSTRAINT sys_company_pk PRIMARY KEY (company_id),
+    CONSTRAINT sys_company_logo_fk FOREIGN KEY (logo_oss_id)
+        REFERENCES sys_oss (oss_id) ON DELETE SET NULL
+);
+
+COMMENT ON TABLE  sys_company            IS '公司档案表（前端规范A.1：登录页/首页公司名+logo，展示层）';
+COMMENT ON COLUMN sys_company.company_name IS '公司名（管理端可编辑，不写死代码）';
+COMMENT ON COLUMN sys_company.logo_oss_id  IS 'logo文件（→ sys_oss.oss_id，走MinIO，暂可空）';
+COMMENT ON COLUMN sys_company.is_default   IS '是否默认展示公司（是=登录页/首页显示）';
+COMMENT ON COLUMN sys_company.theme        IS '主题（A.5多主题：工业蓝/深色大屏/自定义色）';
+
+-- 默认只允许一家默认展示公司（部分唯一索引，status=0 且 del_flag=0 生效）
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_company_default
+    ON sys_company (is_default) WHERE is_default = '1' AND status = '0' AND del_flag = '0';
+
+-- 预置两家公司（河北佰信达=默认展示；依时华备用，logo 后续上传）
+INSERT INTO sys_company (company_id, company_name, is_default, status, del_flag, create_time)
+SELECT 1762400000000000001, '河北佰信达实业有限公司', '1', '0', '0', now()
+WHERE NOT EXISTS (SELECT 1 FROM sys_company WHERE company_id = 1762400000000000001);
+
+INSERT INTO sys_company (company_id, company_name, is_default, status, del_flag, create_time)
+SELECT 1762400000000000002, '河北依时华服饰有限公司', '0', '0', '0', now()
+WHERE NOT EXISTS (SELECT 1 FROM sys_company WHERE company_id = 1762400000000000002);
+
 COMMIT;
 
 -- ============================================================
