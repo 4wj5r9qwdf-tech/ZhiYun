@@ -1,0 +1,18 @@
+# RuoYi-Vue-Plus 子目录 Git 忽略
+# 保留：源码/pom.xml/mvnw/sql脚本
+# 忽略：构建产物/.git目录/IDE文件
+
+# ===== 构建产物 =====
+target/
+*.class
+
+# ===== 子模块 .git（避免嵌套 git 仓库）=====
+.git/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+
+# ===== OS =====
+.DS_Store

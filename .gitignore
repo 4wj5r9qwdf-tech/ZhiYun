@@ -1,11 +1,48 @@
+# 织云 ERP - Git 忽略规则
+# 规则：敏感信息不进 Git（.env），构建产物不进 Git（target/dist/node_modules），大文件不进 Git（jar包下载到本地缓存）
+
+# ===== 环境配置（敏感信息）=====
 .env
+*.env.local
+*.env.*.local
+
+# ===== 日志 =====
 *.log
+logs/
+log/
+
+# ===== Java/Maven 构建产物 =====
+target/
+*.jar
+*.war
+*.ear
+.mvn/wrapper/maven-wrapper.jar
+
+# ===== 前端构建产物 =====
 node_modules/
 dist/
-target/
-.classpath
-.project
-.settings/
+build/
+.cache/
+*.tsbuildinfo
+
+# ===== IDE =====
+.idea/
 *.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.swp
+*.swo
+*~
+
+# ===== OS =====
 .DS_Store
 Thumbs.db
+
+# ===== 项目内下载的依赖缓存（不进 Git，但保留在本地）=====
+/libs/
+/vendor/
