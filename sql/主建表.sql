@@ -78,21 +78,26 @@ WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:user:sensitive');
 --    普通账号进 sys_user（工号6位数字/手机号+密码，BCrypt）
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sys_company (
-    company_id    bigint        NOT NULL,
-    company_name  varchar(100)  NOT NULL,
-    logo_oss_id   bigint,
-    is_default    char(1)       NOT NULL DEFAULT '0',    -- 0否 1是（登录页/首页显示这家公司）
-    theme         varchar(50)   DEFAULT '',              -- A.5 主题（工业蓝/深色大屏/自定义色）
-    status        char(1)       NOT NULL DEFAULT '0',    -- 0正常 1停用
-    del_flag      char(1)       DEFAULT '0',
-    create_dept   bigint,
-    create_by     bigint,
-    create_time   timestamp     DEFAULT CURRENT_TIMESTAMP,
-    update_by     bigint,
-    update_time   timestamp,
-    remark        varchar(500),
+    company_id       bigint        NOT NULL,
+    company_name     varchar(100)  NOT NULL,
+    logo_oss_id      bigint,
+    is_default       char(1)       NOT NULL DEFAULT '0',    -- 0否 1是（登录页/首页显示这家公司）
+    theme            varchar(50)   DEFAULT '',              -- A.5 主题（工业蓝/深色大屏/自定义色）
+    login_bg_oss_id  bigint,                                -- 登录背景图（→ sys_oss.oss_id，走MinIO）
+    slogan           varchar(200)  DEFAULT '',              -- 登录页宣传语
+    login_bg_mode    char(1)       NOT NULL DEFAULT 'A',    -- A=铺满左侧品牌区 / B=铺满整页
+    status           char(1)       NOT NULL DEFAULT '0',    -- 0正常 1停用
+    del_flag         char(1)       DEFAULT '0',
+    create_dept      bigint,
+    create_by        bigint,
+    create_time      timestamp     DEFAULT CURRENT_TIMESTAMP,
+    update_by        bigint,
+    update_time      timestamp,
+    remark           varchar(500),
     CONSTRAINT sys_company_pk PRIMARY KEY (company_id),
     CONSTRAINT sys_company_logo_fk FOREIGN KEY (logo_oss_id)
+        REFERENCES sys_oss (oss_id) ON DELETE SET NULL,
+    CONSTRAINT sys_company_bg_fk FOREIGN KEY (login_bg_oss_id)
         REFERENCES sys_oss (oss_id) ON DELETE SET NULL
 );
 
@@ -101,6 +106,9 @@ COMMENT ON COLUMN sys_company.company_name IS '公司名（管理端可编辑，
 COMMENT ON COLUMN sys_company.logo_oss_id  IS 'logo文件（→ sys_oss.oss_id，走MinIO，暂可空）';
 COMMENT ON COLUMN sys_company.is_default   IS '是否默认展示公司（是=登录页/首页显示）';
 COMMENT ON COLUMN sys_company.theme        IS '主题（A.5多主题：工业蓝/深色大屏/自定义色）';
+COMMENT ON COLUMN sys_company.login_bg_oss_id IS '登录背景图（→ sys_oss.oss_id，走MinIO，建议竖版1080x1920或方图1200x1200，暂可空）';
+COMMENT ON COLUMN sys_company.slogan       IS '登录页宣传语（暂可空，空则用默认\"服装代工厂生产管理系统\"）';
+COMMENT ON COLUMN sys_company.login_bg_mode IS '登录背景显示模式：A=铺满左侧品牌区叠加公司名(默认) / B=铺满整页登录卡片悬浮';
 
 -- 默认只允许一家默认展示公司（部分唯一索引，status=0 且 del_flag=0 生效）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_company_default
