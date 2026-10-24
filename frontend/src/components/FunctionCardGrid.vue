@@ -184,8 +184,8 @@ function openCard(c: CardState) {
       <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
 
       <div v-if="!readonly" class="fc-actions">
-        <button class="fc-act" :class="{ on: c.isTop }" @click.stop="toggleTop(c)">置顶</button>
-        <button class="fc-act" :class="{ on: c.inWorkbench }" @click.stop="toggleWorkbench(c)">{{ c.inWorkbench ? '已加工作台' : '加工作台' }}</button>
+        <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
+        <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">⊞</button>
       </div>
 
       <!-- 三个拉伸手柄：右=宽，下=高，右下角=宽高（自由拉伸，非等比） -->
@@ -212,7 +212,7 @@ function openCard(c: CardState) {
 .fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-actions { display: flex; gap: 6px; margin-top: auto; }
-.fc-act { flex: 1; height: 26px; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 11px; color: #4E5969; cursor: pointer; }
+.fc-act { width: 26px; height: 26px; flex: none; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 14px; line-height: 1; color: #4E5969; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .fc-act:hover { border-color: #1E5EFF; color: #1E5EFF; }
 .fc-act.on { background: #E8F0FF; border-color: #1E5EFF; color: #1E5EFF; }
 /* 拉伸手柄：右=宽(ew)，下=高(ns)，右下角=宽高(nwse) */
