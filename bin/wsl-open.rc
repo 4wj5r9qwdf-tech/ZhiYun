@@ -1,0 +1,5 @@
+# 在 shell 里 source 一次即可:  source /home/it/ZhiYun/bin/wsl-open.rc
+export PATH="/home/it/ZhiYun/bin:$PATH"
+alias open='wsl-open'
+alias wsl-open='/home/it/ZhiYun/bin/wsl-open'
+echo "浏览器命令已加载: wsl-open <url> | wsl-open -e <url> (Chrome 默认, Edge 用 -e)"

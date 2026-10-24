@@ -31,6 +31,10 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^zhizhun-minio$'; then
   docker exec zhizhun-minio sh -c "mc alias set local http://127.0.0.1:9000 '$OSS_ACCESS_KEY' '$OSS_SECRET_KEY' >/dev/null 2>&1 && mc anonymous set download local/$OSS_BUCKET" >/dev/null 2>&1 \
     && echo "  桶 $OSS_BUCKET 已设公开读" \
     || echo "  警告：设置桶公开读失败（图片可能 403），检查 MinIO 容器与 .env OSS_*"
+  # 私有桶（合同/证件/工资单等敏感文件，走代理接口带鉴权访问，容器重启会丢故每次确保）
+  docker exec zhizhun-minio sh -c "mc alias set local http://127.0.0.1:9000 '$OSS_ACCESS_KEY' '$OSS_SECRET_KEY' >/dev/null 2>&1 && mc mb local/zhizhun-private --ignore-existing && mc anonymous set none local/zhizhun-private" >/dev/null 2>&1 \
+    && echo "  私有桶 zhizhun-private 已确保（私有）" \
+    || echo "  警告：私有桶 zhizhun-private 未就绪"
 else
   echo "  跳过：MinIO 容器未运行"
 fi

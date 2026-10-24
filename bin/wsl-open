@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# wsl-open <url>  —  从 WSL 直接调用 Windows 侧浏览器
+# 用法:
+#   wsl-open https://github.com/...     # 默认 Chrome
+#   wsl-open -e https://...             # 指定 Edge
+#   wsl-open -c https://...             # 指定 Chrome
+set -euo pipefail
+
+BROWSER="${WSL_BROWSER:-chrome}"
+URL="${1:-}"
+
+if [[ "${1:-}" == "-c" || "${1:-}" == "-e" ]]; then
+  BROWSER="$1"
+  URL="${2:-}"
+fi
+
+if [[ -z "$URL" ]]; then
+  echo "用法: wsl-open [-c|-e] <url>" >&2
+  echo "  -c  用 Chrome (默认)" >&2
+  echo "  -e  用 Edge" >&2
+  exit 1
+fi
+
+case "$BROWSER" in
+  chrome)
+    "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe" "$URL" &
+    ;;
+  edge)
+    "/mnt/c/Program Files/Microsoft/Edge/Application/msedge.exe" "$URL" &
+    ;;
+  *)
+    echo "未知浏览器: $BROWSER (可用: chrome, edge)" >&2
+    exit 1
+    ;;
+esac
+
+echo "已在 Windows 侧用 $BROWSER 打开: $URL"
