@@ -1,0 +1,13 @@
+﻿@ * text=auto eol=lf
+Docs/** text eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.java text eol=lf
+*.ts text eol=lf
+*.vue text eol=lf
+*.xml text
+*.xlsx binary
+*.docx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
