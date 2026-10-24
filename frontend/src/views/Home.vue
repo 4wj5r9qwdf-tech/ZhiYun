@@ -1,17 +1,41 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import api from '../api'
 
 const router = useRouter()
+const route = useRoute()
 const companyName = ref('')
 const logoUrl = ref('')
-const welcomeMsg = ref('')
+const userName = ref('admin')
+
+// 左侧竖排模块导航（preview/人员信息演示.html 布局）
+// 后续业务模块加到这即可，权限过滤后期在角色里配
+const modules = [
+  { key: 'order', icon: '📦', label: '订单' },
+  { key: 'prod', icon: '🏭', label: '生产' },
+  { key: 'stock', icon: '📊', label: '库存' },
+  { key: 'person', icon: '👥', label: '人员' },
+  { key: 'dorm', icon: '🏠', label: '宿舍' },
+  { key: 'canteen', icon: '🍜', label: '食堂' },
+  { key: 'vehicle', icon: '🚗', label: '车辆' },
+  { key: 'property', icon: '🏢', label: '物业资产' },
+  { key: 'finance', icon: '💰', label: '财务' },
+  { key: 'approve', icon: '✅', label: '审批' },
+  { key: 'alert', icon: '🔔', label: '预警' },
+  { key: 'workbench', icon: '📋', label: '工作台' },
+  { key: 'system', icon: '⚙️', label: '系统' },
+]
+const activeModule = ref('system')
+
+// 系统模块功能卡片（公司档案放这）
+const systemCards = [
+  { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: '🏛️', route: 'Company' },
+]
 
 onMounted(async () => {
-  // 欢迎提示（登录成功跳转过来的）
-  welcomeMsg.value = '欢迎，admin'
-
+  // 根据当前路由高亮
+  if (route.name === 'Company') activeModule.value = 'system'
   try {
     const res: any = await api.get('/public/company')
     if (res.code === 200 && res.data) {
@@ -23,6 +47,18 @@ onMounted(async () => {
   }
 })
 
+function navModule(key: string) {
+  activeModule.value = key
+  // 系统模块：内容区显示功能卡片；其他模块后续开发，先回首页欢迎卡
+  if (key !== 'system' && route.name !== 'Home') {
+    router.push({ name: 'Home' })
+  }
+}
+
+function openCard(c: any) {
+  if (c.route) router.push({ name: c.route })
+}
+
 function handleLogout() {
   localStorage.removeItem('token')
   router.push({ name: 'Login' })
@@ -30,147 +66,184 @@ function handleLogout() {
 </script>
 
 <template>
-  <div class="home-page">
-    <!-- 顶栏：公司名 + logo（跟随 is_default 公司，前端规范 A.1 展示层） -->
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="company-logo">
-          <img v-if="logoUrl" :src="logoUrl" :alt="companyName" />
-          <div v-else class="logo-ph">织</div>
-        </div>
-        <span class="company-name">{{ companyName || '织云 ERP' }}</span>
+  <div class="layout">
+    <!-- 左侧竖排模块导航（72px，preview 布局） -->
+    <aside class="sidebar">
+      <div class="logo">织</div>
+      <div
+        v-for="m in modules"
+        :key="m.key"
+        class="nav-item"
+        :class="{ active: activeModule === m.key }"
+        @click="navModule(m.key)"
+      >
+        <span class="ico">{{ m.icon }}</span>
+        <span class="lbl">{{ m.label }}</span>
       </div>
-      <div class="topbar-right">
-        <!-- 登录成功提示：右上角"欢迎，admin" -->
-        <span class="welcome">{{ welcomeMsg }}</span>
-        <button class="btn-nav" @click="router.push({ name: 'Company' })">公司档案</button>
-        <button class="btn-logout" @click="handleLogout">退出</button>
-      </div>
-    </header>
+    </aside>
 
-    <!-- 主体内容 -->
-    <main class="main-content">
-      <div class="welcome-card">
-        <h1>👋 {{ welcomeMsg }}</h1>
-        <p>欢迎使用织云 ERP 服装代工厂生产管理系统</p>
-        <p class="tip">第一刀骨架已就绪，后续业务模块将在此基础上开发。</p>
+    <!-- 右侧主区 -->
+    <div class="main">
+      <!-- 顶栏（56px）：公司名logo + 全局搜索 + 通知 + 用户 -->
+      <header class="topbar">
+        <div class="company">
+          <div class="clogo">
+            <img v-if="logoUrl" :src="logoUrl" :alt="companyName" />
+            <div v-else class="clogo-ph">织</div>
+          </div>
+          <span class="cname">{{ companyName || '织云 ERP' }}</span>
+        </div>
+        <!-- 全局搜索框（前端规范：常驻顶栏，Ctrl+K 唤起） -->
+        <div class="top-search">
+          <input type="text" placeholder="搜索功能 / 人员 / 单据... 如：员工档案、张丽、010203、裁剪单" />
+          <span class="shortcut">Ctrl K</span>
+        </div>
+        <div class="tools">
+          <span class="bell">🔔<i class="badge">4</i></span>
+          <div class="user">
+            <div class="avatar">王</div>
+            <span class="uname">{{ userName }}</span>
+          </div>
+          <button class="btn-logout" @click="handleLogout">退出</button>
+        </div>
+      </header>
+
+      <!-- 内容区 -->
+      <div class="content">
+        <!-- 系统模块：功能卡片（公司档案在这） -->
+        <template v-if="activeModule === 'system'">
+          <div class="module-title">模块 / 系统</div>
+          <div class="group">
+            <div class="group-title">基础配置</div>
+            <div class="card-grid">
+              <div v-for="c in systemCards" :key="c.key" class="card" @click="openCard(c)">
+                <div class="card-ico">{{ c.icon }}</div>
+                <div class="card-title">{{ c.title }}</div>
+                <div class="card-desc">{{ c.desc }}</div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 其他模块：暂未开发提示（首页） -->
+        <template v-else>
+          <router-view />
+          <div v-if="route.name === 'Home'" class="placeholder">
+            <div class="ph-icon">🚧</div>
+            <p>「{{ modules.find(m => m.key === activeModule)?.label }}」模块开发中</p>
+            <p class="tip">当前已开发：系统管理 → 公司档案</p>
+          </div>
+        </template>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.home-page {
+/* 工业蓝主题（preview/人员信息演示.html 取色：主色 #1E5EFF） */
+.layout { display: flex; height: 100vh; overflow: hidden; }
+
+/* 左侧竖排模块导航 72px */
+.sidebar {
+  width: 72px;
+  background: #fff;
+  border-right: 1px solid #E5E8EF;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  background: #f5f7fa;
-}
-.topbar {
-  height: 56px;
-  background: #fff;
-  border-bottom: 1px solid #e5e8ef;
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
+  padding-top: 12px;
   flex-shrink: 0;
+  overflow-y: auto;
 }
-.topbar-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.logo {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: #1E5EFF; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; margin-bottom: 14px; flex-shrink: 0;
 }
-.company-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #1E5EFF;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
+.nav-item {
+  width: 60px; height: 58px; border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; margin-bottom: 5px; color: #4E5969; gap: 2px; flex-shrink: 0;
 }
-.company-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.nav-item:hover { background: #E8F0FF; }
+.nav-item.active { background: #1E5EFF; color: #fff; }
+.nav-item .ico { font-size: 19px; line-height: 1; }
+.nav-item .lbl { font-size: 11px; }
+
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* 顶栏 56px */
+.topbar {
+  height: 56px; background: #fff; border-bottom: 1px solid #E5E8EF;
+  display: flex; align-items: center; padding: 0 20px; gap: 16px; flex-shrink: 0;
 }
-.logo-ph {
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
+.company { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.clogo {
+  width: 26px; height: 26px; border-radius: 6px; background: #1E5EFF;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-.company-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1d2129;
+.clogo img { width: 100%; height: 100%; object-fit: contain; }
+.clogo-ph { color: #fff; font-weight: 700; font-size: 13px; }
+.cname { font-size: 16px; font-weight: 600; color: #1D2129; }
+
+/* 全局搜索框（顶栏常驻，preview 布局） */
+.top-search { position: relative; flex: 1; max-width: 520px; margin: 0 18px; }
+.top-search input {
+  width: 100%; border: 1px solid #E5E8EF; border-radius: 8px;
+  padding: 8px 60px 8px 36px; font-size: 13px; outline: none; background: #fff; box-sizing: border-box;
 }
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.top-search input:focus { border-color: #1E5EFF; }
+.shortcut {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: #F0F2F5; color: #86909C; font-size: 11px; padding: 2px 8px; border-radius: 4px;
 }
-.welcome {
-  font-size: 14px;
-  color: #4e5969;
+
+.tools { margin-left: auto; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+.bell { position: relative; cursor: pointer; font-size: 18px; }
+.bell .badge {
+  position: absolute; top: -6px; right: -8px; background: #F53F3F; color: #fff;
+  font-size: 10px; min-width: 15px; height: 15px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; font-style: normal;
 }
-.btn-nav {
-  height: 32px;
-  padding: 0 16px;
-  background: #1E5EFF;
-  border: none;
-  border-radius: 6px;
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.2s;
+.user { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%; background: #1E5EFF; color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;
 }
-.btn-nav:hover {
-  background: #0f3db8;
-}
+.uname { font-size: 14px; color: #1D2129; }
 .btn-logout {
-  height: 32px;
-  padding: 0 16px;
-  background: #fff;
-  border: 1px solid #e5e8ef;
-  border-radius: 6px;
-  color: #4e5969;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
+  height: 30px; padding: 0 12px; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px;
+  color: #4E5969; font-size: 13px; cursor: pointer;
 }
-.btn-logout:hover {
-  border-color: #1E5EFF;
-  color: #1E5EFF;
+.btn-logout:hover { border-color: #1E5EFF; color: #1E5EFF; }
+
+/* 内容区 */
+.content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
+.module-title { font-size: 14px; color: #4E5969; margin-bottom: 16px; }
+.group { margin-bottom: 24px; }
+.group-title {
+  font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px;
+  padding-left: 10px; border-left: 3px solid #1E5EFF;
 }
-.main-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.card {
+  background: #fff; border-radius: 10px; padding: 20px 16px; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(29,33,41,.06); transition: all 0.2s; border: 1px solid transparent;
 }
-.welcome-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 48px 64px;
-  box-shadow: 0 2px 12px rgba(30, 94, 255, 0.06);
-  text-align: center;
+.card:hover { border-color: #1E5EFF; box-shadow: 0 4px 16px rgba(30,94,255,.12); transform: translateY(-2px); }
+.card-ico {
+  width: 44px; height: 44px; border-radius: 10px; background: #E8F0FF;
+  display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 12px;
 }
-.welcome-card h1 {
-  font-size: 28px;
-  color: #1d2129;
-  margin-bottom: 16px;
+.card-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; }
+.card-desc { font-size: 12px; color: #86909C; }
+
+.placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 100px 0; color: #86909C;
 }
-.welcome-card p {
-  font-size: 15px;
-  color: #4e5969;
-  margin-bottom: 8px;
-}
-.welcome-card .tip {
-  font-size: 13px;
-  color: #86909c;
-  margin-top: 16px;
-}
+.ph-icon { font-size: 48px; margin-bottom: 16px; }
+.placeholder p { font-size: 15px; margin-bottom: 6px; }
+.placeholder .tip { font-size: 13px; color: #C9CDD4; }
 </style>
