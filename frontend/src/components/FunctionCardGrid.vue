@@ -164,9 +164,15 @@ function endResize() {
   const c = state.value.find(x => x.key === resizing.value!.key)
   if (c) saveCard(c)
   resizing.value = null
+  // 阻止本次拖拽收尾的 click 冒泡到卡片（避免拉伸后误进功能）
+  suppressClickUntil = Date.now() + 250
 }
+// 拉伸后短暂抑制卡片点击跳转
+let suppressClickUntil = 0
 
 function openCard(c: CardState) {
+  // 刚拉伸完的收尾 click 不跳转
+  if (Date.now() < suppressClickUntil) return
   if (c.route) router.push({ name: c.route })
 }
 </script>
