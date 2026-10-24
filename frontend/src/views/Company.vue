@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../api'
+
+const router = useRouter()
+function goBack() { router.push({ name: 'Home' }) }
 
 // 公司列表
 const companies = ref<any[]>([])
@@ -161,7 +165,7 @@ async function remove(row: any) {
 <template>
   <div class="company-page">
     <div class="page-header">
-      <h2>公司档案</h2>
+      <h2><a class="back" @click.prevent="goBack" href="javascript:;">←</a> 公司档案</h2>
       <button class="btn-primary" @click="openAdd">+ 新增公司</button>
     </div>
 
@@ -258,6 +262,8 @@ async function remove(row: any) {
 .company-page { padding: 24px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
 .page-header h2 { font-size: 20px; color: #1d2129; margin: 0; }
+.page-header .back { color: #4E5969; cursor: pointer; font-size: 18px; margin-right: 4px; text-decoration: none; }
+.page-header .back:hover { color: #1E5EFF; }
 .btn-primary { height: 36px; padding: 0 18px; background: #1E5EFF; color: #fff; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
 .btn-primary:hover:not(:disabled) { background: #0f3db8; }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }

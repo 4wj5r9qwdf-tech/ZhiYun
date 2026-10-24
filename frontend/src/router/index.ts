@@ -6,8 +6,15 @@ const router = createRouter({
     { path: '/', redirect: '/workbench' },
     { path: '/login', name: 'Login', component: () => import('../views/Login.vue') },
     { path: '/workbench', name: 'Workbench', component: () => import('../views/Workbench.vue') },
-    { path: '/home', name: 'Home', component: () => import('../views/Home.vue') },
-    { path: '/system/company', name: 'Company', component: () => import('../views/Company.vue') },
+    // /system = 系统模块布局（左侧导航+顶栏），子路由在内容区渲染
+    {
+      path: '/system',
+      component: () => import('../views/Home.vue'),
+      children: [
+        { path: '', name: 'Home', component: () => import('../views/SystemIndex.vue') },
+        { path: 'company', name: 'Company', component: () => import('../views/Company.vue') },
+      ],
+    },
   ],
 })
 

@@ -1,15 +1,12 @@
 <script setup lang="ts">
 /**
- * 功能管理页（系统模块）：
- * - 功能卡片由系统级组件 FunctionCardGrid 渲染（拖拽排序/图标大小/置顶/加工作台/待办红点全在组件内）
- * - 本页只提供：模块导航 + cards 目录 + todo 数据
- * - 复用 TopBar（真实登录人/铃铛/搜索）
+ * 系统模块布局壳（/system）：左侧竖排模块导航 + 顶栏(TopBar) + 内容区(<router-view>)
+ * 内容区按子路由渲染：'' → SystemIndex(功能卡片)，'company' → Company(公司档案)
+ * 左侧导航和顶栏常驻，子页面切换不丢导航。
  */
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../api'
 import TopBar from '../components/TopBar.vue'
-import FunctionCardGrid from '../components/FunctionCardGrid.vue'
 
 const router = useRouter()
 
@@ -31,31 +28,11 @@ const modules = [
 ]
 const activeModule = ref('system')
 
-// 系统模块功能卡片目录（key 唯一，新功能加到这即可）
-const cards = [
-  { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: '🏛️', route: 'Company' },
-]
-
-// 功能级待办数（无待办不显示红点）
-const todoByMenu = ref<Record<string, number>>({})
-
-onMounted(loadTodo)
-
-async function loadTodo() {
-  try {
-    const res: any = await api.get('/system/profile/todo/count')
-    if (res.code === 200) {
-      const byMenu: Record<string, number> = {}
-      for (const r of res.data || []) byMenu[r.menu_key] = Number(r.count) || 0
-      todoByMenu.value = byMenu
-    }
-  } catch { /* ignore */ }
-}
-
 function navModule(key: string) {
   activeModule.value = key
   if (key === 'workbench') router.push({ name: 'Workbench' })
-  else if (key !== 'system') alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
+  else if (key === 'system') router.push({ name: 'Home' })
+  else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
 </script>
 
@@ -80,11 +57,7 @@ function navModule(key: string) {
 
       <div class="content">
         <div class="module-title">模块 / 系统</div>
-        <div class="group">
-          <div class="group-title">基础配置</div>
-          <p class="tip">拖拽卡片调顺序 · 右/下/右下角手柄自由拉伸(宽120-480/高100-320，宽高独立) · 置顶/加入工作台 · 配置自动保存</p>
-          <FunctionCardGrid module-key="system" :cards="cards" :todo="todoByMenu" />
-        </div>
+        <router-view />
       </div>
     </div>
   </div>
@@ -103,7 +76,4 @@ function navModule(key: string) {
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
 .module-title { font-size: 14px; color: #4E5969; margin-bottom: 16px; }
-.group { margin-bottom: 24px; }
-.group-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #1E5EFF; }
-.tip { font-size: 12px; color: #86909C; margin-bottom: 12px; }
 </style>
