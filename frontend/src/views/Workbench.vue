@@ -9,6 +9,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import TopBar from '../components/TopBar.vue'
+import FunctionCardGrid from '../components/FunctionCardGrid.vue'
 
 const router = useRouter()
 
@@ -81,10 +82,6 @@ function navModule(key: string) {
   if (key === 'system') router.push({ name: 'Home' })
   else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
-
-function openCard(fn: any) {
-  if (fn?.route) router.push({ name: fn.route })
-}
 </script>
 
 <template>
@@ -118,20 +115,8 @@ function openCard(fn: any) {
           <div v-if="benchCards.length === 0" class="empty-hint">
             暂无加入工作台的功能。到「系统」模块的功能卡片上点「加入工作台」即可。
           </div>
-          <div class="card-grid">
-            <div
-              v-for="fn in benchCards"
-              :key="fn.key"
-              class="card"
-              :class="{ 'has-todo': (todoByMenu[fn.key] || 0) > 0 }"
-              @click="openCard(fn)"
-            >
-              <i v-if="(todoByMenu[fn.key] || 0) > 0" class="todo-dot card-todo">{{ todoByMenu[fn.key] }}</i>
-              <div class="card-ico">{{ fn.icon }}</div>
-              <div class="card-title">{{ fn.title }}</div>
-              <div class="card-desc">{{ fn.desc }}</div>
-            </div>
-          </div>
+          <!-- 只读模式：不带拖拽/置顶/加工作台手柄，仅展示 + 待办红点 -->
+          <FunctionCardGrid v-else module-key="workbench" :cards="benchCards" :todo="todoByMenu" readonly />
         </div>
 
         <!-- 待办汇总 -->
@@ -160,23 +145,18 @@ function openCard(fn: any) {
 .nav-item .ico { font-size: 19px; line-height: 1; }
 .nav-item .lbl { font-size: 11px; }
 
-/* 待办红点（模块/卡片通用）：有才显示 */
+/* 待办红点（模块级累加）：有才显示 */
 .todo-dot { position: absolute; top: 2px; right: 6px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-.card-todo { top: 10px; right: 10px; }
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
 .module-title { font-size: 14px; color: #4E5969; margin-bottom: 16px; }
 .group { margin-bottom: 24px; }
 .group-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #1E5EFF; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
-.card { position: relative; background: #fff; border-radius: 10px; padding: 20px 16px; cursor: pointer; box-shadow: 0 2px 8px rgba(29,33,41,.06); transition: all 0.2s; border: 1px solid transparent; }
-.card:hover { border-color: #1E5EFF; box-shadow: 0 4px 16px rgba(30,94,255,.12); transform: translateY(-2px); }
-.card-ico { width: 44px; height: 44px; border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 12px; }
-.card-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; }
-.card-desc { font-size: 12px; color: #86909C; }
 
 .empty-hint { color: #86909C; font-size: 13px; padding: 12px 0; }
+
+/* 待办汇总列表 */
 .todo-list { background: #fff; border-radius: 10px; padding: 4px 0; }
 .todo-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #F0F2F5; }
 .todo-row:last-child { border-bottom: none; }
