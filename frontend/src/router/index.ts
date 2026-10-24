@@ -4,6 +4,7 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', redirect: '/workbench' },
+    { path: '/home', redirect: '/system' }, // 兼容旧链接
     { path: '/login', name: 'Login', component: () => import('../views/Login.vue') },
     { path: '/workbench', name: 'Workbench', component: () => import('../views/Workbench.vue') },
     // /system = 系统模块布局（左侧导航+顶栏），子路由在内容区渲染
