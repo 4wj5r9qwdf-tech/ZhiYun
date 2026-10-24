@@ -51,7 +51,7 @@ let resizeStartH = 0
 // 卡片尺寸边界（宽高独立，自由拉伸，安卓小组件式）；要调整只改这些常量
 const MIN_W = 120, MIN_H = 100       // 最小宽/高（保证图标+标题+按钮放得下，不挤成细条）
 const MAX_W = 480, MAX_H = 320       // 最大宽/高
-const DEFAULT_W = 180, DEFAULT_H = 120 // 默认宽/高
+const DEFAULT_W = 140, DEFAULT_H = 140 // 默认宽/高（正方形）
 // 图标高度 = 卡片高度 × ICON_RATIO（随卡片自适应）；emoji 字号 = 图标高度 × 0.7
 const ICON_RATIO = 0.45
 
@@ -179,7 +179,7 @@ function openCard(c: CardState) {
       <!-- 图标区铺满整卡（背景），标题/描述/按钮叠加在底部 -->
       <div class="fc-ico">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
-        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.34) + 'px' }">{{ c.icon }}</span>
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.3) + 'px' }">{{ c.icon }}</span>
       </div>
       <div class="fc-body">
         <div class="fc-title" :title="c.title">{{ c.title }}</div>
@@ -201,11 +201,11 @@ function openCard(c: CardState) {
 
 <style scoped>
 .fc-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 180px); min-height: var(--h, 120px); background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: box-shadow .2s; user-select: none; box-sizing: border-box; overflow: hidden; }
+.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 140px); min-height: var(--h, 140px); background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: transform .15s, border-color .15s, box-shadow .15s; user-select: none; box-sizing: border-box; overflow: hidden; }
 .fc-card.readonly { cursor: pointer; }
-.fc-card:hover { border-color: #1E5EFF; box-shadow: 0 4px 16px rgba(30,94,255,.12); }
+.fc-card:hover { border-color: #1E5EFF; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(30,94,255,.12); }
 .fc-card.dragging { opacity: .5; }
-.fc-card.over { border-color: #1E5EFF; box-shadow: 0 0 0 2px rgba(30,94,255,.25); }
+.fc-card.over { border-color: #1E5EFF; box-shadow: 0 0 0 2px #E8F0FF; transform: none; }
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; z-index: 2; }
 .fc-todo { position: absolute; top: 8px; right: 8px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
