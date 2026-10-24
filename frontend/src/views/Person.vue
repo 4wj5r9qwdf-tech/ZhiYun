@@ -149,6 +149,10 @@ function toggleId(arr: number[], id: number) {
 <template>
   <div>
     <div class="page-header">
+      <div class="head-left">
+        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
+        <span class="head-title">人员信息</span>
+      </div>
       <div class="filters">
         <input v-model="keyword" placeholder="搜索工号/姓名/手机号" @keyup.enter="loadList" />
         <select v-model="empStatus" @change="loadList">
@@ -318,6 +322,10 @@ function toggleId(arr: number[], id: number) {
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.head-left { display: flex; align-items: center; gap: 6px; }
+.back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
+.back:hover { color: #1E5EFF; }
+.head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 .filters { display: flex; gap: 8px; align-items: center; }
 .filters input, .filters select { height: 32px; border: 1px solid #E5E8EF; border-radius: 6px; padding: 0 10px; font-size: 13px; outline: none; }
 .filters input { width: 200px; }

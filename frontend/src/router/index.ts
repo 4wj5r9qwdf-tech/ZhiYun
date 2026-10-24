@@ -16,19 +16,22 @@ const router = createRouter({
         { path: 'company', name: 'Company', component: () => import('../views/Company.vue') },
       ],
     },
-    // /person = 人员模块布局（复用 Home 布局壳，人员导航高亮）
+    // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
+    //   '' → PersonIndex（人员模块功能卡片：人员信息等）
+    //   'person-info' → Person（人员信息列表，功能页）
     {
       path: '/person',
       component: () => import('../views/Home.vue'),
       children: [
-        { path: '', name: 'Person', component: () => import('../views/Person.vue') },
+        { path: '', name: 'PersonIndex', component: () => import('../views/PersonIndex.vue') },
+        { path: 'person-info', name: 'Person', component: () => import('../views/Person.vue') },
       ],
     },
   ],
 })
 
 // 路由守卫：需登录页面，未登录跳 /login
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'Person']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person']
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
