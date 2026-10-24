@@ -43,6 +43,7 @@ function handleLogout() {
       <div class="topbar-right">
         <!-- 登录成功提示：右上角"欢迎，admin" -->
         <span class="welcome">{{ welcomeMsg }}</span>
+        <button class="btn-nav" @click="router.push({ name: 'Company' })">公司档案</button>
         <button class="btn-logout" @click="handleLogout">退出</button>
       </div>
     </header>
@@ -113,6 +114,20 @@ function handleLogout() {
 .welcome {
   font-size: 14px;
   color: #4e5969;
+}
+.btn-nav {
+  height: 32px;
+  padding: 0 16px;
+  background: #1E5EFF;
+  border: none;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn-nav:hover {
+  background: #0f3db8;
 }
 .btn-logout {
   height: 32px;
