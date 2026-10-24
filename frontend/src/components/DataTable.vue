@@ -45,16 +45,22 @@ const emit = defineEmits<{
   (e: 'rowClick', row: any): void
 }>()
 
-// ===== 列配置（顺序 + 显隐），持久化 =====
+// ===== 列配置（顺序 + TopBar 缓存的当前登录人 userId），持久化 =====
 type ColState = { key: string; visible: boolean }
 const colState = ref<ColState[]>([])
 
+// 存储 key = 列表页标识 + 当前用户（TopBar 加载 profile/info 时缓存 userId 到 localStorage）
+// 保证：同一用户刷新/重登配置不丢；不同用户互不串
+const fullKey = computed(() => {
+  const uid = localStorage.getItem('userId') || 'anon'
+  return `${props.storageKey}:${uid}`
+})
+
 function loadState() {
   try {
-    const raw = localStorage.getItem(props.storageKey)
+    const raw = localStorage.getItem(fullKey.value)
     if (raw) {
       const saved: ColState[] = JSON.parse(raw)
-      // 按保存的顺序，合并当前 columns（新列补到末尾）
       const curKeys = new Set(props.columns.map(c => c.key))
       const ordered: ColState[] = []
       for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
@@ -66,10 +72,10 @@ function loadState() {
   colState.value = props.columns.map(c => ({ key: c.key, visible: true }))
 }
 function saveState() {
-  try { localStorage.setItem(props.storageKey, JSON.stringify(colState.value)) } catch { /* ignore */ }
+  try { localStorage.setItem(fullKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ }
 }
 onMounted(loadState)
-watch(() => props.storageKey, loadState)
+watch(() => fullKey.value, loadState)
 
 // 可见列（按 colState 顺序）
 const visibleCols = computed(() =>
