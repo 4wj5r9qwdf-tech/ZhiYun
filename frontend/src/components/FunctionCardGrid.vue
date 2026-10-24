@@ -176,16 +176,19 @@ function openCard(c: CardState) {
       <i v-if="(props.todo?.[c.key] || 0) > 0" class="fc-todo">{{ props.todo![c.key] }}</i>
       <span v-if="c.isTop" class="fc-top-tag">置顶</span>
 
-      <div class="fc-ico" :style="{ height: Math.round(c.cardH * ICON_RATIO) + 'px' }">
+      <!-- 图标区铺满整卡（背景），标题/描述/按钮叠加在底部 -->
+      <div class="fc-ico">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
-        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.32) + 'px' }">{{ c.icon }}</span>
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.34) + 'px' }">{{ c.icon }}</span>
       </div>
-      <div class="fc-title" :title="c.title">{{ c.title }}</div>
-      <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
+      <div class="fc-body">
+        <div class="fc-title" :title="c.title">{{ c.title }}</div>
+        <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
 
-      <div v-if="!readonly" class="fc-actions">
-        <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
-        <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
+        <div v-if="!readonly" class="fc-actions">
+          <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
+          <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
+        </div>
       </div>
 
       <!-- 三个拉伸手柄：右=宽，下=高，右下角=宽高（自由拉伸，非等比） -->
@@ -198,18 +201,21 @@ function openCard(c: CardState) {
 
 <style scoped>
 .fc-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 180px); min-height: var(--h, 120px); background: #fff; border-radius: 10px; padding: 14px 14px; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: box-shadow .2s; user-select: none; box-sizing: border-box; }
+.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 180px); min-height: var(--h, 120px); background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: box-shadow .2s; user-select: none; box-sizing: border-box; overflow: hidden; }
 .fc-card.readonly { cursor: pointer; }
 .fc-card:hover { border-color: #1E5EFF; box-shadow: 0 4px 16px rgba(30,94,255,.12); }
 .fc-card.dragging { opacity: .5; }
 .fc-card.over { border-color: #1E5EFF; box-shadow: 0 0 0 2px rgba(30,94,255,.25); }
 .fc-card.top { border: 1px solid #FF9500; }
-.fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
-.fc-todo { position: absolute; top: 10px; right: 10px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-.fc-ico { width: 100%; border-radius: 8px; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; overflow: hidden; flex-shrink: 0; }
-.fc-ico-txt { line-height: 1; filter: grayscale(0.15); opacity: .85; }
-.fc-ico-img { max-width: 72%; max-height: 100%; object-fit: contain; }
-.fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; z-index: 2; }
+.fc-todo { position: absolute; top: 8px; right: 8px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
+/* 图标区铺满整卡（背景层） */
+.fc-ico { position: absolute; inset: 0; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.fc-ico-txt { line-height: 1; filter: grayscale(0.12); opacity: .9; }
+.fc-ico-img { max-width: 64%; max-height: 64%; object-fit: contain; }
+/* 文字/按钮层：贴卡片底部，半透明白底渐隐，压在图标区上 */
+.fc-body { position: relative; z-index: 1; margin-top: auto; padding: 24px 12px 12px; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.85) 40%, #fff 100%); }
+.fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-actions { display: flex; gap: 6px; margin-top: auto; }
 .fc-act { width: 26px; height: 26px; flex: none; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 14px; line-height: 1; color: #4E5969; cursor: pointer; display: flex; align-items: center; justify-content: center; }
