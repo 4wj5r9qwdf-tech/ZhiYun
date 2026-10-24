@@ -34,16 +34,21 @@ public class PublicInfoController {
         Map<String, Object> data = new HashMap<>();
         try {
             Map<String, Object> row = jdbcTemplate.queryForMap(
-                "SELECT c.company_id, c.company_name, c.theme, " +
-                "       COALESCE(o.url, '') AS logo_url " +
+                "SELECT c.company_id, c.company_name, c.theme, c.slogan, c.login_bg_mode, " +
+                "       COALESCE(o.url, '') AS logo_url, " +
+                "       COALESCE(bg.url, '') AS login_bg_url " +
                 "FROM sys_company c " +
                 "LEFT JOIN sys_oss o ON c.logo_oss_id = o.oss_id " +
+                "LEFT JOIN sys_oss bg ON c.login_bg_oss_id = bg.oss_id " +
                 "WHERE c.is_default = '1' AND c.status = '0' AND c.del_flag = '0' " +
                 "LIMIT 1");
             data.putAll(row);
         } catch (Exception e) {
             data.put("company_name", "织云ERP");
             data.put("logo_url", "");
+            data.put("slogan", "");
+            data.put("login_bg_url", "");
+            data.put("login_bg_mode", "A");
         }
         return R.ok(data);
     }

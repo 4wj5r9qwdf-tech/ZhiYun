@@ -9,6 +9,9 @@ const router = useRouter()
 const companyName = ref('')
 const logoUrl = ref('')
 const theme = ref('')
+const slogan = ref('')
+const loginBgUrl = ref('')
+const loginBgMode = ref('A')  // A=铺满左侧品牌区 / B=铺满整页
 
 // 登录表单
 const username = ref('')
@@ -24,6 +27,9 @@ onMounted(async () => {
       companyName.value = res.data.company_name || ''
       logoUrl.value = res.data.logo_url || ''
       theme.value = res.data.theme || ''
+      slogan.value = res.data.slogan || ''
+      loginBgUrl.value = res.data.login_bg_url || ''
+      loginBgMode.value = res.data.login_bg_mode || 'A'
     }
   } catch {
     companyName.value = '织云ERP'
@@ -65,16 +71,22 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="login-page">
+  <div class="login-page" :class="'mode-' + loginBgMode">
     <!-- 左侧：公司品牌区 -->
     <div class="brand-side">
+      <!-- 模式A/B：有背景图则铺背景（A=只铺左侧品牌区，B=铺整页），无则用默认工业蓝渐变 -->
+      <div
+        v-if="loginBgUrl"
+        class="brand-bg"
+        :style="{ backgroundImage: 'url(' + loginBgUrl + ')' }"
+      ></div>
       <div class="brand-content">
         <div class="brand-logo">
           <img v-if="logoUrl" :src="logoUrl" :alt="companyName" />
           <div v-else class="logo-placeholder">织</div>
         </div>
         <h1 class="brand-name">{{ companyName || '织云 ERP' }}</h1>
-        <p class="brand-slogan">服装代工厂生产管理系统</p>
+        <p class="brand-slogan">{{ slogan || '服装代工厂生产管理系统' }}</p>
       </div>
     </div>
 
@@ -129,6 +141,7 @@ async function handleLogin() {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  position: relative;
 }
 .brand-side {
   flex: 1;
@@ -137,6 +150,40 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   color: #fff;
+  position: relative;
+}
+/* 背景图层：铺满左侧品牌区（A/B 模式共用），叠加半透明遮罩保证文字可读 */
+.brand-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.brand-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+/* 模式B：背景图铺满整页，登录卡片悬浮在背景上 */
+.mode-B .brand-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.mode-B .brand-side {
+  background: transparent;
+  z-index: 1;
+}
+.mode-B .form-side {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+.mode-B .form-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
 }
 .brand-content {
   text-align: center;
