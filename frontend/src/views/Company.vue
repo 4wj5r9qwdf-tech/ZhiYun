@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import api from '../api'
 
 const router = useRouter()
-function goBack() { router.push({ name: 'Home' }) }
+function goBack() { router.push({ name: 'SystemIndex' }) }
 
 // 公司列表
 const companies = ref<any[]>([])
