@@ -10,7 +10,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
-import TopBar from '../components/TopBar.vue'
+import DataTable from '../components/DataTable.vue'
 
 const router = useRouter()
 
@@ -18,8 +18,28 @@ const router = useRouter()
 const rows = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
+// 筛选（做全：keyword/状态/车间/性别/岗位/角色）
 const keyword = ref('')
 const empStatus = ref('')
+const deptId = ref<number | null>(null)
+const gender = ref('')
+const postsFilter = ref('')
+const rolesFilter = ref('')
+const orderBy = ref('')   // 字段:asc|desc
+
+// 表格列定义（key 对应后端返回字段；sum=数值合计列）
+const columns = [
+  { key: 'job_no', title: '工号', sortable: true },
+  { key: 'name', title: '姓名', sortable: true },
+  { key: 'gender', title: '性别' },
+  { key: 'phone_masked', title: '手机号' },
+  { key: 'dept_name', title: '车间', sortable: true },
+  { key: 'group_name', title: '小组', sortable: true },
+  { key: 'posts', title: '岗位' },
+  { key: 'roles', title: '角色' },
+  { key: 'emp_status', title: '状态', sortable: true },
+  { key: 'card_no', title: '员工卡', sortable: true },
+]
 
 // 下拉数据
 const depts = ref<any[]>([])       // 车间（部门树，展平）
@@ -57,10 +77,83 @@ async function loadList() {
   loading.value = true
   try {
     const res: any = await api.get('/system/person/list', {
-      params: { pageNum: 1, pageSize: 50, keyword: keyword.value, empStatus: empStatus.value },
+      params: {
+        pageNum: 1, pageSize: 100,
+        keyword: keyword.value, empStatus: empStatus.value,
+        deptId: deptId.value ?? undefined, gender: gender.value,
+        posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
+      },
     })
     if (res.code === 200) { rows.value = res.data.rows; total.value = res.data.total }
   } finally { loading.value = false }
+}
+
+// 表格排序回调 → 传后端 orderBy
+function onSort(key: string, dir: 'asc' | 'desc') {
+  orderBy.value = `${key}:${dir}`
+  loadList()
+}
+
+// 导出（CSV，Excel 可开）
+async function exportCsv() {
+  try {
+    const res: any = await api.get('/system/person/export', {
+      params: {
+        keyword: keyword.value, empStatus: empStatus.value,
+        deptId: deptId.value ?? undefined, gender: gender.value,
+        posts: postsFilter.value, roles: rolesFilter.value,
+      },
+    })
+    if (res.code === 200) {
+      const byteChars = atob(res.data.content)
+      const bytes = new Uint8Array(byteChars.length)
+      for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
+      const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = res.data.fileName
+      a.click()
+      URL.revokeObjectURL(a.href)
+      showMsg(`已导出 ${res.data.count} 条`)
+    } else showMsg(res.msg || '导出失败', 'error')
+  } catch (e: any) { showMsg(e?.response?.data?.msg || '导出失败', 'error') }
+}
+
+// 导入（前端解析 CSV，逐条调新增；简单批量）
+function importFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = async () => {
+    const text = String(reader.result || '').replace(/^﻿/, '')
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) { showMsg('文件无数据', 'error'); input.value = ''; return }
+    const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim())
+    const idx = (name: string) => header.indexOf(name)
+    let ok = 0, fail = 0
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].match(/("([^"]|"")*"|[^,]*)/g)?.filter((_, j) => j % 2 === 0).map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"')) || []
+      const jobNo = cols[idx('工号')]?.trim()
+      const name = cols[idx('姓名')]?.trim()
+      if (!jobNo || !name) { fail++; continue }
+      try {
+        const res: any = await api.post('/system/person', {
+          jobNo, name,
+          gender: cols[idx('性别')] === '男' ? '1' : '2',
+          phoneNumber: cols[idx('手机号')]?.trim() || '',
+          postIds: [], roleIds: [],
+          ext: { hireDate: new Date().toISOString().slice(0, 10), empStatus: cols[idx('状态')]?.trim() || '试用',
+                 groupName: cols[idx('小组')]?.trim() || '', cardNo: cols[idx('员工卡')]?.trim() || '' },
+        })
+        if (res.code === 200) ok++; else fail++
+      } catch { fail++ }
+    }
+    showMsg(`导入完成：成功 ${ok} 条，失败 ${fail} 条`, fail ? 'error' : 'success')
+    loadList()
+  }
+  reader.readAsText(file, 'utf-8')
+  input.value = ''
 }
 
 async function loadOptions() {
@@ -139,6 +232,12 @@ async function resetPwd(row: any) {
 function showMsg(t: string, type: 'success' | 'error' = 'success') { msg.value = t; msgType.value = type; setTimeout(() => { msg.value = '' }, 3000) }
 function close() { showDialog.value = false }
 
+function resetFilter() {
+  keyword.value = ''; empStatus.value = ''; deptId.value = null
+  gender.value = ''; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
+  loadList()
+}
+
 // 选中岗位/角色（多选切换）
 function toggleId(arr: number[], id: number) {
   const i = arr.indexOf(id)
@@ -153,49 +252,51 @@ function toggleId(arr: number[], id: number) {
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
         <span class="head-title">人员信息</span>
       </div>
-      <div class="filters">
-        <input v-model="keyword" placeholder="搜索工号/姓名/手机号" @keyup.enter="loadList" />
-        <select v-model="empStatus" @change="loadList">
-          <option value="">全部状态</option>
-          <option>试用</option><option>在职</option><option>离职</option><option>长假</option>
-        </select>
-        <button class="btn" @click="loadList">查询</button>
+      <div class="head-actions">
+        <button class="btn" @click="exportCsv">↓ 导出</button>
+        <label class="btn imp">↑ 导入<input type="file" accept=".csv,text/csv" @change="importFile" hidden /></label>
+        <button class="btn-primary" @click="openAdd">+ 新增人员</button>
       </div>
-      <button class="btn-primary" @click="openAdd">+ 新增人员</button>
+    </div>
+
+    <!-- 筛选条件（做全：常用+全量） -->
+    <div class="filter-bar">
+      <input v-model="keyword" placeholder="搜索工号/姓名/手机号" @keyup.enter="loadList" />
+      <select v-model="empStatus" @change="loadList">
+        <option value="">状态</option>
+        <option>试用</option><option>在职</option><option>离职</option><option>长假</option>
+      </select>
+      <select v-model="deptId" @change="loadList">
+        <option :value="null">车间</option>
+        <option v-for="d in depts" :key="d.deptId" :value="Number(d.deptId)">{{ d.deptName }}</option>
+      </select>
+      <select v-model="gender" @change="loadList">
+        <option value="">性别</option>
+        <option value="1">男</option><option value="2">女</option>
+      </select>
+      <input v-model="postsFilter" placeholder="岗位" @keyup.enter="loadList" />
+      <input v-model="rolesFilter" placeholder="角色" @keyup.enter="loadList" />
+      <button class="btn" @click="loadList">查询</button>
+      <button class="btn ghost" @click="resetFilter">重置</button>
     </div>
 
     <div v-if="msg" class="msg" :class="'msg-' + msgType">{{ msg }}</div>
 
-    <!-- 列表 -->
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>工号</th><th>姓名</th><th>性别</th><th>手机号</th><th>车间</th><th>小组</th>
-            <th>岗位</th><th>角色</th><th>状态</th><th>员工卡</th><th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in rows" :key="r.user_id">
-            <td>{{ r.job_no }}</td>
-            <td>{{ r.name }}</td>
-            <td>{{ r.gender === '1' ? '男' : r.gender === '2' ? '女' : '-' }}</td>
-            <td>{{ r.phone_masked || '-' }}</td>
-            <td>{{ r.dept_name || '-' }}</td>
-            <td>{{ r.group_name || '-' }}</td>
-            <td>{{ r.posts || '-' }}</td>
-            <td>{{ r.roles || '-' }}</td>
-            <td><span class="tag" :class="'st-' + (r.emp_status || '')">{{ r.emp_status || '-' }}</span></td>
-            <td>{{ r.card_no || '-' }}</td>
-            <td class="ops">
-              <a @click="openEdit(r)">编辑</a>
-              <a @click="resetPwd(r)">重置密码</a>
-            </td>
-          </tr>
-          <tr v-if="rows.length === 0"><td colspan="11" class="empty">暂无数据</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- 列表（系统级 DataTable：排序/列显隐/列顺序/合计行，配置按页+用户持久化） -->
+    <DataTable
+      storage-key="person_list"
+      :columns="columns"
+      :rows="rows"
+      :loading="loading"
+      @sort="onSort"
+    >
+      <template #cell-gender="{ value }">{{ value === '1' ? '男' : value === '2' ? '女' : '-' }}</template>
+      <template #cell-emp_status="{ value }"><span class="tag" :class="'st-' + (value || '')">{{ value || '-' }}</span></template>
+      <template #cell-ops="{ row }">
+        <a @click="openEdit(row)">编辑</a>
+        <a @click="resetPwd(row)">重置密码</a>
+      </template>
+    </DataTable>
 
     <!-- 新增/编辑弹窗 -->
     <div v-if="showDialog" class="mask" @click.self="close">
@@ -326,12 +427,15 @@ function toggleId(arr: number[], id: number) {
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
-.filters { display: flex; gap: 8px; align-items: center; }
-.filters input, .filters select { height: 32px; border: 1px solid #E5E8EF; border-radius: 6px; padding: 0 10px; font-size: 13px; outline: none; }
-.filters input { width: 200px; }
-.filters input:focus, .filters select:focus { border-color: #1E5EFF; }
+.head-actions { display: flex; gap: 8px; align-items: center; }
+.imp { display: inline-flex; align-items: center; cursor: pointer; }
+.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 10px 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.filter-bar input, .filter-bar select { height: 32px; border: 1px solid #E5E8EF; border-radius: 6px; padding: 0 10px; font-size: 13px; outline: none; }
+.filter-bar input { width: 160px; }
+.filter-bar input:focus, .filter-bar select:focus { border-color: #1E5EFF; }
 .btn { height: 32px; padding: 0 14px; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; font-size: 13px; color: #4E5969; cursor: pointer; }
 .btn:hover { border-color: #1E5EFF; color: #1E5EFF; }
+.btn.ghost { background: transparent; }
 .btn-primary { height: 32px; padding: 0 16px; background: #1E5EFF; border: none; border-radius: 6px; font-size: 13px; color: #fff; cursor: pointer; }
 .btn-primary:hover { background: #1747c7; }
 .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
@@ -340,12 +444,6 @@ function toggleId(arr: number[], id: number) {
 .msg-success { background: #E8F8F0; color: #00B388; border: 1px solid #B7E8D0; }
 .msg-error { background: #FEECEC; color: #F53F3F; border: 1px solid #FAC7C7; }
 
-.table-wrap { background: #fff; border-radius: 10px; overflow: auto; box-shadow: 0 2px 8px rgba(29,33,41,.06); }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #F0F2F5; white-space: nowrap; }
-th { background: #F7F8FA; color: #4E5969; font-weight: 600; position: sticky; top: 0; }
-tbody tr:hover { background: #F5F8FF; }
-.empty { text-align: center; color: #86909C; padding: 32px; }
 .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .st-试用 { background: #FFF7E8; color: #FF9500; }
 .st-在职 { background: #E8F8F0; color: #00B388; }
