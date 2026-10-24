@@ -46,3 +46,4 @@ Thumbs.db
 # ===== 项目内下载的依赖缓存（不进 Git，但保留在本地）=====
 /libs/
 /vendor/
+/bin/ (本地工具，调用 Windows 浏览器)
