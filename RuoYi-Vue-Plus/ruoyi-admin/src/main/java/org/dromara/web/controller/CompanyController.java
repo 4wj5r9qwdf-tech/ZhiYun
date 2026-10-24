@@ -81,8 +81,8 @@ public class CompanyController {
             "INSERT INTO sys_company (company_id, company_name, logo_oss_id, login_bg_oss_id, " +
             "  slogan, login_bg_mode, is_default, theme, status, del_flag, create_time) " +
             "VALUES (?,?,?,?,?,?,'0',?,'0','0',now())",
-            companyId, body.get("companyName"), body.get("logoOssId"),
-            body.get("loginBgOssId"), body.get("slogan"),
+            companyId, body.get("companyName"), toLong(body.get("logoOssId")),
+            toLong(body.get("loginBgOssId")), body.get("slogan"),
             body.getOrDefault("loginBgMode", "A"), body.get("theme"));
         // 若设为默认，取消其他默认
         if ("1".equals(body.get("isDefault"))) {
@@ -103,13 +103,23 @@ public class CompanyController {
             "UPDATE sys_company SET company_name=?, logo_oss_id=?, login_bg_oss_id=?, " +
             "  slogan=?, login_bg_mode=?, theme=?, status=?, update_time=now() " +
             "WHERE company_id=?",
-            body.get("companyName"), body.get("logoOssId"), body.get("loginBgOssId"),
+            body.get("companyName"), toLong(body.get("logoOssId")), toLong(body.get("loginBgOssId")),
             body.get("slogan"), body.getOrDefault("loginBgMode", "A"),
             body.get("theme"), body.getOrDefault("status", "0"), companyId);
         if ("1".equals(body.get("isDefault"))) {
             setDefault(companyId);
         }
         return R.ok();
+    }
+
+    /**
+     * oss_id 安全转 Long（前端传字符串，DB 列是 bigint；空→null）。
+     */
+    private Long toLong(Object v) {
+        if (v == null) return null;
+        String s = v.toString().trim();
+        if (s.isEmpty() || "null".equalsIgnoreCase(s)) return null;
+        return Long.valueOf(s);
     }
 
     /**
