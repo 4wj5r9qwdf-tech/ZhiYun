@@ -64,7 +64,7 @@ function openAdd() {
 
 function openEdit(row: any) {
   isEdit.value = true
-  form.value = { ...row, logoOssId: row.logo_oss_id, loginBgOssId: row.login_bg_oss_id, logoUrl: row.logo_url, loginBgUrl: row.login_bg_url, companyName: row.company_name, loginBgMode: row.login_bg_mode || 'A', isDefault: row.is_default, theme: row.theme || '', status: row.status }
+  form.value = { companyId: row.company_id, companyName: row.company_name, logoOssId: row.logo_oss_id, loginBgOssId: row.login_bg_oss_id, logoUrl: row.logo_url, loginBgUrl: row.login_bg_url, slogan: row.slogan || '', loginBgMode: row.login_bg_mode || 'A', isDefault: row.is_default, theme: row.theme || '', status: row.status }
   showDialog.value = true
 }
 
