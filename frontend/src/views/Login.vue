@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../api'
+import api, { CLIENT_ID } from '../api'
 
 const router = useRouter()
 
@@ -47,7 +47,7 @@ async function handleLogin() {
   try {
     // RuoYi-Vue-Plus 6.x 登录：clientId 取 sys_client 表 pc 客户端
     const res: any = await api.post('/auth/login', {
-      clientId: 'e5cd7e4891bf95d1d19206ce24a7b32e',
+      clientId: CLIENT_ID,
       grantType: 'password',
       username: username.value.trim(),
       password: password.value,
