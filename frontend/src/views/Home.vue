@@ -31,7 +31,7 @@ const activeModule = ref('system')
 function navModule(key: string) {
   activeModule.value = key
   if (key === 'workbench') router.push({ name: 'Workbench' })
-  else if (key === 'system') router.push({ name: 'Home' })
+  else if (key === 'system') router.push({ name: 'SystemIndex' })
   else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
 </script>
