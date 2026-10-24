@@ -132,7 +132,9 @@ CREATE TABLE IF NOT EXISTS sys_user_menu_config (
     user_id     bigint       NOT NULL,                 -- 用户ID（→ sys_user.user_id）
     menu_key    varchar(50)  NOT NULL,                 -- 功能标识（前端 modules/systemCards 的 key）
     sort        int          NOT NULL DEFAULT 0,       -- 排序（拖拽后记录）
-    icon_size   int          NOT NULL DEFAULT 180,     -- 图标/卡片像素大小（自由拖拽，min 80 max 320）
+    card_w      int          NOT NULL DEFAULT 160,     -- 卡片宽度（自由拉伸，min 80 max 480）
+    card_h      int          NOT NULL DEFAULT 110,     -- 卡片高度（自由拉伸，min 60 max 320，与宽度独立非等比）
+    icon_size   int          NOT NULL DEFAULT 160,     -- 兼容旧列（=card_w），勿直接使用
     is_top      char(1)      NOT NULL DEFAULT '0',     -- 是否置顶 0否 1是
     in_workbench char(1)     NOT NULL DEFAULT '0',     -- 是否加入工作台 0否 1是
     create_time timestamp    DEFAULT CURRENT_TIMESTAMP,
@@ -140,9 +142,11 @@ CREATE TABLE IF NOT EXISTS sys_user_menu_config (
     CONSTRAINT sys_user_menu_config_pk PRIMARY KEY (user_id, menu_key)
 );
 
-COMMENT ON TABLE  sys_user_menu_config          IS '用户功能菜单配置（拖拽排序/图标像素大小/置顶/加入工作台）';
+COMMENT ON TABLE  sys_user_menu_config          IS '用户功能菜单配置（拖拽排序/卡片宽高自由拉伸/置顶/加入工作台）';
 COMMENT ON COLUMN sys_user_menu_config.menu_key IS '功能标识（前端功能卡key）';
-COMMENT ON COLUMN sys_user_menu_config.icon_size IS '图标像素大小（自由拖拽，80-320）';
+COMMENT ON COLUMN sys_user_menu_config.card_w   IS '卡片宽度（自由拉伸，80-480）';
+COMMENT ON COLUMN sys_user_menu_config.card_h   IS '卡片高度（自由拉伸，60-320，与宽度独立）';
+COMMENT ON COLUMN sys_user_menu_config.icon_size IS '兼容旧列（=card_w）';
 COMMENT ON COLUMN sys_user_menu_config.is_top   IS '置顶 0否1是';
 COMMENT ON COLUMN sys_user_menu_config.in_workbench IS '加入工作台 0否1是';
 

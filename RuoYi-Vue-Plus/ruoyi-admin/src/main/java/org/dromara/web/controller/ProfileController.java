@@ -106,33 +106,38 @@ public class ProfileController {
     public R<List<Map<String, Object>>> menuConfig() {
         Long userId = LoginHelper.getUserId();
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT menu_key, sort, icon_size, is_top, in_workbench " +
+            "SELECT menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench " +
             "FROM sys_user_menu_config WHERE user_id=? ORDER BY is_top DESC, sort", userId);
         return R.ok(rows);
     }
 
     /**
-     * 保存用户功能配置（拖拽排序/图标大小/置顶/加入工作台，单个功能）。
+     * 保存用户功能配置（拖拽排序/卡片宽高自由拉伸/置顶/加入工作台，单个功能）。
      */
     @PutMapping("/menu-config")
     public R<Void> saveMenuConfig(@RequestBody Map<String, Object> body) {
         Long userId = LoginHelper.getUserId();
         String menuKey = (String) body.get("menuKey");
         Integer sort = body.get("sort") == null ? 0 : Integer.valueOf(body.get("sort").toString());
-        Integer iconSize = body.get("iconSize") == null ? 180 : Integer.valueOf(body.get("iconSize").toString());
-        // 图标像素大小限制 80-320（自由拖拽，min/max）
-        if (iconSize < 80) iconSize = 80;
-        if (iconSize > 320) iconSize = 320;
+        // 卡片宽高独立（自由拉伸，非等比）；兼容旧 iconSize 字段（沿用为宽）
+        Integer cardW = body.get("cardW") != null ? Integer.valueOf(body.get("cardW").toString())
+                       : (body.get("iconSize") != null ? Integer.valueOf(body.get("iconSize").toString()) : 160);
+        Integer cardH = body.get("cardH") != null ? Integer.valueOf(body.get("cardH").toString()) : 110;
+        if (cardW < 80) cardW = 80;
+        if (cardW > 480) cardW = 480;
+        if (cardH < 60) cardH = 60;
+        if (cardH > 320) cardH = 320;
+        Integer iconSize = cardW; // 兼容旧列，保持同步
         String isTop = (String) body.getOrDefault("isTop", "0");
         String inWorkbench = (String) body.getOrDefault("inWorkbench", "0");
 
         jdbcTemplate.update(
-            "INSERT INTO sys_user_menu_config (user_id, menu_key, sort, icon_size, is_top, in_workbench, update_time) " +
-            "VALUES (?,?,?,?,?,?,now()) " +
+            "INSERT INTO sys_user_menu_config (user_id, menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench, update_time) " +
+            "VALUES (?,?,?,?,?,?,?,?,now()) " +
             "ON CONFLICT (user_id, menu_key) DO UPDATE SET " +
-            "  sort=EXCLUDED.sort, icon_size=EXCLUDED.icon_size, " +
+            "  sort=EXCLUDED.sort, card_w=EXCLUDED.card_w, card_h=EXCLUDED.card_h, icon_size=EXCLUDED.icon_size, " +
             "  is_top=EXCLUDED.is_top, in_workbench=EXCLUDED.in_workbench, update_time=now()",
-            userId, menuKey, sort, iconSize, isTop, inWorkbench);
+            userId, menuKey, sort, cardW, cardH, iconSize, isTop, inWorkbench);
 
         // 同步工作台表
         if ("1".equals(inWorkbench)) {
