@@ -48,12 +48,16 @@ let resizeStartY = 0
 let resizeStartW = 0
 let resizeStartH = 0
 
-// 卡片尺寸边界（宽高独立，自由拉伸，安卓小组件式）；要调整只改这些常量
-const MIN_W = 120, MIN_H = 100       // 最小宽/高（保证图标+标题+按钮放得下，不挤成细条）
-const MAX_W = 480, MAX_H = 320       // 最大宽/高
+// 等比锁定（默认锁定=始终正方形；点卡片上的锁可解开自由拉宽高）
+const LOCK_DEFAULT = true
+const locked = ref(LOCK_DEFAULT)
+
+// 卡片尺寸边界；要调整只改这些常量
+const MIN_S = 100          // 等比（正方形）时的最小边
+const MAX_S = 400          // 等比时的最大边
+const MIN_W = 120, MIN_H = 100   // 自由模式最小宽/高
+const MAX_W = 480, MAX_H = 320   // 自由模式最大宽/高
 const DEFAULT_W = 160, DEFAULT_H = 160 // 默认宽/高（正方形）
-// 图标高度 = 卡片高度 × ICON_RATIO（随卡片自适应）；emoji 字号 = 图标高度 × 0.7
-const ICON_RATIO = 0.45
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
@@ -106,6 +110,7 @@ async function saveCard(c: CardState) {
 
 function toggleTop(c: CardState) { c.isTop = !c.isTop; saveCard(c) }
 function toggleWorkbench(c: CardState) { c.inWorkbench = !c.inWorkbench; saveCard(c) }
+function toggleLock() { locked.value = !locked.value }
 
 // ===== 拖拽排序 =====
 function onDragStart(i: number, e: DragEvent) { dragIndex.value = i; e.dataTransfer?.setData('text/plain', String(i)) }
@@ -139,11 +144,19 @@ function onResizeMove(e: MouseEvent) {
   const c = state.value.find(x => x.key === resizing.value!.key)
   if (!c) return
   const { axis } = resizing.value
-  if (axis === 'w' || axis === 'wh') {
-    c.cardW = Math.max(MIN_W, Math.min(MAX_W, resizeStartW + (e.clientX - resizeStartX)))
-  }
-  if (axis === 'h' || axis === 'wh') {
-    c.cardH = Math.max(MIN_H, Math.min(MAX_H, resizeStartH + (e.clientY - resizeStartY)))
+  if (locked.value) {
+    // 等比（正方形）：以主轴变化量定边长，宽高同步
+    const delta = axis === 'h' ? (e.clientY - resizeStartY) : (e.clientX - resizeStartX)
+    const side = Math.max(MIN_S, Math.min(MAX_S, Math.max(resizeStartW, resizeStartH) + delta))
+    c.cardW = side
+    c.cardH = side
+  } else {
+    if (axis === 'w' || axis === 'wh') {
+      c.cardW = Math.max(MIN_W, Math.min(MAX_W, resizeStartW + (e.clientX - resizeStartX)))
+    }
+    if (axis === 'h' || axis === 'wh') {
+      c.cardH = Math.max(MIN_H, Math.min(MAX_H, resizeStartH + (e.clientY - resizeStartY)))
+    }
   }
 }
 function endResize() {
@@ -188,6 +201,7 @@ function openCard(c: CardState) {
         <div v-if="!readonly" class="fc-actions">
           <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
           <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
+          <button class="fc-act" :class="{ on: locked }" :title="locked ? '解锁：可自由拉宽高' : '锁定：等比缩放(正方形)'" @click.stop="toggleLock">{{ locked ? '🔒' : '🔓' }}</button>
         </div>
       </div>
 
