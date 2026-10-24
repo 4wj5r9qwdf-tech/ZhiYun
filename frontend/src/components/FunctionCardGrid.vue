@@ -20,7 +20,8 @@ interface Card {
   key: string
   title: string
   desc?: string
-  icon?: string
+  icon?: string     // 图标字符（emoji/字符），与 iconUrl 二选一
+  iconUrl?: string  // 图标图片URL（优先于 icon；上传到 MinIO 后的地址）
   route?: string
 }
 
@@ -45,13 +46,16 @@ const resizing = ref<string | null>(null)
 let resizeStartX = 0
 let resizeStartSize = 0
 
-// min/max 图标像素大小（安卓小组件式限制）
-const MIN_SIZE = 80
-const MAX_SIZE = 320
+// min/max 图标像素大小（安卓小组件式限制）；如需调整只改这三行
+const MIN_SIZE = 80      // 最小
+const MAX_SIZE = 320     // 最大
+const DEFAULT_SIZE = 180 // 默认
+// 图标占卡片宽度比例（emoji 字号 = iconSize × ICON_RATIO）；图片图标按 contain 缩放
+const ICON_RATIO = 0.45
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
-    ...c, sort: i, iconSize: 180, isTop: false, inWorkbench: false,
+    ...c, sort: i, iconSize: DEFAULT_SIZE, isTop: false, inWorkbench: false,
   }))
   await loadConfig()
   bindResize()
@@ -157,8 +161,9 @@ function openCard(c: CardState) {
       <i v-if="(props.todo?.[c.key] || 0) > 0" class="fc-todo">{{ props.todo![c.key] }}</i>
       <span v-if="c.isTop" class="fc-top-tag">置顶</span>
 
-      <div class="fc-ico" :style="{ width: c.iconSize + 'px', height: c.iconSize + 'px', fontSize: Math.round(c.iconSize / 2.2) + 'px' }">
-        {{ c.icon }}
+      <div class="fc-ico" :style="{ width: c.iconSize + 'px', height: c.iconSize + 'px' }">
+        <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(c.iconSize * ICON_RATIO) + 'px' }">{{ c.icon }}</span>
       </div>
       <div class="fc-title">{{ c.title }}</div>
       <div v-if="c.desc" class="fc-desc">{{ c.desc }}</div>
@@ -183,7 +188,9 @@ function openCard(c: CardState) {
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
 .fc-todo { position: absolute; top: 10px; right: 10px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-.fc-ico { border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; }
+.fc-ico { border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; overflow: hidden; }
+.fc-ico-txt { line-height: 1; }
+.fc-ico-img { width: 100%; height: 100%; object-fit: contain; }
 .fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; }
 .fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; }
 .fc-actions { display: flex; gap: 6px; margin-top: 8px; }
