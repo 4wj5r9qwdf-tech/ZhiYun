@@ -49,11 +49,11 @@ let resizeStartW = 0
 let resizeStartH = 0
 
 // 卡片尺寸边界（宽高独立，自由拉伸，安卓小组件式）；要调整只改这些常量
-const MIN_W = 80, MIN_H = 60        // 最小宽/高
-const MAX_W = 480, MAX_H = 320      // 最大宽/高
-const DEFAULT_W = 160, DEFAULT_H = 110 // 默认宽/高（比原来 180 小一档）
-// 图标字号 = 卡片高度 × ICON_RATIO；图片图标按 contain 自适应
-const ICON_RATIO = 0.5
+const MIN_W = 120, MIN_H = 100       // 最小宽/高（保证图标+标题+按钮放得下，不挤成细条）
+const MAX_W = 480, MAX_H = 320       // 最大宽/高
+const DEFAULT_W = 180, DEFAULT_H = 120 // 默认宽/高
+// 图标高度 = 卡片高度 × ICON_RATIO（随卡片自适应）；emoji 字号 = 图标高度 × 0.7
+const ICON_RATIO = 0.45
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
@@ -176,12 +176,12 @@ function openCard(c: CardState) {
       <i v-if="(props.todo?.[c.key] || 0) > 0" class="fc-todo">{{ props.todo![c.key] }}</i>
       <span v-if="c.isTop" class="fc-top-tag">置顶</span>
 
-      <div class="fc-ico">
+      <div class="fc-ico" :style="{ height: Math.round(c.cardH * ICON_RATIO) + 'px' }">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
-        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(c.cardH * ICON_RATIO) + 'px' }">{{ c.icon }}</span>
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(c.cardH * ICON_RATIO * 0.7) + 'px' }">{{ c.icon }}</span>
       </div>
-      <div class="fc-title">{{ c.title }}</div>
-      <div v-if="c.desc" class="fc-desc">{{ c.desc }}</div>
+      <div class="fc-title" :title="c.title">{{ c.title }}</div>
+      <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
 
       <div v-if="!readonly" class="fc-actions">
         <button class="fc-act" :class="{ on: c.isTop }" @click.stop="toggleTop(c)">置顶</button>
@@ -198,7 +198,7 @@ function openCard(c: CardState) {
 
 <style scoped>
 .fc-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-.fc-card { position: relative; width: var(--w, 160px); min-height: var(--h, 110px); background: #fff; border-radius: 10px; padding: 14px 14px; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: box-shadow .2s; user-select: none; box-sizing: border-box; }
+.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 180px); min-height: var(--h, 120px); background: #fff; border-radius: 10px; padding: 14px 14px; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: box-shadow .2s; user-select: none; box-sizing: border-box; }
 .fc-card.readonly { cursor: pointer; }
 .fc-card:hover { border-color: #1E5EFF; box-shadow: 0 4px 16px rgba(30,94,255,.12); }
 .fc-card.dragging { opacity: .5; }
@@ -206,12 +206,12 @@ function openCard(c: CardState) {
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
 .fc-todo { position: absolute; top: 10px; right: 10px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-.fc-ico { height: 56px; border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; overflow: hidden; }
+.fc-ico { border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; overflow: hidden; flex-shrink: 0; }
 .fc-ico-txt { line-height: 1; }
 .fc-ico-img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; }
-.fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; }
-.fc-actions { display: flex; gap: 6px; margin-top: 8px; }
+.fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-actions { display: flex; gap: 6px; margin-top: auto; }
 .fc-act { flex: 1; height: 26px; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 11px; color: #4E5969; cursor: pointer; }
 .fc-act:hover { border-color: #1E5EFF; color: #1E5EFF; }
 .fc-act.on { background: #E8F0FF; border-color: #1E5EFF; color: #1E5EFF; }
