@@ -57,6 +57,7 @@ const emptyForm = () => ({
   userId: null as number | null,
   jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', deptId: null as number | null,
   status: '0', remark: '',
+  password: '',          // 登录密码（新增可填，空=默认123456；编辑时填=重置）
   postIds: [] as number[],
   roleIds: [] as number[],
   ext: {
@@ -186,7 +187,7 @@ async function openEdit(row: any) {
   form.value = {
     userId: d.user_id, jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
     email: d.email || '', phoneNumber: d.phone_number || '', deptId: d.dept_id ? Number(d.dept_id) : null,
-    status: d.status || '0', remark: d.remark || '',
+    status: d.status || '0', remark: d.remark || '', password: '',
     postIds: (d.postIds || []).map(Number), roleIds: (d.roleIds || []).map(Number),
     ext: {
       maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
@@ -213,6 +214,8 @@ async function save() {
   try {
     const payload: any = { ...form.value }
     if (isEdit.value) delete payload.jobNo // 编辑不改工号
+    // 密码：新增为空→后端默认123456；编辑填了→重置，不填→不改
+    if (!payload.password) delete payload.password
     const res: any = isEdit.value
       ? await api.put('/system/person', payload)
       : await api.post('/system/person', payload)
@@ -309,6 +312,9 @@ function toggleId(arr: number[], id: number) {
             <div class="fgrid">
               <label><span class="req">*</span>工号(6位)<input v-model="form.jobNo" :disabled="isEdit" maxlength="6" placeholder="登录用户名" /></label>
               <label><span class="req">*</span>姓名<input v-model="form.name" placeholder="请输入" /></label>
+              <label>登录密码
+                <input v-model="form.password" type="password" :placeholder="isEdit ? '留空则不修改密码' : '留空默认 123456'" autocomplete="new-password" />
+              </label>
               <label>性别
                 <select v-model="form.gender"><option value="1">男</option><option value="2">女</option></select>
               </label>

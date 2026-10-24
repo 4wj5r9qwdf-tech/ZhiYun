@@ -215,11 +215,22 @@ public class PersonController {
     @PutMapping
     public R<Void> edit(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(str(body.get("userId")));
-        jdbcTemplate.update(
-            "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
-            body.get("deptId"), str(body.get("name")), str(body.get("email")),
-            str(body.get("phoneNumber")), str(body.get("gender")),
-            str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
+        String pwd = str(body.get("password"));
+        // 密码：填了就重置（BCrypt），不填不动
+        if (pwd != null && !pwd.isBlank()) {
+            jdbcTemplate.update(
+                "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, password=?, update_time=now() WHERE user_id=?",
+                body.get("deptId"), str(body.get("name")), str(body.get("email")),
+                str(body.get("phoneNumber")), str(body.get("gender")),
+                str(body.getOrDefault("status", "0")), str(body.get("remark")),
+                BCrypt.hashpw(pwd), userId);
+        } else {
+            jdbcTemplate.update(
+                "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
+                body.get("deptId"), str(body.get("name")), str(body.get("email")),
+                str(body.get("phoneNumber")), str(body.get("gender")),
+                str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
+        }
         saveExt(userId, body);
         saveRelations(userId, body);
         return R.ok();
