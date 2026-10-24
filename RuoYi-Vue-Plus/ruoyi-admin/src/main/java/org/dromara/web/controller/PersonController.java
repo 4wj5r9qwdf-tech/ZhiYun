@@ -33,45 +33,31 @@ public class PersonController {
 
     /**
      * 人员列表（分页，join 扩展表+车间+岗位+角色；敏感字段脱敏）。
-     * 筛选：keyword(工号/姓名/手机号)、emp_status、dept_id。
+     * 筛选：keyword(工号/姓名/手机号)、empStatus、deptId、gender、posts(岗位名)、roles(角色名)。
+     * 排序：orderBy=字段:asc|desc（白名单校验，防注入）。
      */
     @SaCheckPermission("system:person:list")
     @GetMapping("/list")
     public R<Map<String, Object>> list(@RequestParam(required = false) String keyword,
                                        @RequestParam(required = false) String empStatus,
                                        @RequestParam(required = false) Long deptId,
+                                       @RequestParam(required = false) String gender,
+                                       @RequestParam(required = false) String posts,
+                                       @RequestParam(required = false) String roles,
+                                       @RequestParam(required = false) String orderBy,
                                        @RequestParam(defaultValue = "1") int pageNum,
                                        @RequestParam(defaultValue = "20") int pageSize) {
         StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        if (keyword != null && !keyword.isBlank()) {
-            where.append(" AND (u.user_name LIKE ? OR u.nick_name LIKE ? OR u.phone_number LIKE ?)");
-            String kw = "%" + keyword.trim() + "%";
-            args.add(kw); args.add(kw); args.add(kw);
-        }
-        if (empStatus != null && !empStatus.isBlank()) {
-            where.append(" AND e.emp_status=?"); args.add(empStatus);
-        }
-        if (deptId != null) {
-            where.append(" AND u.dept_id=?"); args.add(deptId);
-        }
+        applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
         Long total = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_user u LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " + where, Long.class, args.toArray());
+        String order = safeOrderBy(orderBy);
         int offset = (pageNum - 1) * pageSize;
         args.add(pageSize); args.add(offset);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
-            "  u.phone_number, u.dept_id, d.dept_name, e.group_name, e.emp_status, e.emp_type, " +
-            "  e.hire_date, e.card_no, e.is_dorm, " +
-            "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
-            "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
-            "FROM sys_user u " +
-            "LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " +
-            "LEFT JOIN sys_dept d ON u.dept_id=d.dept_id " +
-            where.toString() +
-            " ORDER BY u.user_id DESC LIMIT ? OFFSET ?",
+            selectSql() + where.toString() + " ORDER BY " + order + " LIMIT ? OFFSET ?",
             args.toArray());
-        // 敏感字段脱敏（手机号）
         for (Map<String, Object> r : rows) {
             r.put("phone_masked", mask(str(r.get("phone_number"))));
         }
@@ -79,6 +65,98 @@ public class PersonController {
         result.put("rows", rows);
         result.put("total", total);
         return R.ok(result);
+    }
+
+    /**
+     * 导出人员（CSV 带 BOM，Excel 可开；全量按筛选；敏感字段脱敏）。
+     */
+    @SaCheckPermission("system:person:export")
+    @GetMapping("/export")
+    public R<Map<String, Object>> export(@RequestParam(required = false) String keyword,
+                                         @RequestParam(required = false) String empStatus,
+                                         @RequestParam(required = false) Long deptId,
+                                         @RequestParam(required = false) String gender,
+                                         @RequestParam(required = false) String posts,
+                                         @RequestParam(required = false) String roles) {
+        StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+            selectSql() + where.toString() + " ORDER BY u.user_id DESC", args.toArray());
+        for (Map<String, Object> r : rows) {
+            r.put("phone_masked", mask(str(r.get("phone_number"))));
+        }
+        StringBuilder sb = new StringBuilder("﻿工号,姓名,性别,手机号,车间,小组,岗位,角色,状态,员工卡\r\n");
+        for (Map<String, Object> r : rows) {
+            sb.append(csv(str(r.get("job_no")))).append(',')
+              .append(csv(str(r.get("name")))).append(',')
+              .append(csv("1".equals(str(r.get("gender"))) ? "男" : "2".equals(str(r.get("gender"))) ? "女" : "")).append(',')
+              .append(csv(str(r.get("phone_masked")))).append(',')
+              .append(csv(str(r.get("dept_name")))).append(',')
+              .append(csv(str(r.get("group_name")))).append(',')
+              .append(csv(str(r.get("posts")))).append(',')
+              .append(csv(str(r.get("roles")))).append(',')
+              .append(csv(str(r.get("emp_status")))).append(',')
+              .append(csv(str(r.get("card_no")))).append("\r\n");
+        }
+        String base64 = java.util.Base64.getEncoder().encodeToString(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("fileName", "人员信息.csv");
+        data.put("content", base64);
+        data.put("count", rows.size());
+        return R.ok(data);
+    }
+
+    /** 列表/导出共用 SELECT。 */
+    private String selectSql() {
+        return "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
+            "  u.phone_number, u.dept_id, d.dept_name, e.group_name, e.emp_status, e.emp_type, " +
+            "  e.hire_date, e.card_no, e.is_dorm, " +
+            "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
+            "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
+            "FROM sys_user u " +
+            "LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " +
+            "LEFT JOIN sys_dept d ON u.dept_id=d.dept_id ";
+    }
+
+    /** 组装筛选条件（列表/导出共用）。 */
+    private void applyFilters(StringBuilder where, java.util.List<Object> args,
+                              String keyword, String empStatus, Long deptId, String gender, String posts, String roles) {
+        if (keyword != null && !keyword.isBlank()) {
+            where.append(" AND (u.user_name LIKE ? OR u.nick_name LIKE ? OR u.phone_number LIKE ?)");
+            String kw = "%" + keyword.trim() + "%";
+            args.add(kw); args.add(kw); args.add(kw);
+        }
+        if (empStatus != null && !empStatus.isBlank()) { where.append(" AND e.emp_status=?"); args.add(empStatus); }
+        if (deptId != null) { where.append(" AND u.dept_id=?"); args.add(deptId); }
+        if (gender != null && !gender.isBlank()) { where.append(" AND u.gender=?"); args.add(gender); }
+        if (posts != null && !posts.isBlank()) {
+            where.append(" AND EXISTS (SELECT 1 FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id AND p.post_name LIKE ?)");
+            args.add("%" + posts.trim() + "%");
+        }
+        if (roles != null && !roles.isBlank()) {
+            where.append(" AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id AND r.role_name LIKE ?)");
+            args.add("%" + roles.trim() + "%");
+        }
+    }
+
+    /** 排序白名单（防注入）。 */
+    private String safeOrderBy(String orderBy) {
+        java.util.Map<String, String> allow = java.util.Map.of(
+            "job_no", "u.user_name", "name", "u.nick_name", "dept", "d.dept_name",
+            "group", "e.group_name", "status", "e.emp_status", "card", "e.card_no", "hire", "e.hire_date");
+        if (orderBy == null || orderBy.isBlank()) return "u.user_id DESC";
+        String[] p = orderBy.split(":");
+        String col = allow.get(p[0].trim());
+        if (col == null) return "u.user_id DESC";
+        String dir = (p.length > 1 && "asc".equalsIgnoreCase(p[1].trim())) ? "ASC" : "DESC";
+        return col + " " + dir;
+    }
+
+    /** CSV 字段转义。 */
+    private String csv(String v) {
+        if (v == null) return "";
+        return "\"" + v.replace("\"", "\"\"") + "\"";
     }
 
     /**
