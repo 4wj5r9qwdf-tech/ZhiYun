@@ -178,7 +178,7 @@ function openCard(c: CardState) {
 
       <div class="fc-ico" :style="{ height: Math.round(c.cardH * ICON_RATIO) + 'px' }">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
-        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(c.cardH * ICON_RATIO * 0.7) + 'px' }">{{ c.icon }}</span>
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.32) + 'px' }">{{ c.icon }}</span>
       </div>
       <div class="fc-title" :title="c.title">{{ c.title }}</div>
       <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
@@ -206,9 +206,9 @@ function openCard(c: CardState) {
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; }
 .fc-todo { position: absolute; top: 10px; right: 10px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-.fc-ico { border-radius: 10px; background: #E8F0FF; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; overflow: hidden; flex-shrink: 0; }
-.fc-ico-txt { line-height: 1; }
-.fc-ico-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.fc-ico { width: 100%; border-radius: 8px; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); display: flex; align-items: center; justify-content: center; margin-bottom: 10px; overflow: hidden; flex-shrink: 0; }
+.fc-ico-txt { line-height: 1; filter: grayscale(0.15); opacity: .85; }
+.fc-ico-img { max-width: 72%; max-height: 100%; object-fit: contain; }
 .fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-actions { display: flex; gap: 6px; margin-top: auto; }
