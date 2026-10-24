@@ -82,7 +82,7 @@ function navModule(key: string) {
         <div class="module-title">模块 / 系统</div>
         <div class="group">
           <div class="group-title">基础配置</div>
-          <p class="tip">拖拽卡片调顺序 · 右下角拖拽调整大小(80-320px) · 置顶/加入工作台 · 配置自动保存</p>
+          <p class="tip">拖拽卡片调顺序 · 右/下/右下角手柄自由拉伸(宽120-480/高100-320，宽高独立) · 置顶/加入工作台 · 配置自动保存</p>
           <FunctionCardGrid module-key="system" :cards="cards" :todo="todoByMenu" />
         </div>
       </div>

@@ -123,9 +123,9 @@ public class ProfileController {
         Integer cardW = body.get("cardW") != null ? Integer.valueOf(body.get("cardW").toString())
                        : (body.get("iconSize") != null ? Integer.valueOf(body.get("iconSize").toString()) : 160);
         Integer cardH = body.get("cardH") != null ? Integer.valueOf(body.get("cardH").toString()) : 110;
-        if (cardW < 80) cardW = 80;
+        if (cardW < 120) cardW = 120;
         if (cardW > 480) cardW = 480;
-        if (cardH < 60) cardH = 60;
+        if (cardH < 100) cardH = 100;
         if (cardH > 320) cardH = 320;
         Integer iconSize = cardW; // 兼容旧列，保持同步
         String isTop = (String) body.getOrDefault("isTop", "0");
