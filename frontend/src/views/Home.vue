@@ -32,7 +32,7 @@ const activeModule = computed(() => (route.path.startsWith('/person') ? 'person'
 function navModule(key: string) {
   if (key === 'workbench') router.push({ name: 'Workbench' })
   else if (key === 'system') router.push({ name: 'SystemIndex' })
-  else if (key === 'person') router.push({ name: 'Person' })
+  else if (key === 'person') router.push({ name: 'PersonIndex' })
   else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
 </script>
