@@ -52,6 +52,8 @@ async function loadUser() {
       userName.value = res.data.nick_name || res.data.user_name || ''
       userNo.value = res.data.user_name || ''
       firstChar.value = (userName.value || '织').slice(0, 1)
+      // 缓存当前登录人 userId（DataTable 等按用户持久化配置用）
+      if (res.data.user_id != null) localStorage.setItem('userId', String(res.data.user_id))
     }
   } catch { /* ignore */ }
 }
@@ -98,6 +100,7 @@ function clearSug() { setTimeout(() => { showSug.value = false }, 200) }
 
 function logout() {
   localStorage.removeItem('token')
+  localStorage.removeItem('userId')
   router.push({ name: 'Login' })
 }
 </script>
