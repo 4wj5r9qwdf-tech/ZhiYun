@@ -51,7 +51,7 @@ let resizeStartH = 0
 // 卡片尺寸边界（宽高独立，自由拉伸，安卓小组件式）；要调整只改这些常量
 const MIN_W = 120, MIN_H = 100       // 最小宽/高（保证图标+标题+按钮放得下，不挤成细条）
 const MAX_W = 480, MAX_H = 320       // 最大宽/高
-const DEFAULT_W = 140, DEFAULT_H = 140 // 默认宽/高（正方形）
+const DEFAULT_W = 160, DEFAULT_H = 160 // 默认宽/高（正方形）
 // 图标高度 = 卡片高度 × ICON_RATIO（随卡片自适应）；emoji 字号 = 图标高度 × 0.7
 const ICON_RATIO = 0.45
 
@@ -176,10 +176,10 @@ function openCard(c: CardState) {
       <i v-if="(props.todo?.[c.key] || 0) > 0" class="fc-todo">{{ props.todo![c.key] }}</i>
       <span v-if="c.isTop" class="fc-top-tag">置顶</span>
 
-      <!-- 图标区铺满整卡（背景），标题/描述/按钮叠加在底部 -->
+      <!-- 图标区：flex 撑满上方（居中，不被文字盖）；文字/按钮固定底部 -->
       <div class="fc-ico">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
-        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.3) + 'px' }">{{ c.icon }}</span>
+        <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.36) + 'px' }">{{ c.icon }}</span>
       </div>
       <div class="fc-body">
         <div class="fc-title" :title="c.title">{{ c.title }}</div>
@@ -209,12 +209,12 @@ function openCard(c: CardState) {
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; z-index: 2; }
 .fc-todo { position: absolute; top: 8px; right: 8px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
-/* 图标区铺满整卡（背景层） */
-.fc-ico { position: absolute; inset: 0; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+/* 图标区：撑满上方剩余空间，居中；柔和渐变背景做卡片底 */
+.fc-ico { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); overflow: hidden; }
 .fc-ico-txt { line-height: 1; filter: grayscale(0.12); opacity: .9; }
-.fc-ico-img { max-width: 64%; max-height: 64%; object-fit: contain; }
-/* 文字/按钮层：贴卡片底部，半透明白底渐隐，压在图标区上 */
-.fc-body { position: relative; z-index: 1; margin-top: auto; padding: 24px 12px 12px; background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,.85) 40%, #fff 100%); }
+.fc-ico-img { max-width: 64%; max-height: 80%; object-fit: contain; }
+/* 文字/按钮层：固定底部，白底不透明（不再盖图标） */
+.fc-body { position: relative; z-index: 1; flex: none; padding: 8px 12px 12px; background: #fff; border-top: 1px solid #F0F2F5; }
 .fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-actions { display: flex; gap: 6px; margin-top: auto; }
