@@ -56,8 +56,9 @@ async function handleLogin() {
       localStorage.setItem('token', res.data.access_token)
       successMsg.value = '登录成功，正在跳转...'
       // 登录成功提示：右上角弹"欢迎，"+ 绿色提示条（延迟 1s 跳转，让用户看到提示）
+      // 首页=工作台
       setTimeout(() => {
-        router.push({ name: 'Home' })
+        router.push({ name: 'Workbench' })
       }, 1000)
     } else {
       errorMsg.value = res.msg || '登录失败'

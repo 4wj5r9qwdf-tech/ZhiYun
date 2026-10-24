@@ -123,6 +123,70 @@ INSERT INTO sys_company (company_id, company_name, is_default, status, del_flag,
 SELECT 1762400000000000002, '河北依时华服饰有限公司', '0', '0', '0', now()
 WHERE NOT EXISTS (SELECT 1 FROM sys_company WHERE company_id = 1762400000000000002);
 
+-- ------------------------------------------------------------
+-- 6. 用户功能菜单配置（2026-10-24）
+--    用户对每个功能卡片的个性化配置：排序/图标像素大小/置顶/加入工作台
+--    支持自由拖拽像素大小（有min/max限制），安卓小组件式网格重排
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_user_menu_config (
+    user_id     bigint       NOT NULL,                 -- 用户ID（→ sys_user.user_id）
+    menu_key    varchar(50)  NOT NULL,                 -- 功能标识（前端 modules/systemCards 的 key）
+    sort        int          NOT NULL DEFAULT 0,       -- 排序（拖拽后记录）
+    icon_size   int          NOT NULL DEFAULT 180,     -- 图标/卡片像素大小（自由拖拽，min 80 max 320）
+    is_top      char(1)      NOT NULL DEFAULT '0',     -- 是否置顶 0否 1是
+    in_workbench char(1)     NOT NULL DEFAULT '0',     -- 是否加入工作台 0否 1是
+    create_time timestamp    DEFAULT CURRENT_TIMESTAMP,
+    update_time timestamp,
+    CONSTRAINT sys_user_menu_config_pk PRIMARY KEY (user_id, menu_key)
+);
+
+COMMENT ON TABLE  sys_user_menu_config          IS '用户功能菜单配置（拖拽排序/图标像素大小/置顶/加入工作台）';
+COMMENT ON COLUMN sys_user_menu_config.menu_key IS '功能标识（前端功能卡key）';
+COMMENT ON COLUMN sys_user_menu_config.icon_size IS '图标像素大小（自由拖拽，80-320）';
+COMMENT ON COLUMN sys_user_menu_config.is_top   IS '置顶 0否1是';
+COMMENT ON COLUMN sys_user_menu_config.in_workbench IS '加入工作台 0否1是';
+
+-- ------------------------------------------------------------
+-- 7. 用户工作台（2026-10-24）
+--    登录后默认首页=工作台，聚合用户加入的功能 + 待办汇总
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_user_workbench (
+    user_id      bigint       NOT NULL,
+    menu_key     varchar(50)  NOT NULL,
+    sort         int          NOT NULL DEFAULT 0,
+    create_time  timestamp    DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT sys_user_workbench_pk PRIMARY KEY (user_id, menu_key)
+);
+
+COMMENT ON TABLE sys_user_workbench IS '用户工作台（登录默认首页，聚合加入的功能）';
+
+-- ------------------------------------------------------------
+-- 8. 统一待办表（2026-10-24 占位，业务模块开发后接入真实数据）
+--    红点级联：模块红点=该模块下所有功能待办数累加；功能卡红点=自己的数
+--    无待办不显示红点（count=0 时前端不显示）
+--    后期：审批完成/预警处理后减少对应 todo
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_todo (
+    todo_id      bigint       NOT NULL,
+    user_id      bigint,                              -- 归属用户（空=按模块/功能待办，任何人可见）
+    module_key   varchar(50)  NOT NULL,               -- 所属模块（order/prod/.../system）
+    menu_key     varchar(50)  NOT NULL,               -- 所属功能（company/...）
+    title        varchar(200),                        -- 待办标题
+    status       char(1)      NOT NULL DEFAULT '0',   -- 0待处理 1已完成
+    biz_id       bigint,                              -- 业务单据ID（审批/预警等，后期关联）
+    biz_type     varchar(50),                         -- 业务类型（approve/alert/...）
+    create_time  timestamp     DEFAULT CURRENT_TIMESTAMP,
+    handle_time  timestamp,
+    CONSTRAINT sys_todo_pk PRIMARY KEY (todo_id)
+);
+
+COMMENT ON TABLE  sys_todo              IS '统一待办表（红点占位，业务模块开发后接入真实数据）';
+COMMENT ON COLUMN sys_todo.module_key   IS '所属模块（左侧导航模块key，红点模块级累加）';
+COMMENT ON COLUMN sys_todo.menu_key     IS '所属功能（功能卡key，红点功能级）';
+COMMENT ON COLUMN sys_todo.status       IS '0待处理(计红点) 1已完成(不计)';
+
+CREATE INDEX IF NOT EXISTS idx_sys_todo_module ON sys_todo (module_key, menu_key, status);
+
 COMMIT;
 
 -- ============================================================
@@ -131,4 +195,5 @@ COMMIT;
 --   2. SELECT perms FROM sys_menu WHERE perms='system:user:sensitive';  -- 1 行
 --   3. SELECT column_name FROM information_schema.columns
 --      WHERE table_name='sys_role' AND column_name='data_scope_dept_ids';  -- 1 行
+--   4. \d sys_user_menu_config / sys_user_workbench / sys_todo  -- 3 张新表
 -- ============================================================
