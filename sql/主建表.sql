@@ -191,6 +191,64 @@ COMMENT ON COLUMN sys_todo.status       IS '0待处理(计红点) 1已完成(不
 
 CREATE INDEX IF NOT EXISTS idx_sys_todo_module ON sys_todo (module_key, menu_key, status);
 
+-- ------------------------------------------------------------
+-- 9. 人员扩展信息表（2026-10-24 定稿，人员模块）
+--    一对一挂 sys_user（user_id 主键同 sys_user）；建人员=同写 sys_user+本表+岗位角色关系
+--    sys_user 存登录账号+基础身份/联系方式；本表存任职/合同薪酬/社保保险/证件/住宿
+--    住宿只登记"是否住宿"(is_dorm)，床位/费用在宿舍模块管理，不进本表
+--    敏感字段（证件号/手机号/银行卡）脱敏展示
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_person_ext (
+    user_id            bigint        NOT NULL,          -- 主键=sys_user.user_id（员工ID，不变）
+    -- 基本信息
+    marital_status     varchar(10),                     -- 婚姻状况 未婚/已婚/离异
+    cert_type          varchar(20),                     -- 证件类型 身份证/护照/其他
+    cert_no            varchar(50),                     -- 证件号码（敏感，脱敏）
+    nation             varchar(20),                     -- 民族
+    education          varchar(20),                     -- 学历
+    birth_date         date,                            -- 出生日期
+    graduate_school    varchar(100),                    -- 毕业院校
+    native_place       varchar(100),                    -- 籍贯
+    address            varchar(200),                    -- 详细地址
+    cert_expire_date   date,                            -- 证件到期日（进证件预警）
+    -- 任职信息（车间=sys_user.dept_id；岗位/角色走 sys_user_post/sys_user_role）
+    hire_date          date,                            -- 入职日期（必填）
+    group_name         varchar(50),                     -- 小组（文本登记，小组档案后期若建表再改关联）
+    emp_type           varchar(20),                     -- 员工性质 正式/临时/劳务
+    leave_date         date,                            -- 离职日期
+    card_no            varchar(30),                     -- 员工卡（工牌号）
+    emp_status         varchar(10)  NOT NULL DEFAULT '试用', -- 在职状态 试用/在职/离职/长假
+    -- 合同薪酬
+    bank_card_no       varchar(30),                     -- 银行卡号（敏感，脱敏）
+    sign_entity        varchar(100),                    -- 签约主体
+    contract_years     int,                             -- 合同年限
+    contract_start     date,                            -- 合同签订日期
+    contract_end       date,                            -- 合同截止日期
+    -- 社保保险登记（独立块）
+    has_social         char(1)       DEFAULT '0',       -- 是否缴纳社保 0否 1是（临工可0）
+    social_amount      numeric(10,2),                   -- 社保缴纳金额 元/月
+    social_subsidy     numeric(10,2),                   -- 社保补助金额 元/月
+    has_commercial     char(1)       DEFAULT '0',       -- 是否缴纳商业险 0否 1是
+    commercial_type    varchar(100),                    -- 商业险种（意外险/雇主责任险等）
+    social_check_date  date,                            -- 社保核对日期（留痕）
+    -- 住宿（只登记住不住，床位在宿舍模块）
+    is_dorm            char(1)       DEFAULT '0',       -- 是否住宿 0否 1是
+    create_time        timestamp     DEFAULT CURRENT_TIMESTAMP,
+    update_time        timestamp,
+    CONSTRAINT sys_person_ext_pk PRIMARY KEY (user_id)
+);
+
+COMMENT ON TABLE  sys_person_ext              IS '人员扩展信息（一对一挂sys_user；任职/合同薪酬/社保保险/证件/住宿登记）';
+COMMENT ON COLUMN sys_person_ext.user_id      IS '主键=sys_user.user_id（员工ID，不变）';
+COMMENT ON COLUMN sys_person_ext.cert_no      IS '证件号码（敏感，脱敏展示）';
+COMMENT ON COLUMN sys_person_ext.hire_date    IS '入职日期（必填）';
+COMMENT ON COLUMN sys_person_ext.group_name   IS '小组（文本登记）';
+COMMENT ON COLUMN sys_person_ext.emp_status   IS '在职状态 试用/在职/离职/长假（状态机）';
+COMMENT ON COLUMN sys_person_ext.bank_card_no IS '银行卡号（敏感，脱敏展示）';
+COMMENT ON COLUMN sys_person_ext.has_social   IS '是否缴纳社保 0否1是（临工可0）';
+COMMENT ON COLUMN sys_person_ext.has_commercial IS '是否缴纳商业险 0否1是（保险=商业险）';
+COMMENT ON COLUMN sys_person_ext.is_dorm      IS '是否住宿 0否1是（只登记，床位在宿舍模块）';
+
 COMMIT;
 
 -- ============================================================
@@ -199,5 +257,5 @@ COMMIT;
 --   2. SELECT perms FROM sys_menu WHERE perms='system:user:sensitive';  -- 1 行
 --   3. SELECT column_name FROM information_schema.columns
 --      WHERE table_name='sys_role' AND column_name='data_scope_dept_ids';  -- 1 行
---   4. \d sys_user_menu_config / sys_user_workbench / sys_todo  -- 3 张新表
+--   4. \d sys_user_menu_config / sys_user_workbench / sys_todo / sys_person_ext  -- 4 张新表
 -- ============================================================

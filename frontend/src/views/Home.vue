@@ -4,11 +4,12 @@
  * 内容区按子路由渲染：'' → SystemIndex(功能卡片)，'company' → Company(公司档案)
  * 左侧导航和顶栏常驻，子页面切换不丢导航。
  */
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 // 左侧模块导航
 const modules = [
@@ -26,12 +27,12 @@ const modules = [
   { key: 'alert', icon: '🔔', label: '预警' },
   { key: 'system', icon: '⚙️', label: '系统' },
 ]
-const activeModule = ref('system')
+const activeModule = computed(() => (route.path.startsWith('/person') ? 'person' : 'system'))
 
 function navModule(key: string) {
-  activeModule.value = key
   if (key === 'workbench') router.push({ name: 'Workbench' })
   else if (key === 'system') router.push({ name: 'SystemIndex' })
+  else if (key === 'person') router.push({ name: 'Person' })
   else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
 </script>
@@ -56,7 +57,7 @@ function navModule(key: string) {
       <TopBar />
 
       <div class="content">
-        <div class="module-title">模块 / 系统</div>
+        <div class="module-title">模块 / {{ activeModule === 'person' ? '人员' : '系统' }}</div>
         <router-view />
       </div>
     </div>
