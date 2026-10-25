@@ -61,11 +61,22 @@ function fmtYear(v: any) {
   return String(v)
 }
 
+// 后端 JdbcTemplate 直接返回数据库列名（下划线），统一转驼峰供组件用
+function toCamel(o: any): any {
+  if (o === null || o === undefined) return o
+  const out: any = {}
+  for (const k of Object.keys(o)) {
+    const ck = k.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+    out[ck] = o[k]
+  }
+  return out
+}
+
 async function loadList() {
   loading.value = true
   try {
     const res: any = await api.get('/system/building/list', { params: { buildingType: buildingType.value ?? '' } })
-    if (res.code === 200) rows.value = res.data || []
+    if (res.code === 200) rows.value = (res.data || []).map(toCamel)
     else message.error(res.msg || '加载建筑失败')
   } catch (e: any) {
     message.error(e?.response?.data?.msg || '加载建筑失败')
@@ -111,7 +122,7 @@ async function openEdit(row: any) {
   let d: any = null
   try {
     const res: any = await api.get(`/system/building/${row.plantId}`)
-    if (res.code === 200) d = res.data
+    if (res.code === 200) d = toCamel(res.data)
   } catch { d = null }
   if (!d) d = row
   form.value = {
