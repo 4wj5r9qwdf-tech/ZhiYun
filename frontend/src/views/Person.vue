@@ -36,22 +36,24 @@ const orderBy = ref('')   // 字段:asc|desc
 const statusColor: Record<string, string> = { 试用: 'orange', 在职: 'green', 离职: 'red', 长假: 'blue' }
 
 // 表格列（a-table）：sortable → 后端 orderBy；fixed 操作列
+// 列不设固定 width，让表格自适应撑满容器；用户拖拽改宽后由 colState.width 覆盖
 const ALL_COLUMNS = [
-  { title: '工号', dataIndex: 'job_no', key: 'job_no', width: 100, sorter: true },
-  { title: '姓名', dataIndex: 'name', key: 'name', width: 120, sorter: true },
-  { title: '性别', dataIndex: 'gender', key: 'gender', width: 70 },
-  { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked', width: 120 },
-  { title: '车间', dataIndex: 'dept_name', key: 'dept_name', width: 120, sorter: true },
-  { title: '小组', dataIndex: 'group_name', key: 'group_name', width: 100, sorter: true },
-  { title: '岗位', dataIndex: 'posts', key: 'posts', width: 120, ellipsis: true },
-  { title: '角色', dataIndex: 'roles', key: 'roles', width: 120, ellipsis: true },
-  { title: '状态', dataIndex: 'emp_status', key: 'emp_status', width: 90, sorter: true },
-  { title: '员工卡', dataIndex: 'card_no', key: 'card_no', width: 100, sorter: true },
+  { title: '工号', dataIndex: 'job_no', key: 'job_no', sorter: true },
+  { title: '姓名', dataIndex: 'name', key: 'name', sorter: true },
+  { title: '性别', dataIndex: 'gender', key: 'gender' },
+  { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked' },
+  { title: '车间', dataIndex: 'dept_name', key: 'dept_name', sorter: true },
+  { title: '小组', dataIndex: 'group_name', key: 'group_name', sorter: true },
+  { title: '岗位', dataIndex: 'posts', key: 'posts', ellipsis: true },
+  { title: '角色', dataIndex: 'roles', key: 'roles', ellipsis: true },
+  { title: '状态', dataIndex: 'emp_status', key: 'emp_status', sorter: true },
+  { title: '员工卡', dataIndex: 'card_no', key: 'card_no', sorter: true },
 ]
 
 // 列设置：显隐 + 顺序 + 列宽，按"列表页+用户"持久化（localStorage，key 带 userId）
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
+const colSetOpen = ref(false)   // 列设置下拉受控开关（操作期间保持打开）
 const colStoreKey = computed(() => `person_list:${localStorage.getItem('userId') || 'anon'}`)
 
 function loadColState() {
@@ -62,12 +64,12 @@ function loadColState() {
       const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
       const ordered: ColState[] = []
       for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
-      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true, width: c.width })
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
       colState.value = ordered
       return
     }
   } catch { /* ignore */ }
-  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true, width: c.width }))
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
 }
 function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
 function toggleCol(key: string) {
@@ -75,7 +77,7 @@ function toggleCol(key: string) {
   if (s) { s.visible = !s.visible; saveColState() }
 }
 function showAllCols() {
-  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true, width: c.width }))
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
   saveColState()
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
@@ -139,7 +141,7 @@ const columns = computed(() => {
     .filter(c => c.visible)
     .map(c => {
       const base = ALL_COLUMNS.find(a => a.key === c.key)!
-      return { ...base, width: c.width ?? base.width }
+      return { ...base, width: c.width }
     })
     .filter(Boolean)
   return [...list, ops]
@@ -404,10 +406,10 @@ function resetFilter() {
       <a-button @click="resetFilter">重置</a-button>
     </div>
 
-    <!-- 列表工具行：条数 + 列设置 -->
+    <!-- 列表工具行：条数 + 列设置（受控下拉，操作期间不自动收起） -->
     <div class="table-bar">
       <span class="total">共 {{ total }} 条</span>
-      <a-dropdown :trigger="['click']">
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button size="middle">⚙ 列设置</a-button>
         <template #overlay>
           <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
@@ -419,7 +421,10 @@ function resetFilter() {
               </span>
             </div>
             <a-divider style="margin: 6px 0" />
-            <a size="small" @click="showAllCols">恢复默认（全部显示+顺序）</a>
+            <div class="col-set-foot">
+              <a size="small" @click="showAllCols">恢复默认</a>
+              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+            </div>
           </a-card>
         </template>
       </a-dropdown>
@@ -561,6 +566,7 @@ function resetFilter() {
 .col-move { display: inline-flex; }
 .col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
 .col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
+.col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
 
 /* 表格：撑满容器 + 列间浅竖线（不加粗外框，保持美观） */
 .person-table { width: 100%; background: #fff; border-radius: 10px; }
