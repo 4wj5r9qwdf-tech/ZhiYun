@@ -252,6 +252,39 @@ COMMENT ON COLUMN sys_person_ext.has_social   IS '是否缴纳社保 0否1是（
 COMMENT ON COLUMN sys_person_ext.has_commercial IS '是否缴纳商业险 0否1是（保险=商业险）';
 COMMENT ON COLUMN sys_person_ext.is_dorm      IS '是否住宿 0否1是（只登记，床位在宿舍模块）';
 
+-- ------------------------------------------------------------
+-- 2. 厂房档案（物理资产，非部门）
+--    厂房=一栋建筑/固定资产（面积/楼层/地址/产能），是"地"；
+--    部门(车间/组)=管人的组织，是"人"，坐落在厂房里。
+--    一厂房=一一车间（一号厂房=一号车间，物理/管理两种称谓）。
+--    关联：sys_dept 车间节点加 plant_id 指向本表（只车间层关联，下面区域/组继承）。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_plant (
+    plant_id       bigint       NOT NULL,                -- 厂房ID
+    plant_code     varchar(20),                          -- 厂房编号（如 P1/P2/P3）
+    plant_name     varchar(50)  NOT NULL,                -- 厂房名称（一号厂房/二号厂房…）
+    floor_info     varchar(50),                          -- 柜层情况（单层/双层/三层…）
+    land_area      numeric(12,2),                        -- 占地面积 ㎡
+    building_area  numeric(12,2),                        -- 建筑面积 ㎡
+    address        varchar(200),                         -- 地址
+    built_year     int,                                  -- 建成年份
+    status         char(1)       DEFAULT '0',            -- 状态 0在用 1闲置 2维修
+    remark         varchar(500),                         -- 备注
+    del_flag       char(1)       DEFAULT '0',            -- 删除标志 0存在 1删除
+    create_by      bigint,                                -- 创建者
+    create_time    timestamp     DEFAULT CURRENT_TIMESTAMP,
+    update_by      bigint,                                -- 更新者
+    update_time    timestamp,                             -- 更新时间
+    CONSTRAINT sys_plant_pk PRIMARY KEY (plant_id)
+);
+
+COMMENT ON TABLE  sys_plant              IS '厂房档案（物理资产/固定资产；厂房=建筑，部门坐落在厂房里，一厂房=一车间）';
+COMMENT ON COLUMN sys_plant.plant_code   IS '厂房编号（如 P1/P2/P3）';
+COMMENT ON COLUMN sys_plant.floor_info   IS '柜层情况（单层/双层/三层…）';
+COMMENT ON COLUMN sys_plant.land_area    IS '占地面积 ㎡';
+COMMENT ON COLUMN sys_plant.building_area IS '建筑面积 ㎡';
+COMMENT ON COLUMN sys_plant.status       IS '状态 0在用 1闲置 2维修';
+
 COMMIT;
 
 -- ============================================================

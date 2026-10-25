@@ -35,6 +35,7 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' },
   { key: 'person_group', title: '小组管理', desc: '小组挂车间/区域下', icon: 'ClusterOutlined', route: 'GroupManage', module: 'person' },
   { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' },
+  { key: 'person_plant', title: '厂房档案', desc: '物理资产(面积/楼层)', icon: 'ShopOutlined', route: 'PlantManage', module: 'person' },
 ]
 
 // 取某模块的功能卡片
