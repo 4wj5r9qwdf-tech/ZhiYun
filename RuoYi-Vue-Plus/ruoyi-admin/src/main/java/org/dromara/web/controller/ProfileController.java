@@ -1,6 +1,7 @@
 package org.dromara.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.crypto.digest.BCrypt;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.satoken.utils.LoginHelper;
@@ -161,4 +162,51 @@ public class ProfileController {
             "SELECT menu_key, sort FROM sys_user_workbench WHERE user_id=? ORDER BY sort", userId);
         return R.ok(rows);
     }
+
+    /**
+     * 本人修改密码（右上角个人中心）：校验原密码 → 改为新密码（BCrypt）。
+     * body: { oldPassword, newPassword }
+     */
+    @PutMapping("/password")
+    public R<Void> changePassword(@RequestBody Map<String, Object> body) {
+        Long userId = LoginHelper.getUserId();
+        String oldPwd = str(body.get("oldPassword"));
+        String newPwd = str(body.get("newPassword"));
+        if (oldPwd == null || oldPwd.isBlank()) return R.fail("请输入原密码");
+        if (newPwd == null || newPwd.length() < 6) return R.fail("新密码至少 6 位");
+        // 超管密码由 .env 的 SUPER_ADMIN_PASSWORD 控制（登录走配置旁路、不查库），不在此改
+        if (LoginHelper.isSuperAdmin()) {
+            return R.fail("超级管理员密码由服务器配置文件(.env)控制，请修改 SUPER_ADMIN_PASSWORD 后重启");
+        }
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "SELECT password FROM sys_user WHERE user_id=?", userId);
+        String stored = str(row.get("password"));
+        if (stored == null || !BCrypt.checkpw(oldPwd, stored)) {
+            return R.fail("原密码错误");
+        }
+        jdbcTemplate.update("UPDATE sys_user SET password=?, update_time=now() WHERE user_id=?",
+            BCrypt.hashpw(newPwd), userId);
+        return R.ok();
+    }
+
+    /**
+     * 本人修改资料（昵称/手机号/邮箱，右上角个人中心）。
+     * body: { nickName, phoneNumber, email }
+     */
+    @PutMapping
+    public R<Void> updateProfile(@RequestBody Map<String, Object> body) {
+        Long userId = LoginHelper.getUserId();
+        String nickName = str(body.get("nickName"));
+        String phone = str(body.get("phoneNumber"));
+        String email = str(body.get("email"));
+        if (nickName == null || nickName.isBlank()) return R.fail("昵称不能为空");
+        if (phone != null && !phone.isBlank() && !phone.matches("\\d{11}")) return R.fail("手机号需为 11 位");
+        jdbcTemplate.update(
+            "UPDATE sys_user SET nick_name=?, phone_number=?, email=?, update_time=now() WHERE user_id=?",
+            nickName, phone == null ? "" : phone, email == null ? "" : email, userId);
+        return R.ok();
+    }
+
+    /** null 安全取字符串 */
+    private String str(Object o) { return o == null ? null : String.valueOf(o); }
 }

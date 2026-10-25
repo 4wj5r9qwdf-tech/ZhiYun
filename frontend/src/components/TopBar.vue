@@ -7,7 +7,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
-import { BellOutlined, LogoutOutlined } from '@ant-design/icons-vue'
+import { BellOutlined, LogoutOutlined, SettingOutlined, LockOutlined } from '@ant-design/icons-vue'
 import api from '../api'
 
 const emit = defineEmits<{ (e: 'search', keyword: string): void }>()
@@ -104,7 +104,13 @@ function pickSug(vOrS: any, opt?: any) {
 }
 
 function onUserMenuClick({ key }: { key: string | number }) {
-  if (key === 'logout') {
+  if (key === 'profile') {
+    userMenuOpen.value = false
+    openProfile()
+  } else if (key === 'password') {
+    userMenuOpen.value = false
+    openPassword()
+  } else if (key === 'logout') {
     userMenuOpen.value = false
     logout()
   }
@@ -114,6 +120,68 @@ function logout() {
   localStorage.removeItem('token')
   localStorage.removeItem('userId')
   router.push({ name: 'Login' })
+}
+
+// ===== 个人中心：修改资料 / 修改密码 =====
+const profileOpen = ref(false)
+const profileSaving = ref(false)
+const profileForm = ref({ nickName: '', phoneNumber: '', email: '' })
+const pwdOpen = ref(false)
+const pwdSaving = ref(false)
+const pwdForm = ref({ oldPassword: '', newPassword: '', confirm: '' })
+
+async function openProfile() {
+  profileForm.value = { nickName: userName.value, phoneNumber: '', email: '' }
+  try {
+    const res: any = await api.get('/system/profile/info')
+    if (res.code === 200 && res.data) {
+      profileForm.value = {
+        nickName: res.data.nick_name || '',
+        phoneNumber: res.data.phone_number || '',
+        email: res.data.email || '',
+      }
+    }
+  } catch { /* ignore */ }
+  profileOpen.value = true
+}
+
+async function saveProfile() {
+  if (!profileForm.value.nickName.trim()) { message.warning('昵称不能为空'); return }
+  profileSaving.value = true
+  try {
+    const res: any = await api.put('/system/profile', {
+      nickName: profileForm.value.nickName.trim(),
+      phoneNumber: profileForm.value.phoneNumber.trim(),
+      email: profileForm.value.email.trim(),
+    })
+    if (res.code === 200) {
+      message.success('资料已更新')
+      profileOpen.value = false
+      await loadUser()  // 刷新右上角昵称
+    } else message.error(res.msg || '保存失败')
+  } catch (e: any) { message.error(e?.response?.data?.msg || '保存失败') }
+  finally { profileSaving.value = false }
+}
+
+function openPassword() {
+  pwdForm.value = { oldPassword: '', newPassword: '', confirm: '' }
+  pwdOpen.value = true
+}
+
+async function savePassword() {
+  const { oldPassword, newPassword, confirm } = pwdForm.value
+  if (!oldPassword) { message.warning('请输入原密码'); return }
+  if (!newPassword || newPassword.length < 6) { message.warning('新密码至少 6 位'); return }
+  if (newPassword !== confirm) { message.warning('两次输入的新密码不一致'); return }
+  pwdSaving.value = true
+  try {
+    const res: any = await api.put('/system/profile/password', { oldPassword, newPassword })
+    if (res.code === 200) {
+      message.success('密码修改成功，下次登录用新密码')
+      pwdOpen.value = false
+    } else message.error(res.msg || '修改失败')
+  } catch (e: any) { message.error(e?.response?.data?.msg || '修改失败') }
+  finally { pwdSaving.value = false }
 }
 </script>
 
@@ -181,6 +249,13 @@ function logout() {
               <span class="menu-info">{{ userName }}<span v-if="userNo" class="menu-sub">工号 {{ userNo }}</span></span>
             </a-menu-item>
             <a-menu-divider />
+            <a-menu-item key="profile">
+              <setting-outlined /> 个人资料
+            </a-menu-item>
+            <a-menu-item key="password">
+              <lock-outlined /> 修改密码
+            </a-menu-item>
+            <a-menu-divider />
             <a-menu-item key="logout">
               <logout-outlined /> 退出登录
             </a-menu-item>
@@ -188,6 +263,39 @@ function logout() {
         </template>
       </a-dropdown>
     </div>
+
+    <!-- 个人资料 -->
+    <a-modal v-model:open="profileOpen" title="个人资料" width="420px" ok-text="保存" cancel-text="取消"
+      :confirm-loading="profileSaving" @ok="saveProfile">
+      <a-form layout="vertical">
+        <a-form-item label="昵称">
+          <a-input v-model:value="profileForm.nickName" placeholder="显示名称" allow-clear />
+        </a-form-item>
+        <a-form-item label="手机号">
+          <a-input v-model:value="profileForm.phoneNumber" :maxlength="11" placeholder="11 位手机号" allow-clear />
+        </a-form-item>
+        <a-form-item label="邮箱">
+          <a-input v-model:value="profileForm.email" placeholder="选填" allow-clear />
+        </a-form-item>
+        <div class="tip">工号（登录用户名）不可修改；如需改工号请联系管理员。</div>
+      </a-form>
+    </a-modal>
+
+    <!-- 修改密码 -->
+    <a-modal v-model:open="pwdOpen" title="修改密码" width="400px" ok-text="确认修改" cancel-text="取消"
+      :confirm-loading="pwdSaving" @ok="savePassword">
+      <a-form layout="vertical">
+        <a-form-item label="原密码">
+          <a-input-password v-model:value="pwdForm.oldPassword" placeholder="请输入当前密码" autocomplete="current-password" />
+        </a-form-item>
+        <a-form-item label="新密码">
+          <a-input-password v-model:value="pwdForm.newPassword" placeholder="至少 6 位" autocomplete="new-password" />
+        </a-form-item>
+        <a-form-item label="确认新密码">
+          <a-input-password v-model:value="pwdForm.confirm" placeholder="再输一遍新密码" autocomplete="new-password" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </header>
 </template>
 
@@ -230,4 +338,5 @@ function logout() {
 .uname { font-size: 14px; color: #1D2129; }
 .menu-info { display: flex; flex-direction: column; }
 .menu-sub { font-size: 12px; color: #86909C; }
+.tip { font-size: 12px; color: #86909C; line-height: 1.5; }
 </style>
