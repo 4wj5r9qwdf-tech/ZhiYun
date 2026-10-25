@@ -460,15 +460,9 @@ function resetFilter() {
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
         <span class="head-title">人员信息</span>
       </div>
-      <div class="head-actions">
-        <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
-        <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
-        <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
-        <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
-      </div>
     </div>
 
-    <!-- 筛选（a-input/a-select 统一控件） -->
+    <!-- 筛选 + 操作（同一行：筛选控件在左，新增/导入/导出靠右） -->
     <div class="filter-bar">
       <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
       <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
@@ -490,6 +484,11 @@ function resetFilter() {
       <a-button @click="resetFilter">重置</a-button>
       <a-divider type="vertical" />
       <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
+      <div class="filter-spacer"></div>
+      <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
+      <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
+      <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
+      <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
     </div>
 
     <!-- 列表工具行：条数 + 列设置（受控下拉，操作期间不自动收起） -->
@@ -648,9 +647,9 @@ function resetFilter() {
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
-.head-actions { display: flex; gap: 8px; align-items: center; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.filter-spacer { flex: 1 1 auto; min-width: 8px; }
 
 /* 表格工具行（条数 + 列设置） */
 .table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
