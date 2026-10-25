@@ -20,12 +20,17 @@ const modules = MODULES
 // 动态解析 antd 图标组件（icon 存的是组件名字符串）
 const Icon = (name: string) => (AntIcons as any)[name]
 
-const activeModule = computed(() => (route.path.startsWith('/person') ? 'person' : 'system'))
+const activeModule = computed(() => {
+  if (route.path.startsWith('/person')) return 'person'
+  if (route.path.startsWith('/property')) return 'property'
+  return 'system'
+})
 
 function navModule(key: string) {
   if (key === 'workbench') router.push({ name: 'Workbench' })
   else if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
+  else if (key === 'property') router.push({ name: 'PropertyIndex' })
   else {
     const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
     message.info(`「${label}」模块开发中`)
@@ -53,7 +58,7 @@ function navModule(key: string) {
       <TopBar />
 
       <div class="content">
-        <div class="module-title">模块 / {{ activeModule === 'person' ? '人员' : '系统' }}</div>
+        <div class="module-title">模块 / {{ activeModule === 'person' ? '人员' : activeModule === 'property' ? '物业资产' : '系统' }}</div>
         <router-view />
       </div>
     </div>

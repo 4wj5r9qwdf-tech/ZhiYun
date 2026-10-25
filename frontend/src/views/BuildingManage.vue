@@ -187,7 +187,7 @@ onMounted(loadList)
   <div>
     <div class="page-header">
       <div class="head-left">
-        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
+        <a class="back" @click.prevent="router.push({ name: 'PropertyIndex' })" href="javascript:;">←</a>
         <span class="head-title">建筑档案</span>
         <span class="head-sub">建筑=物理资产（一栋楼：面积/楼层/地址/建成年份），部门坐落在建筑里</span>
       </div>
