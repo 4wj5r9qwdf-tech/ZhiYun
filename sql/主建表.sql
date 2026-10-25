@@ -253,17 +253,19 @@ COMMENT ON COLUMN sys_person_ext.has_commercial IS '是否缴纳商业险 0否1�
 COMMENT ON COLUMN sys_person_ext.is_dorm      IS '是否住宿 0否1是（只登记，床位在宿舍模块）';
 
 -- ------------------------------------------------------------
--- 2. 厂房档案（物理资产，非部门）
---    厂房=一栋建筑/固定资产（面积/楼层/地址/产能），是"地"；
---    部门(车间/组)=管人的组织，是"人"，坐落在厂房里。
---    一厂房=一一车间（一号厂房=一号车间，物理/管理两种称谓）。
---    关联：sys_dept 车间节点加 plant_id 指向本表（只车间层关联，下面区域/组继承）。
+-- 2. 建筑档案（物理资产/固定资产，非部门）
+--    建筑=一栋楼/固定资产（面积/楼层/地址/建成年份），是"地"；
+--    部门(车间/组)=管人的组织，是"人"，坐落在建筑里。
+--    用途类别：厂房/行政楼/宿舍楼（**仓库是建筑内区域，不在此列**）。
+--    厂房一建筑=一一车间（一号厂房=一号车间，物理/管理两种称谓）。
+--    关联：sys_dept 车间节点加 building_id 指向本表（只车间层关联，下面区域/组继承）。
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS sys_plant (
-    plant_id       bigint       NOT NULL,                -- 厂房ID
-    plant_code     varchar(20),                          -- 厂房编号（如 P1/P2/P3）
-    plant_name     varchar(50)  NOT NULL,                -- 厂房名称（一号厂房/二号厂房…）
-    floor_info     varchar(50),                          -- 柜层情况（单层/双层/三层…）
+CREATE TABLE IF NOT EXISTS sys_building (
+    plant_id       bigint       NOT NULL,                -- 建筑ID（列名沿用 plant_id）
+    building_type  varchar(20)  DEFAULT '厂房',           -- 用途类别 厂房/行政楼/宿舍楼
+    plant_code     varchar(20),                          -- 建筑编号（如 P1/P2/P3）
+    plant_name     varchar(50)  NOT NULL,                -- 建筑名称（一号厂房/行政楼/一号宿舍楼…）
+    floor_info     varchar(50),                          -- 楼层情况（单层/双层/三层…）
     land_area      numeric(12,2),                        -- 占地面积 ㎡
     building_area  numeric(12,2),                        -- 建筑面积 ㎡
     address        varchar(200),                         -- 地址
@@ -275,15 +277,16 @@ CREATE TABLE IF NOT EXISTS sys_plant (
     create_time    timestamp     DEFAULT CURRENT_TIMESTAMP,
     update_by      bigint,                                -- 更新者
     update_time    timestamp,                             -- 更新时间
-    CONSTRAINT sys_plant_pk PRIMARY KEY (plant_id)
+    CONSTRAINT sys_building_pk PRIMARY KEY (plant_id)
 );
 
-COMMENT ON TABLE  sys_plant              IS '厂房档案（物理资产/固定资产；厂房=建筑，部门坐落在厂房里，一厂房=一车间）';
-COMMENT ON COLUMN sys_plant.plant_code   IS '厂房编号（如 P1/P2/P3）';
-COMMENT ON COLUMN sys_plant.floor_info   IS '柜层情况（单层/双层/三层…）';
-COMMENT ON COLUMN sys_plant.land_area    IS '占地面积 ㎡';
-COMMENT ON COLUMN sys_plant.building_area IS '建筑面积 ㎡';
-COMMENT ON COLUMN sys_plant.status       IS '状态 0在用 1闲置 2维修';
+COMMENT ON TABLE  sys_building            IS '建筑档案（物理资产/固定资产；厂房/行政楼/宿舍楼等独立楼宇；仓库是建筑内区域不在此列）';
+COMMENT ON COLUMN sys_building.building_type IS '用途类别 厂房/行政楼/宿舍楼';
+COMMENT ON COLUMN sys_building.plant_code   IS '建筑编号（如 P1/P2/P3）';
+COMMENT ON COLUMN sys_building.floor_info   IS '楼层情况（单层/双层/三层…）';
+COMMENT ON COLUMN sys_building.land_area    IS '占地面积 ㎡';
+COMMENT ON COLUMN sys_building.building_area IS '建筑面积 ㎡';
+COMMENT ON COLUMN sys_building.status       IS '状态 0在用 1闲置 2维修';
 
 COMMIT;
 
