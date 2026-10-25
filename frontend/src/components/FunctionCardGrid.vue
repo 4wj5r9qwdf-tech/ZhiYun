@@ -74,6 +74,9 @@ function rowsToH(rows: number) { return rows * UNIT + (rows - 1) * GAP }
 // 像素 → 最近档位
 function wToCols(w: number) { return Math.max(MIN_COLS, Math.min(MAX_COLS, Math.round((w + GAP) / CELL))) }
 function hToRows(h: number) { return Math.max(MIN_ROWS, Math.min(MAX_ROWS, Math.round((h + GAP) / CELL))) }
+// 卡片占的网格跨度（用于 CSS Grid span，实现"一张变大自动挤位重排"）
+function spanCols(c: CardState) { return wToCols(c.cardW) }
+function spanRows(c: CardState) { return hToRows(c.cardH) }
 
 const DEFAULT_W = colsToW(1), DEFAULT_H = rowsToH(1) // 默认 = 1×1 正方形单格
 
@@ -208,7 +211,7 @@ function openCard(c: CardState) {
       :key="c.key"
       class="fc-card"
       :class="{ top: c.isTop, dragging: dragIndex === i, over: overIndex === i && dragIndex !== i, readonly, resizing: resizing?.key === c.key }"
-      :style="{ '--w': c.cardW + 'px', '--h': c.cardH + 'px' }"
+      :style="{ gridColumn: 'span ' + spanCols(c), gridRow: 'span ' + spanRows(c) }"
       :draggable="!readonly"
       @dragstart="onDragStart(i, $event)"
       @dragover="onDragOver(i, $event)"
@@ -244,8 +247,10 @@ function openCard(c: CardState) {
 </template>
 
 <style scoped>
-.fc-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
-.fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 140px); min-height: var(--h, 140px); background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: transform .15s, border-color .15s, box-shadow .15s; user-select: none; box-sizing: border-box; overflow: hidden; }
+/* 网格布局：每列固定 UNIT 宽、gap 间距；卡片按 span 占格，一张变大后面自动挤位重排（不留空洞）。
+   grid-auto-flow: dense 让小卡回填大卡旁边的空隙。 */
+.fc-grid { display: grid; grid-template-columns: repeat(auto-fill, 150px); grid-auto-rows: 150px; gap: 14px; grid-auto-flow: row dense; align-content: start; }
+.fc-card { position: relative; display: flex; flex-direction: column; background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: transform .15s, border-color .15s, box-shadow .15s; user-select: none; box-sizing: border-box; overflow: hidden; min-width: 0; min-height: 0; }
 .fc-card.readonly { cursor: pointer; }
 .fc-card:hover { border-color: #1E5EFF; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(30,94,255,.12); }
 .fc-card.dragging { opacity: .5; }
