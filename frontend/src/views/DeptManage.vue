@@ -425,7 +425,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           :selected-keys="selectedDeptId ? [selectedDeptId] : []"
           @select="onTreeSelect"
         />
-        <a-empty v-else :image="null" description="暂无部门，点右上'新增部门'创建顶层厂区" />
+        <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层厂区" />
       </div>
     </div>
 
