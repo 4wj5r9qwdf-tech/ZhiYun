@@ -724,11 +724,12 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
 .col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
 
-/* 列宽拖拽：表头右侧 resize 手柄 */
+/* 列宽拖拽：表头右侧 resize 手柄——常显一条浅竖线提示可拖，hover 高亮 */
 .zy-resizable-th { position: relative; }
-.zy-th-inner { display: inline-block; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
-.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
-.zy-resize-handle:hover, .zy-resize-handle:active { background: #1E5EFF; opacity: .35; }
+.zy-th-inner { display: inline-block; max-width: calc(100% - 14px); overflow: hidden; text-overflow: ellipsis; }
+.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 2; border-right: 2px solid #E5E8EF; background: transparent; transition: background .12s, border-color .12s; }
+.zy-resizable-th:hover .zy-resize-handle { border-right-color: #C9CDD4; }
+.zy-resize-handle:hover, .zy-resize-handle:active { background: rgba(30,94,255,.18); border-right-color: #1E5EFF; }
 
 .dept-table { width: 100%; background: #fff; border-radius: 10px; }
 .dept-table :deep(.ant-table) { font-size: 13px; }
