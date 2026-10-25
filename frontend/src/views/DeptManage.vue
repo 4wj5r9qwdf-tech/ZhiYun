@@ -267,7 +267,7 @@ onMounted(() => { loadTree(); loadBuildings() })
       </div>
       <div class="head-actions">
         <a-button type="primary" size="middle" @click="openAddTop">
-          <PlusOutlined />新增厂区/部门
+          <PlusOutlined />新增部门
         </a-button>
       </div>
     </div>
