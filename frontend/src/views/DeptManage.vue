@@ -378,14 +378,14 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="上级部门（选了自动定层级，不选=顶层厂区）">
+            <a-form-item label="上级部门">
               <a-tree-select
                 v-model:value="form.parentId"
                 :tree-data="parentTree"
                 :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
                 allow-clear
                 tree-default-expand-all
-                placeholder="无（作为顶层厂区）"
+                placeholder="不选 = 顶层"
                 @change="onParentChange"
               />
             </a-form-item>
