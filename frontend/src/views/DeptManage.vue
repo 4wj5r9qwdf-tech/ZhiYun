@@ -20,10 +20,21 @@ const router = useRouter()
 const tree = ref<any[]>([])        // 原始部门树（含 children）
 const loading = ref(false)
 const keyword = ref('')
+// 左树选中节点（点节点→右侧只显示该节点及下级）
+const selectedDeptId = ref<string | null>(null)
 // 筛选：层级 + 状态（前端过滤）
 const filterCategory = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
 function resetFilters() { keyword.value = ''; filterCategory.value = undefined; filterStatus.value = undefined }
+
+// 左侧组织树（a-tree 展开用）：全量树
+const leftTree = computed(() => tree.value)
+// 选中节点及其下级（右侧数据源）；未选=全部
+const selectedSubtree = computed(() => {
+  if (!selectedDeptId.value) return tree.value
+  const node = findNode(tree.value, selectedDeptId.value)
+  return node ? [node] : tree.value
+})
 // 过滤后部门总数（含下级）
 const deptCount = computed(() => {
   let n = 0
@@ -35,7 +46,7 @@ const deptCount = computed(() => {
 // 业务管辖：每个部门管辖了多少被管部门（deptId -> 数），列表展示
 const manageCounts = ref<Record<string, number>>({})
 // 表单里被管部门选择（管理范围多选）
-const managedIds = ref<number[]>([])
+const managedIds = ref<string[]>([])
 
 async function loadManageCounts() {
   try {
@@ -147,12 +158,13 @@ const columns = computed(() => {
   return [...list, ops]
 })
 
-// 前端过滤：部门名关键词 + 层级 + 状态（保留命中节点及其祖先链，树结构不破坏）
+// 右侧数据源：左树选中节点(及下级) + 关键词/层级/状态过滤（保留命中节点及其祖先链）
 const deptTree = computed(() => {
+  const base = selectedSubtree.value
   const kw = keyword.value.trim()
   const cat = filterCategory.value
   const st = filterStatus.value
-  if (!kw && !cat && !st) return tree.value
+  if (!kw && !cat && !st) return base
   const match = (n: any) => {
     if (kw && !String(n.deptName || '').includes(kw)) return false
     if (cat && n.deptCategory !== cat) return false
@@ -167,7 +179,7 @@ const deptTree = computed(() => {
     }
     return out
   }
-  return walk(tree.value)
+  return walk(base)
 })
 
 async function loadTree() {
@@ -231,8 +243,8 @@ const saving = ref(false)
 const formRef = ref()
 
 const emptyForm = () => ({
-  deptId: null as number | null,
-  parentId: undefined as number | undefined,
+  deptId: null as string | null,
+  parentId: undefined as string | undefined,
   deptName: '',
   deptCategory: undefined as string | undefined,
   buildingId: undefined as number | undefined,   // 所在建筑（哪栋楼，可选，所有层级都能填）
@@ -250,7 +262,7 @@ const form = ref(emptyForm())
 const parentTree = computed(() => {
   const excludeId = isEdit.value ? form.value.deptId : null
   const walk = (nodes: any[]): any[] => nodes
-    .filter(n => Number(n.deptId) !== Number(excludeId))
+    .filter(n => String(n.deptId) !== String(excludeId))
     .map(n => ({ ...n, children: walk(n.children || []) }))
   return walk(tree.value)
 })
@@ -263,12 +275,12 @@ const rules: any = {
 const NEXT_CATEGORY: Record<string, string> = { 厂区: '车间', 车间: '区域', 区域: '小组' }
 function deriveCategory(parentId: any): string {
   if (!parentId) return '厂区'
-  const node = findNode(tree.value, Number(parentId))
+  const node = findNode(tree.value, String(parentId))
   return NEXT_CATEGORY[node?.deptCategory] || '小组'
 }
-function findNode(nodes: any[], id: number): any {
+function findNode(nodes: any[], id: string): any {
   for (const n of nodes) {
-    if (Number(n.deptId) === id) return n
+    if (String(n.deptId) === id) return n
     const f = findNode(n.children || [], id)
     if (f) return f
   }
@@ -291,7 +303,7 @@ function openAddTop() {
 function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
-  form.value.parentId = Number(row.deptId)
+  form.value.parentId = String(row.deptId)
   form.value.deptCategory = deriveCategory(row.deptId)
   managedIds.value = []
   showDlg.value = true
@@ -313,8 +325,8 @@ async function openEdit(row: any) {
   if (segs.length && /^\d+层?$/.test(segs[0])) { floor = Number(segs[0].replace('层', '')); tail = segs.slice(1).join('/') }
   else tail = segs.join('/')
   form.value = {
-    deptId: Number(d.deptId),
-    parentId: d.parentId === 0 || d.parentId === '0' ? undefined : Number(d.parentId),
+    deptId: String(d.deptId),
+    parentId: d.parentId === 0 || d.parentId === '0' ? undefined : String(d.parentId),
     deptName: d.deptName || '',
     deptCategory: d.deptCategory || undefined,
     buildingId: d.buildingId ? Number(d.buildingId) : undefined,
@@ -327,14 +339,14 @@ async function openEdit(row: any) {
     status: d.status || '0',
   }
   showDlg.value = true
-  loadManages(Number(d.deptId))
+  loadManages(String(d.deptId))
 }
 
 // 加载该部门当前管辖的被管部门
-async function loadManages(deptId: number) {
+async function loadManages(deptId: string) {
   try {
     const res: any = await api.get(`/system/dept/${deptId}/manages`)
-    if (res.code === 200) managedIds.value = (res.data || []).map((x: any) => Number(x))
+    if (res.code === 200) managedIds.value = (res.data || []).map((x: any) => String(x))
   } catch { managedIds.value = [] }
 }
 
@@ -385,11 +397,40 @@ function removeDept(row: any) {
 // 弹窗关闭时重置校验状态
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
+// 左树点节点 → 右侧只显示该节点及下级（再点取消）
+function onTreeSelect(keys: any[]) {
+  selectedDeptId.value = keys.length ? String(keys[0]) : null
+}
+// 取消选中（回到全部）
+function clearTreeSelect() { selectedDeptId.value = null }
+
 onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState() })
 </script>
 
 <template>
-  <div>
+  <div class="dept-layout">
+    <!-- 左：组织树（点节点→右侧显示该节点及下级） -->
+    <div class="dept-tree-panel">
+      <div class="tree-head">
+        <span class="tree-title">组织架构</span>
+        <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+      </div>
+      <div class="tree-body">
+        <a-tree
+          v-if="leftTree.length"
+          :tree-data="leftTree"
+          :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
+          block-node
+          default-expand-all
+          :selected-keys="selectedDeptId ? [selectedDeptId] : []"
+          @select="onTreeSelect"
+        />
+        <a-empty v-else :image="null" description="暂无部门，点右上'新增部门'创建顶层厂区" />
+      </div>
+    </div>
+
+    <!-- 右：主区（筛选栏 + 工具行 + 表格） -->
+    <div class="dept-main">
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
@@ -495,6 +536,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
         </template>
       </template>
     </a-table>
+    </div><!-- /dept-main -->
 
     <!-- 新增/编辑（a-modal + a-form） -->
     <a-modal
@@ -596,6 +638,15 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .head-left { display: flex; align-items: center; gap: 6px; }
+
+/* 左树 + 右表 分栏 */
+.dept-layout { display: flex; gap: 12px; align-items: flex-start; height: calc(100vh - 150px); }
+.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; }
+.tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
+.tree-title { font-size: 14px; font-weight: 600; color: #1D2129; }
+.tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; }
+.tree-body { flex: 1; overflow: auto; padding: 8px; }
+.dept-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
