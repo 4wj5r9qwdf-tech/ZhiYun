@@ -137,7 +137,31 @@ const parentTree = computed(() => {
 
 const rules: any = {
   deptName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
-  deptCategory: [{ required: true, message: '请选择层级', trigger: 'change' }],
+}
+
+// 由上级部门推导本级层级：厂区→车间→区域→小组；无上级(顶层)=厂区
+const NEXT_CATEGORY: Record<string, string> = { 厂区: '车间', 车间: '区域', 区域: '小组' }
+function deriveCategory(parentId: any): string {
+  if (!parentId) return '厂区'
+  const node = findNode(tree.value, Number(parentId))
+  return NEXT_CATEGORY[node?.deptCategory] || '小组'
+}
+function findNode(nodes: any[], id: number): any {
+  for (const n of nodes) {
+    if (Number(n.deptId) === id) return n
+    const f = findNode(n.children || [], id)
+    if (f) return f
+  }
+  return null
+}
+// 上级部门变化 → 层级自动跟随
+function onParentChange() {
+  form.value.deptCategory = deriveCategory(form.value.parentId)
+}
+// 层级推导说明文案
+function deriveHint(): string {
+  const c = form.value.deptCategory || '厂区'
+  return { 厂区: '无上级 → 厂区(顶层)', 车间: '上级是厂区 → 车间', 区域: '上级是车间 → 区域', 小组: '上级是区域 → 小组' }[c] || ''
 }
 
 function openAddTop() {
@@ -152,8 +176,7 @@ function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
   form.value.parentId = Number(row.deptId)
-  const next: Record<string, string> = { 厂区: '车间', 车间: '区域', 区域: '小组' }
-  form.value.deptCategory = next[row.deptCategory] || '小组'
+  form.value.deptCategory = deriveCategory(row.deptId)
   showDlg.value = true
 }
 
@@ -326,13 +349,24 @@ onMounted(() => { loadTree(); loadBuildings() })
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="层级" name="deptCategory">
-              <a-select v-model:value="form.deptCategory" placeholder="请选择层级">
-                <a-select-option value="厂区">厂区</a-select-option>
-                <a-select-option value="车间">车间</a-select-option>
-                <a-select-option value="区域">区域</a-select-option>
-                <a-select-option value="小组">小组</a-select-option>
-              </a-select>
+            <a-form-item label="上级部门（选了自动定层级，不选=顶层厂区）">
+              <a-tree-select
+                v-model:value="form.parentId"
+                :tree-data="parentTree"
+                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
+                allow-clear
+                tree-default-expand-all
+                placeholder="无（作为顶层厂区）"
+                @change="onParentChange"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="层级（按上级自动推导）">
+              <div class="cat-derived">
+                <a-tag :color="categoryColor[form.deptCategory || '厂区']" class="cat-tag">{{ form.deptCategory || '厂区' }}</a-tag>
+                <span class="cat-hint">{{ deriveHint() }}</span>
+              </div>
             </a-form-item>
           </a-col>
           <!-- 所在位置（渐进式：选楼→选层→填车间/房间，选到哪段算哪段，均可不填） -->
@@ -352,18 +386,6 @@ onMounted(() => { loadTree(); loadBuildings() })
             <a-form-item label="位置（车间/房间，可不填；如 裁剪车间 / 302室）">
               <a-input v-model:value="form.location" :maxlength="100" placeholder="选到哪填到哪，不强制" />
               <div v-if="composeLocation()" class="loc-preview">📍 {{ composeLocation() }}</div>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="上级部门（新建顶层可不选）">
-              <a-tree-select
-                v-model:value="form.parentId"
-                :tree-data="parentTree"
-                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
-                allow-clear
-                tree-default-expand-all
-                placeholder="无（作为顶层）"
-              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -420,6 +442,9 @@ onMounted(() => { loadTree(); loadBuildings() })
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .loc-preview { margin-top: 4px; font-size: 12px; color: #1E5EFF; background: #F4F7FF; border-radius: 4px; padding: 2px 8px; }
+.cat-derived { display: flex; align-items: center; gap: 8px; height: 32px; }
+.cat-tag { margin: 0; }
+.cat-hint { font-size: 12px; color: #86909C; }
 .loc-cell { color: #1E5EFF; font-size: 12px; }
 .muted { color: #C9CDD4; }
 </style>
