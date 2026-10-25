@@ -26,6 +26,7 @@ const categoryColor: Record<string, string> = { 厂区: 'blue', 车间: 'green',
 const columns = [
   { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
   { title: '层级', dataIndex: 'deptCategory', key: 'deptCategory', width: 90 },
+  { title: '所在建筑', key: 'buildingId', width: 110 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
   { title: '电话', dataIndex: 'phone', key: 'phone', width: 130 },
   { title: '状态', key: 'status', width: 100 },
@@ -59,11 +60,32 @@ async function loadTree() {
   } finally { loading.value = false }
 }
 
+// 建筑档案（车间"所在建筑"下拉 + 列表展示建筑名用）
+const buildings = ref<any[]>([])
+const buildingNameMap = computed(() => {
+  const m: Record<string, string> = {}
+  for (const b of buildings.value) m[String(b.plantId ?? b.plant_id)] = b.plantName ?? b.plant_name
+  return m
+})
+function buildingLabel(id: any) {
+  if (id === null || id === undefined || id === '') return ''
+  return buildingNameMap.value[String(id)] || '—'
+}
+async function loadBuildings() {
+  try {
+    const res: any = await api.get('/system/building/list')
+    if (res.code === 200) buildings.value = (res.data || []).map((x: any) => ({
+      plantId: x.plantId ?? x.plant_id,
+      plantName: x.plantName ?? x.plant_name,
+    }))
+  } catch { /* ignore */ }
+}
+
 // 状态切换（0 启用 / 1 停用），走编辑接口整行提交
 async function toggleStatus(row: any, checked: any) {
   const res: any = await api.put('/system/dept', {
     deptId: row.deptId, parentId: row.parentId, deptName: row.deptName,
-    deptCategory: row.deptCategory, orderNum: row.orderNum,
+    deptCategory: row.deptCategory, buildingId: row.buildingId ?? null, orderNum: row.orderNum,
     leader: row.leader, phone: row.phone, email: row.email,
     status: checked ? '0' : '1',
   })
@@ -82,6 +104,7 @@ const emptyForm = () => ({
   parentId: undefined as number | undefined,
   deptName: '',
   deptCategory: undefined as string | undefined,
+  buildingId: undefined as number | undefined,   // 所在建筑（仅车间层）
   orderNum: 0,
   leader: '',
   phone: '',
@@ -131,6 +154,7 @@ async function openEdit(row: any) {
     parentId: d.parentId === 0 || d.parentId === '0' ? undefined : Number(d.parentId),
     deptName: d.deptName || '',
     deptCategory: d.deptCategory || undefined,
+    buildingId: d.buildingId ? Number(d.buildingId) : undefined,
     orderNum: Number(d.orderNum ?? 0),
     leader: d.leader || '',
     phone: d.phone || '',
@@ -151,6 +175,7 @@ async function save() {
       parentId: form.value.parentId ?? 0,
       deptName: form.value.deptName,
       deptCategory: form.value.deptCategory,
+      buildingId: form.value.deptCategory === '车间' ? (form.value.buildingId ?? null) : null,
       orderNum: form.value.orderNum ?? 0,
       leader: form.value.leader || '',
       phone: form.value.phone || '',
@@ -181,7 +206,7 @@ function removeDept(row: any) {
 // 弹窗关闭时重置校验状态
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-onMounted(loadTree)
+onMounted(() => { loadTree(); loadBuildings() })
 </script>
 
 <template>
@@ -225,6 +250,9 @@ onMounted(loadTree)
         </template>
         <template v-else-if="column.key === 'deptCategory'">
           <a-tag :color="categoryColor[record.deptCategory]">{{ record.deptCategory || '-' }}</a-tag>
+        </template>
+        <template v-else-if="column.key === 'buildingId'">
+          {{ record.deptCategory === '车间' ? (buildingLabel(record.buildingId) || '—') : '—' }}
         </template>
         <template v-else-if="column.key === 'leader'">
           {{ record.leader || '-' }}
@@ -274,6 +302,13 @@ onMounted(loadTree)
                 <a-select-option value="车间">车间</a-select-option>
                 <a-select-option value="区域">区域</a-select-option>
                 <a-select-option value="小组">小组</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="form.deptCategory === '车间'" :span="12">
+            <a-form-item label="所在建筑（车间坐落在哪栋楼）">
+              <a-select v-model:value="form.buildingId" allow-clear placeholder="请选择建筑（建筑档案）">
+                <a-select-option v-for="b in buildings" :key="Number(b.plantId)" :value="Number(b.plantId)">{{ b.plantName }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
