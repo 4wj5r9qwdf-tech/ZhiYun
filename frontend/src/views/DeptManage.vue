@@ -119,7 +119,7 @@ function onHeaderMouseDown(key: string, e: MouseEvent) {
   if (key === 'ops') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
-  if (e.clientX < rect.right - 8) return
+  if (e.clientX < rect.right - 14) return
   const startX = e.clientX
   const startW = rect.width
   const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
@@ -729,7 +729,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
 <style>
 .ant-table-thead > tr > th { position: relative; }
-.ant-table-thead > tr > th::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
+.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
 .ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
 .ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
 </style>
