@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch, defineComponent, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
@@ -22,6 +22,8 @@ const loading = ref(false)
 const keyword = ref('')
 // 左树选中节点（点节点→右侧只显示该节点及下级）
 const selectedDeptId = ref<string | null>(null)
+// 树面板收起/展开（默认展开）
+const treeCollapsed = ref(false)
 // 筛选：层级 + 状态（前端过滤）
 const filterCategory = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
@@ -309,6 +311,16 @@ function deriveLevel(parentId: any): number {
 }
 function levelLabel(n: any): string { return `${deptLevel(n)} 级` }
 
+// 层级筛选选项：按当前数据实际深度动态生成（一级..N级）
+const levelOptions = computed(() => {
+  let max = 0
+  const walk = (nodes: any[]) => { for (const n of nodes) { max = Math.max(max, deptLevel(n)); walk(n.children || []) } }
+  walk(tree.value)
+  const opts: { value: string; label: string }[] = []
+  for (let i = 1; i <= max; i++) opts.push({ value: String(i), label: `${i} 级` })
+  return opts
+})
+
 // 上级部门变化 → 层级自动跟随
 function onParentChange() {
   form.value.deptCategory = levelLabelOf(deriveLevel(form.value.parentId))
@@ -432,29 +444,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </script>
 
 <template>
-  <div class="dept-layout">
-    <!-- 左：组织树（点节点→右侧显示该节点及下级） -->
-    <div class="dept-tree-panel">
-      <div class="tree-head">
-        <span class="tree-title">组织架构</span>
-        <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
-      </div>
-      <div class="tree-body">
-        <a-tree
-          v-if="leftTree.length"
-          :tree-data="leftTree"
-          :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
-          block-node
-          default-expand-all
-          :selected-keys="selectedDeptId ? [selectedDeptId] : []"
-          @select="onTreeSelect"
-        />
-        <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层部门" />
-      </div>
-    </div>
-
-    <!-- 右：主区（筛选栏 + 工具行 + 表格） -->
-    <div class="dept-main">
+  <div class="dept-page">
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
@@ -462,16 +452,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       </div>
     </div>
 
-    <!-- 筛选栏：关键词 + 层级 + 状态 + 查询/重置 + 刷新 + 靠右操作（新增） -->
+    <!-- 筛选栏：关键词 + 层级(动态) + 状态 + 查询/重置 + 靠右操作（新增） -->
     <div class="filter-bar">
       <a-input v-model:value="keyword" placeholder="搜索部门名称" allow-clear style="width:200px">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
       <a-select v-model:value="filterCategory" allow-clear placeholder="层级" style="width:110px">
-        <a-select-option value="1">一级</a-select-option>
-        <a-select-option value="2">二级</a-select-option>
-        <a-select-option value="3">三级</a-select-option>
-        <a-select-option value="4">四级</a-select-option>
+        <a-select-option v-for="o in levelOptions" :key="o.value" :value="o.value">{{ o.label }}</a-select-option>
       </a-select>
       <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px">
         <a-select-option value="0">启用</a-select-option>
@@ -482,6 +469,37 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <span class="filter-spacer"></span>
       <a-button type="primary" @click="openAddTop"><PlusOutlined />新增部门</a-button>
     </div>
+
+    <!-- 树 + 表格 并排（树可向左收起，收起后表格占满） -->
+    <div class="dept-body">
+      <!-- 左：组织树 -->
+      <div class="dept-tree-panel" :class="{ collapsed: treeCollapsed }">
+        <div class="tree-head">
+          <span class="tree-title">组织架构</span>
+          <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+        </div>
+        <div class="tree-body">
+          <a-tree
+            v-if="leftTree.length"
+            :tree-data="leftTree"
+            :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
+            block-node
+            default-expand-all
+            :selected-keys="selectedDeptId ? [selectedDeptId] : []"
+            @select="onTreeSelect"
+          />
+          <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层部门" />
+        </div>
+      </div>
+
+      <!-- 收起/展开手柄 -->
+      <div class="tree-toggle" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
+        <MenuUnfoldOutlined v-if="treeCollapsed" />
+        <MenuFoldOutlined v-else />
+      </div>
+
+      <!-- 右：表格区 -->
+      <div class="dept-main">
 
     <!-- 列表工具行：条数 + 列设置 -->
     <div class="table-bar">
@@ -561,6 +579,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       </template>
     </a-table>
     </div><!-- /dept-main -->
+    </div><!-- /dept-body -->
 
     <!-- 新增/编辑（a-modal + a-form） -->
     <a-modal
@@ -664,12 +683,17 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .head-left { display: flex; align-items: center; gap: 6px; }
 
 /* 左树 + 右表 分栏 */
-.dept-layout { display: flex; gap: 12px; align-items: flex-start; height: calc(100vh - 150px); }
-.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; }
+/* 树 + 表格 并排（标题行/筛选栏下方） */
+.dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
+.dept-tree-panel.collapsed { width: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
-.tree-title { font-size: 14px; font-weight: 600; color: #1D2129; }
-.tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; }
+.tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
+.tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
+/* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
+.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: center; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .dept-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
