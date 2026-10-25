@@ -110,7 +110,9 @@ const tableComponents = {
           if (!th) return
           const startX = e.clientX
           const startW = th.getBoundingClientRect().width
-          const key = props.column?.key
+          // antd 不把 column 传给自绘表头，用 index 映射回可见列（columns 已过滤隐藏列，顺序一致）
+          // antd 不传 column/index，用 th 在表头行中的位置(cellIndex)映射回可见列
+          const key = columns.value[(th as HTMLTableCellElement).cellIndex]?.key
           const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
           const onUp = () => {
             document.removeEventListener('mousemove', onMove)
@@ -127,7 +129,7 @@ const tableComponents = {
           h('th', { class: 'zy-resizable-th' }, [
             h('div', { class: 'zy-th-inner' }, slots.default?.()),
             // 除操作列外，右侧 resize 手柄
-            props.column?.key !== 'ops'
+            columns.value[props.index]?.key !== 'ops'
               ? h('span', { class: 'zy-resize-handle', onMousedown: onStart })
               : null,
           ])
@@ -219,7 +221,6 @@ const emptyForm = () => ({
 const form = ref(emptyForm())
 
 onMounted(() => {
-  // 从全局搜索跳入时，带 keyword 自动填充并查询（定位到该人）
   const q = route.query.keyword
   if (typeof q === 'string' && q) keyword.value = q
   loadList(); loadOptions()
@@ -523,6 +524,7 @@ function resetFilter() {
       :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       :components="tableComponents"
+      table-layout="fixed"
       row-key="user_id"
       size="middle"
       class="person-table"
@@ -682,7 +684,7 @@ function resetFilter() {
 <!-- 非 scoped：列宽拖拽手柄由 tableComponents 用 h() 渲染，无 scoped 属性，必须全局样式 -->
 <style>
 .zy-resizable-th { position: relative; }
-.zy-th-inner { display: inline-block; max-width: calc(100% - 14px); overflow: hidden; text-overflow: ellipsis; }
+.zy-th-inner { display: inline-block; max-width: calc(100% - 14px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 3; border-right: 2px solid #E5E8EF; background: transparent; transition: background .12s, border-color .12s; }
 .zy-resizable-th:hover .zy-resize-handle { border-right-color: #C9CDD4; }
 .zy-resize-handle:hover, .zy-resize-handle:active { background: rgba(30,94,255,.18); border-right-color: #1E5EFF; }
