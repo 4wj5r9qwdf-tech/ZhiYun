@@ -4,7 +4,7 @@
  * 内容区按子路由渲染：'' → SystemIndex(功能卡片)，'company' → Company(公司档案)
  * 左侧导航和顶栏常驻，子页面切换不丢导航。
  */
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 
