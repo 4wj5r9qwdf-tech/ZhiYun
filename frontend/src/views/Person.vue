@@ -1,71 +1,78 @@
 <script setup lang="ts">
 /**
- * 人员信息（人员模块）：
- * - 列表：工号/姓名/性别/手机(脱敏)/车间/小组/岗位/角色/状态/员工卡
- * - 新增/编辑：表单按四块分组（基本信息/任职/联系方式/合同薪酬/社保保险）
- * - 建人员=建登录账号（工号6位，默认密码123456，可重置）
- * - 岗位/角色多选（RuoYi sys_post/sys_role）；车间=部门 sys_dept
- * - 复用 TopBar + FunctionCardGrid 不涉及，本页是列表页
+ * 人员信息（人员模块）—— ant-design-vue 重构版：
+ * - a-table：排序/筛选/列设置(显隐+顺序)/固定操作列/分页 全自带（替代手写 DataTable）
+ * - a-form + a-modal：表单校验/分组布局
+ * - a-input/a-select/a-date-picker/a-checkbox-group：控件统一
+ * - message/Modal.confirm：全局反馈（替代手写 msg/confirm）
+ * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
+ * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { message, Modal } from 'ant-design-vue'
 import api from '../api'
-import DataTable from '../components/DataTable.vue'
 
 const router = useRouter()
 
-// 列表
+// ===== 列表 =====
 const rows = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
-// 筛选（做全：keyword/状态/车间/性别/岗位/角色）
+const pageNum = ref(1)
+const pageSize = ref(20)
+
+// 筛选
 const keyword = ref('')
-const empStatus = ref('')
-const deptId = ref<number | null>(null)
-const gender = ref('')
+const empStatus = ref<string | undefined>()
+const deptId = ref<number | undefined>()
+const gender = ref<string | undefined>()
 const postsFilter = ref('')
 const rolesFilter = ref('')
 const orderBy = ref('')   // 字段:asc|desc
 
-// 表格列定义（key 对应后端返回字段；sum=数值合计列）
+// 状态颜色
+const statusColor: Record<string, string> = { 试用: 'orange', 在职: 'green', 离职: 'red', 长假: 'blue' }
+
+// 表格列（a-table）：sortable → 后端 orderBy；fixed 操作列
 const columns = [
-  { key: 'job_no', title: '工号', sortable: true },
-  { key: 'name', title: '姓名', sortable: true },
-  { key: 'gender', title: '性别' },
-  { key: 'phone_masked', title: '手机号' },
-  { key: 'dept_name', title: '车间', sortable: true },
-  { key: 'group_name', title: '小组', sortable: true },
-  { key: 'posts', title: '岗位' },
-  { key: 'roles', title: '角色' },
-  { key: 'emp_status', title: '状态', sortable: true },
-  { key: 'card_no', title: '员工卡', sortable: true },
+  { title: '工号', dataIndex: 'job_no', key: 'job_no', width: 100, sorter: true },
+  { title: '姓名', dataIndex: 'name', key: 'name', width: 120, sorter: true },
+  { title: '性别', dataIndex: 'gender', key: 'gender', width: 70 },
+  { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked', width: 120 },
+  { title: '车间', dataIndex: 'dept_name', key: 'dept_name', width: 120, sorter: true },
+  { title: '小组', dataIndex: 'group_name', key: 'group_name', width: 100, sorter: true },
+  { title: '岗位', dataIndex: 'posts', key: 'posts', width: 120, ellipsis: true },
+  { title: '角色', dataIndex: 'roles', key: 'roles', width: 120, ellipsis: true },
+  { title: '状态', dataIndex: 'emp_status', key: 'emp_status', width: 90, sorter: true },
+  { title: '员工卡', dataIndex: 'card_no', key: 'card_no', width: 100, sorter: true },
+  { title: '操作', key: 'ops', width: 130, fixed: 'right' as const },
 ]
 
 // 下拉数据
-const depts = ref<any[]>([])       // 车间（部门树，展平）
-const posts = ref<any[]>([])       // 岗位
-const roles = ref<any[]>([])       // 角色
+const depts = ref<any[]>([])
+const posts = ref<any[]>([])
+const roles = ref<any[]>([])
 
-// 弹窗
-const showDialog = ref(false)
+// ===== 弹窗 =====
+const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
-const msg = ref('')
-const msgType = ref<'success' | 'error'>('success')
+const formRef = ref()
 
 const emptyForm = () => ({
   userId: null as number | null,
-  jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', deptId: null as number | null,
+  jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', deptId: undefined as number | undefined,
   status: '0', remark: '',
-  password: '',          // 登录密码（新增可填，空=默认123456；编辑时填=重置）
+  password: '',
   postIds: [] as number[],
   roleIds: [] as number[],
   ext: {
     maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
     hireDate: '', groupName: '', empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
-    bankCardNo: '', signEntity: '', contractYears: null as number | null, contractStart: '', contractEnd: '',
-    hasSocial: '0', socialAmount: null as number | null, socialSubsidy: null as number | null,
+    bankCardNo: '', signEntity: '', contractYears: undefined as number | undefined, contractStart: '', contractEnd: '',
+    hasSocial: '0', socialAmount: undefined as number | undefined, socialSubsidy: undefined as number | undefined,
     hasCommercial: '0', commercialType: '', socialCheckDate: '',
     isDorm: '0',
   },
@@ -79,9 +86,9 @@ async function loadList() {
   try {
     const res: any = await api.get('/system/person/list', {
       params: {
-        pageNum: 1, pageSize: 100,
-        keyword: keyword.value, empStatus: empStatus.value,
-        deptId: deptId.value ?? undefined, gender: gender.value,
+        pageNum: pageNum.value, pageSize: pageSize.value,
+        keyword: keyword.value, empStatus: empStatus.value ?? '',
+        deptId: deptId.value ?? undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
       },
     })
@@ -89,19 +96,24 @@ async function loadList() {
   } finally { loading.value = false }
 }
 
-// 表格排序回调 → 传后端 orderBy
-function onSort(key: string, dir: 'asc' | 'desc') {
-  orderBy.value = `${key}:${dir}`
+// a-table 排序 → 后端 orderBy
+function onTableChange(_pag: any, _filt: any, sorter: any) {
+  if (sorter?.order) {
+    const dir = sorter.order === 'descend' ? 'desc' : 'asc'
+    orderBy.value = `${sorter.field}:${dir}`
+  } else orderBy.value = ''
   loadList()
 }
 
-// 导出（CSV，Excel 可开）
+function onPageChange(p: number, ps: number) { pageNum.value = p; pageSize.value = ps; loadList() }
+
+// 导出 CSV
 async function exportCsv() {
   try {
     const res: any = await api.get('/system/person/export', {
       params: {
-        keyword: keyword.value, empStatus: empStatus.value,
-        deptId: deptId.value ?? undefined, gender: gender.value,
+        keyword: keyword.value, empStatus: empStatus.value ?? '',
+        deptId: deptId.value ?? undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value,
       },
     })
@@ -111,16 +123,14 @@ async function exportCsv() {
       for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i)
       const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' })
       const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = res.data.fileName
-      a.click()
+      a.href = URL.createObjectURL(blob); a.download = res.data.fileName; a.click()
       URL.revokeObjectURL(a.href)
-      showMsg(`已导出 ${res.data.count} 条`)
-    } else showMsg(res.msg || '导出失败', 'error')
-  } catch (e: any) { showMsg(e?.response?.data?.msg || '导出失败', 'error') }
+      message.success(`已导出 ${res.data.count} 条`)
+    } else message.error(res.msg || '导出失败')
+  } catch (e: any) { message.error(e?.response?.data?.msg || '导出失败') }
 }
 
-// 导入（前端解析 CSV，逐条调新增；简单批量）
+// 导入 CSV（前端解析，逐条新增）
 function importFile(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -129,7 +139,7 @@ function importFile(e: Event) {
   reader.onload = async () => {
     const text = String(reader.result || '').replace(/^﻿/, '')
     const lines = text.split(/\r?\n/).filter(l => l.trim())
-    if (lines.length < 2) { showMsg('文件无数据', 'error'); input.value = ''; return }
+    if (lines.length < 2) { message.error('文件无数据'); input.value = ''; return }
     const header = lines[0].split(',').map(h => h.replace(/"/g, '').trim())
     const idx = (name: string) => header.indexOf(name)
     let ok = 0, fail = 0
@@ -150,7 +160,8 @@ function importFile(e: Event) {
         if (res.code === 200) ok++; else fail++
       } catch { fail++ }
     }
-    showMsg(`导入完成：成功 ${ok} 条，失败 ${fail} 条`, fail ? 'error' : 'success')
+    if (fail) message.warning(`导入完成：成功 ${ok} 条，失败 ${fail} 条`)
+    else message.success(`导入完成：成功 ${ok} 条`)
     loadList()
   }
   reader.readAsText(file, 'utf-8')
@@ -159,7 +170,7 @@ function importFile(e: Event) {
 
 async function loadOptions() {
   try {
-    const [d, p, r] = await Promise.all([
+    const [d, p, r]: any[] = await Promise.all([
       api.get('/system/dept/list'),
       api.get('/system/post/list', { params: { pageNum: 1, pageSize: 100 } }),
       api.get('/system/role/list', { params: { pageNum: 1, pageSize: 100 } }),
@@ -177,16 +188,16 @@ function flattenDept(list: any[]): any[] {
   return out
 }
 
-function openAdd() { isEdit.value = false; form.value = emptyForm(); showDialog.value = true }
+function openAdd() { isEdit.value = false; form.value = emptyForm(); showDlg.value = true }
 
 async function openEdit(row: any) {
   isEdit.value = true
   const res: any = await api.get(`/system/person/${row.user_id}`)
-  if (res.code !== 200) { showMsg('加载详情失败', 'error'); return }
+  if (res.code !== 200) { message.error('加载详情失败'); return }
   const d = res.data
   form.value = {
     userId: d.user_id, jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
-    email: d.email || '', phoneNumber: d.phone_number || '', deptId: d.dept_id ? Number(d.dept_id) : null,
+    email: d.email || '', phoneNumber: d.phone_number || '', deptId: d.dept_id ? Number(d.dept_id) : undefined,
     status: d.status || '0', remark: d.remark || '', password: '',
     postIds: (d.postIds || []).map(Number), roleIds: (d.roleIds || []).map(Number),
     ext: {
@@ -197,54 +208,64 @@ async function openEdit(row: any) {
       hireDate: d.hire_date || '', groupName: d.group_name || '', empType: d.emp_type || '正式',
       leaveDate: d.leave_date || '', cardNo: d.card_no || '', empStatus: d.emp_status || '试用',
       bankCardNo: d.bank_card_no || '', signEntity: d.sign_entity || '',
-      contractYears: d.contract_years ?? null, contractStart: d.contract_start || '', contractEnd: d.contract_end || '',
-      hasSocial: d.has_social || '0', socialAmount: d.social_amount ?? null, socialSubsidy: d.social_subsidy ?? null,
+      contractYears: d.contract_years ?? undefined, contractStart: d.contract_start || '', contractEnd: d.contract_end || '',
+      hasSocial: d.has_social || '0', socialAmount: d.social_amount ?? undefined, socialSubsidy: d.social_subsidy ?? undefined,
       hasCommercial: d.has_commercial || '0', commercialType: d.commercial_type || '', socialCheckDate: d.social_check_date || '',
       isDorm: d.is_dorm || '0',
     },
   }
-  showDialog.value = true
+  showDlg.value = true
+}
+
+// a-form 校验规则
+const rules: any = {
+  jobNo: [{ required: true, message: '请输入工号', trigger: 'blur' },
+          { len: 6, message: '工号必须6位', trigger: 'blur' }],
+  name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  'ext.hireDate': [{ required: true, message: '请选择入职日期', trigger: 'change' }],
+  'ext.empStatus': [{ required: true, message: '请选择在职状态', trigger: 'change' }],
 }
 
 async function save() {
-  if (!form.value.jobNo || form.value.jobNo.length !== 6) { showMsg('工号必须6位数字', 'error'); return }
-  if (!form.value.name) { showMsg('请输入姓名', 'error'); return }
-  if (!isEdit.value && !form.value.ext.hireDate) { showMsg('请选择入职日期', 'error'); return }
+  try {
+    await formRef.value?.validate()
+  } catch { return }
   saving.value = true
   try {
     const payload: any = { ...form.value }
-    if (isEdit.value) delete payload.jobNo // 编辑不改工号
-    // 密码：新增为空→后端默认123456；编辑填了→重置，不填→不改
+    if (isEdit.value) delete payload.jobNo
     if (!payload.password) delete payload.password
+    // 数字字段 undefined → null（后端 numeric 列空值收 null）
+    for (const k of ['contractYears', 'socialAmount', 'socialSubsidy']) {
+      if (payload.ext[k] === undefined) payload.ext[k] = null
+    }
     const res: any = isEdit.value
       ? await api.put('/system/person', payload)
       : await api.post('/system/person', payload)
-    if (res.code === 200) { showMsg('保存成功'); showDialog.value = false; loadList() }
-    else showMsg(res.msg || '保存失败', 'error')
-  } catch (e: any) { showMsg(e?.response?.data?.msg || '保存失败', 'error') }
+    if (res.code === 200) { message.success('保存成功'); showDlg.value = false; loadList() }
+    else message.error(res.msg || '保存失败')
+  } catch (e: any) { message.error(e?.response?.data?.msg || '保存失败') }
   finally { saving.value = false }
 }
 
-async function resetPwd(row: any) {
-  if (!confirm(`确认将「${row.name}」密码重置为 123456？`)) return
-  const res: any = await api.put(`/system/person/${row.user_id}/reset-password`)
-  if (res.code === 200) showMsg('密码已重置为 123456')
-  else showMsg(res.msg || '重置失败', 'error')
+function resetPwd(row: any) {
+  Modal.confirm({
+    title: '重置密码',
+    content: `确认将「${row.nick_name || row.name}」密码重置为 123456？`,
+    okText: '确定', cancelText: '取消',
+    onOk: async () => {
+      const res: any = await api.put(`/system/person/${row.user_id}/reset-password`)
+      if (res.code === 200) message.success('密码已重置为 123456')
+      else message.error(res.msg || '重置失败')
+    },
+  })
 }
-
-function showMsg(t: string, type: 'success' | 'error' = 'success') { msg.value = t; msgType.value = type; setTimeout(() => { msg.value = '' }, 3000) }
-function close() { showDialog.value = false }
 
 function resetFilter() {
-  keyword.value = ''; empStatus.value = ''; deptId.value = null
-  gender.value = ''; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
+  keyword.value = ''; empStatus.value = undefined; deptId.value = undefined
+  gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
+  pageNum.value = 1
   loadList()
-}
-
-// 选中岗位/角色（多选切换）
-function toggleId(arr: number[], id: number) {
-  const i = arr.indexOf(id)
-  if (i >= 0) arr.splice(i, 1); else arr.push(id)
 }
 </script>
 
@@ -256,174 +277,148 @@ function toggleId(arr: number[], id: number) {
         <span class="head-title">人员信息</span>
       </div>
       <div class="head-actions">
-        <button class="btn" @click="exportCsv">↓ 导出</button>
-        <label class="btn imp">↑ 导入<input type="file" accept=".csv,text/csv" @change="importFile" hidden /></label>
-        <button class="btn-primary" @click="openAdd">+ 新增人员</button>
+        <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
+        <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
+        <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
+        <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
       </div>
     </div>
 
-    <!-- 筛选条件（做全：常用+全量） -->
+    <!-- 筛选（a-input/a-select 统一控件） -->
     <div class="filter-bar">
-      <input v-model="keyword" placeholder="搜索工号/姓名/手机号" @keyup.enter="loadList" />
-      <select v-model="empStatus" @change="loadList">
-        <option value="">状态</option>
-        <option>试用</option><option>在职</option><option>离职</option><option>长假</option>
-      </select>
-      <select v-model="deptId" @change="loadList">
-        <option :value="null">车间</option>
-        <option v-for="d in depts" :key="d.deptId" :value="Number(d.deptId)">{{ d.deptName }}</option>
-      </select>
-      <select v-model="gender" @change="loadList">
-        <option value="">性别</option>
-        <option value="1">男</option><option value="2">女</option>
-      </select>
-      <input v-model="postsFilter" placeholder="岗位" @keyup.enter="loadList" />
-      <input v-model="rolesFilter" placeholder="角色" @keyup.enter="loadList" />
-      <button class="btn" @click="loadList">查询</button>
-      <button class="btn ghost" @click="resetFilter">重置</button>
+      <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
+      <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+        <a-select-option value="试用">试用</a-select-option>
+        <a-select-option value="在职">在职</a-select-option>
+        <a-select-option value="离职">离职</a-select-option>
+        <a-select-option value="长假">长假</a-select-option>
+      </a-select>
+      <a-select v-model:value="deptId" placeholder="车间" allow-clear style="width:140px" @change="loadList">
+        <a-select-option v-for="d in depts" :key="Number(d.deptId)" :value="Number(d.deptId)">{{ d.deptName }}</a-select-option>
+      </a-select>
+      <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
+        <a-select-option value="1">男</a-select-option>
+        <a-select-option value="2">女</a-select-option>
+      </a-select>
+      <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
+      <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
+      <a-button type="primary" @click="loadList">查询</a-button>
+      <a-button @click="resetFilter">重置</a-button>
     </div>
 
-    <div v-if="msg" class="msg" :class="'msg-' + msgType">{{ msg }}</div>
-
-    <!-- 列表（系统级 DataTable：排序/列显隐/列顺序/合计行，配置按页+用户持久化） -->
-    <DataTable
-      storage-key="person_list"
+    <!-- 列表（a-table：排序/列设置/固定列/分页 全自带） -->
+    <a-table
       :columns="columns"
-      :rows="rows"
+      :data-source="rows"
       :loading="loading"
-      @sort="onSort"
+      :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条`, onChange: onPageChange, showQuickJumper: true }"
+      :scroll="{ x: 1290 }"
+      row-key="user_id"
+      size="middle"
+      @change="onTableChange"
     >
-      <template #cell-gender="{ value }">{{ value === '1' ? '男' : value === '2' ? '女' : '-' }}</template>
-      <template #cell-emp_status="{ value }"><span class="tag" :class="'st-' + (value || '')">{{ value || '-' }}</span></template>
-      <template #cell-ops="{ row }">
-        <a @click="openEdit(row)">编辑</a>
-        <a @click="resetPwd(row)">重置密码</a>
+      <template #bodyCell="{ column, record }">
+        <template v-if="column.key === 'gender'">
+          {{ record.gender === '1' ? '男' : record.gender === '2' ? '女' : '-' }}
+        </template>
+        <template v-else-if="column.key === 'emp_status'">
+          <a-tag :color="statusColor[record.emp_status]">{{ record.emp_status || '-' }}</a-tag>
+        </template>
+        <template v-else-if="column.key === 'ops'">
+          <a @click="openEdit(record)">编辑</a>
+          <a-divider type="vertical" />
+          <a @click="resetPwd(record)">重置密码</a>
+        </template>
       </template>
-    </DataTable>
+    </a-table>
 
-    <!-- 新增/编辑弹窗 -->
-    <div v-if="showDialog" class="mask" @click.self="close">
-      <div class="dialog">
-        <div class="dialog-title">{{ isEdit ? '编辑人员' : '新增人员' }}</div>
-        <div class="dialog-body">
-          <!-- 基本信息 -->
-          <section class="fsec">
-            <div class="fsec-title">基本信息</div>
-            <div class="fgrid">
-              <label><span class="req">*</span>工号(6位)<input v-model="form.jobNo" :disabled="isEdit" maxlength="6" placeholder="登录用户名" /></label>
-              <label><span class="req">*</span>姓名<input v-model="form.name" placeholder="请输入" /></label>
-              <label>登录密码
-                <input v-model="form.password" type="password" :placeholder="isEdit ? '留空则不修改密码' : '留空默认 123456'" autocomplete="new-password" />
-              </label>
-              <label>性别
-                <select v-model="form.gender"><option value="1">男</option><option value="2">女</option></select>
-              </label>
-              <label>婚姻状况
-                <select v-model="form.ext.maritalStatus"><option value="">请选择</option><option>未婚</option><option>已婚</option><option>离异</option></select>
-              </label>
-              <label>证件类型
-                <select v-model="form.ext.certType"><option>身份证</option><option>护照</option><option>其他</option></select>
-              </label>
-              <label>证件号码<input v-model="form.ext.certNo" placeholder="请输入" /></label>
-              <label>民族<input v-model="form.ext.nation" placeholder="请输入" /></label>
-              <label>学历
-                <select v-model="form.ext.education"><option value="">请选择</option><option>初中</option><option>高中</option><option>中专</option><option>大专</option><option>本科</option></select>
-              </label>
-              <label>出生日期<input v-model="form.ext.birthDate" type="date" /></label>
-              <label>毕业院校<input v-model="form.ext.graduateSchool" placeholder="请输入" /></label>
-              <label>籍贯<input v-model="form.ext.nativePlace" placeholder="请输入" /></label>
-              <label>证件到期日<input v-model="form.ext.certExpireDate" type="date" /></label>
-              <label class="col2">详细地址<input v-model="form.ext.address" placeholder="请输入" /></label>
-              <label class="col2">备注<input v-model="form.remark" placeholder="请输入" /></label>
-            </div>
-          </section>
+    <!-- 新增/编辑（a-modal + a-form 校验/分组） -->
+    <a-modal
+      v-model:open="showDlg"
+      :title="isEdit ? '编辑人员' : '新增人员'"
+      width="960px"
+      :confirm-loading="saving"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="save"
+    >
+      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
+        <!-- 基本信息 -->
+        <div class="fsec">基本信息</div>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="工号(6位)" name="jobNo"><a-input v-model:value="form.jobNo" :disabled="isEdit" :maxlength="6" placeholder="登录用户名" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="姓名" name="name"><a-input v-model:value="form.name" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="登录密码"><a-input v-model:value="form.password" type="password" :placeholder="isEdit ? '留空则不修改' : '留空默认 123456'" autocomplete="new-password" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="性别"><a-select v-model:value="form.gender"><a-select-option value="1">男</a-select-option><a-select-option value="2">女</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="婚姻状况"><a-select v-model:value="form.ext.maritalStatus" allow-clear><a-select-option value="">请选择</a-select-option><a-select-option value="未婚">未婚</a-select-option><a-select-option value="已婚">已婚</a-select-option><a-select-option value="离异">离异</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="证件类型"><a-select v-model:value="form.ext.certType"><a-select-option value="身份证">身份证</a-select-option><a-select-option value="护照">护照</a-select-option><a-select-option value="其他">其他</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="证件号码"><a-input v-model:value="form.ext.certNo" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="民族"><a-input v-model:value="form.ext.nation" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="学历"><a-select v-model:value="form.ext.education" allow-clear><a-select-option value="">请选择</a-select-option><a-select-option value="初中">初中</a-select-option><a-select-option value="高中">高中</a-select-option><a-select-option value="中专">中专</a-select-option><a-select-option value="大专">大专</a-select-option><a-select-option value="本科">本科</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="出生日期"><a-input v-model:value="form.ext.birthDate" type="date" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="毕业院校"><a-input v-model:value="form.ext.graduateSchool" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="籍贯"><a-input v-model:value="form.ext.nativePlace" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="证件到期日"><a-input v-model:value="form.ext.certExpireDate" type="date" /></a-form-item></a-col>
+          <a-col :span="16"><a-form-item label="详细地址"><a-input v-model:value="form.ext.address" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="24"><a-form-item label="备注"><a-input v-model:value="form.remark" placeholder="请输入" /></a-form-item></a-col>
+        </a-row>
 
-          <!-- 任职信息 -->
-          <section class="fsec">
-            <div class="fsec-title">任职信息</div>
-            <div class="fgrid">
-              <label><span class="req">*</span>入职日期<input v-model="form.ext.hireDate" type="date" /></label>
-              <label><span class="req">*</span>所属车间(部门)
-                <select v-model="form.deptId"><option :value="null">请选择</option><option v-for="d in depts" :key="d.deptId" :value="Number(d.deptId)">{{ d.deptName }}</option></select>
-              </label>
-              <label>所属小组<input v-model="form.ext.groupName" placeholder="如 裁剪一组" /></label>
-              <label>员工性质
-                <select v-model="form.ext.empType"><option>正式</option><option>临时</option><option>劳务</option></select>
-              </label>
-              <label><span class="req">*</span>在职状态
-                <select v-model="form.ext.empStatus"><option>试用</option><option>在职</option><option>离职</option><option>长假</option></select>
-              </label>
-              <label>员工卡<input v-model="form.ext.cardNo" placeholder="工牌号" /></label>
-              <label>离职日期<input v-model="form.ext.leaveDate" type="date" /></label>
-            </div>
-            <!-- 岗位/角色多选 -->
-            <div class="fgrid mt">
-              <div class="col2">
-                <div class="sub-label"><span class="req">*</span>岗位（可多选，带默认角色）</div>
-                <div class="chips">
-                  <span v-for="p in posts" :key="p.postId" class="chip" :class="{ on: form.postIds.includes(Number(p.postId)) }"
-                    @click="toggleId(form.postIds, Number(p.postId))">{{ p.postName }}</span>
-                  <span v-if="posts.length === 0" class="tip">暂无岗位</span>
-                </div>
-              </div>
-              <div class="col2">
-                <div class="sub-label"><span class="req">*</span>角色（可多选）</div>
-                <div class="chips">
-                  <span v-for="r in roles" :key="r.roleId" class="chip" :class="{ on: form.roleIds.includes(Number(r.roleId)) }"
-                    @click="toggleId(form.roleIds, Number(r.roleId))">{{ r.roleName }}</span>
-                  <span v-if="roles.length === 0" class="tip">暂无角色</span>
-                </div>
-              </div>
-            </div>
-          </section>
+        <!-- 任职信息 -->
+        <div class="fsec">任职信息</div>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="入职日期" name="ext.hireDate"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属车间(部门)"><a-select v-model:value="form.deptId" allow-clear placeholder="请选择"><a-select-option v-for="d in depts" :key="Number(d.deptId)" :value="Number(d.deptId)">{{ d.deptName }}</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属小组"><a-input v-model:value="form.ext.groupName" placeholder="如 裁剪一组" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="员工性质"><a-select v-model:value="form.ext.empType"><a-select-option value="正式">正式</a-select-option><a-select-option value="临时">临时</a-select-option><a-select-option value="劳务">劳务</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="在职状态" name="ext.empStatus"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="员工卡"><a-input v-model:value="form.ext.cardNo" placeholder="工牌号" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="离职日期"><a-input v-model:value="form.ext.leaveDate" type="date" /></a-form-item></a-col>
+          <a-col :span="12">
+            <a-form-item label="岗位（可多选）">
+              <a-select v-model:value="form.postIds" mode="multiple" placeholder="选择岗位">
+                <a-select-option v-for="p in posts" :key="Number(p.postId)" :value="Number(p.postId)">{{ p.postName }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="角色（可多选）">
+              <a-select v-model:value="form.roleIds" mode="multiple" placeholder="选择角色">
+                <a-select-option v-for="r in roles" :key="Number(r.roleId)" :value="Number(r.roleId)">{{ r.roleName }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
 
-          <!-- 联系方式 -->
-          <section class="fsec">
-            <div class="fsec-title">联系方式</div>
-            <div class="fgrid">
-              <label>手机号（登录）<input v-model="form.phoneNumber" maxlength="11" placeholder="11位，第二登录标识" /></label>
-              <label>邮箱<input v-model="form.email" placeholder="请输入" /></label>
-            </div>
-          </section>
+        <!-- 联系方式 -->
+        <div class="fsec">联系方式</div>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="手机号(登录)"><a-input v-model:value="form.phoneNumber" :maxlength="11" placeholder="11位，第二登录标识" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="邮箱"><a-input v-model:value="form.email" placeholder="请输入" /></a-form-item></a-col>
+        </a-row>
 
-          <!-- 合同薪酬 -->
-          <section class="fsec">
-            <div class="fsec-title">合同薪酬</div>
-            <div class="fgrid">
-              <label>银行卡号<input v-model="form.ext.bankCardNo" placeholder="敏感，脱敏" /></label>
-              <label>签约主体<input v-model="form.ext.signEntity" placeholder="合同签约公司" /></label>
-              <label>合同年限<input v-model.number="form.ext.contractYears" type="number" placeholder="年" /></label>
-              <label>合同签订日期<input v-model="form.ext.contractStart" type="date" /></label>
-              <label>合同截止日期<input v-model="form.ext.contractEnd" type="date" /></label>
-            </div>
-          </section>
+        <!-- 合同薪酬 -->
+        <div class="fsec">合同薪酬</div>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="银行卡号"><a-input v-model:value="form.ext.bankCardNo" placeholder="敏感，脱敏" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="签约主体"><a-input v-model:value="form.ext.signEntity" placeholder="合同签约公司" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="合同年限"><a-input-number v-model:value="form.ext.contractYears" :min="0" style="width:100%" placeholder="年" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="合同签订日期"><a-input v-model:value="form.ext.contractStart" type="date" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="合同截止日期"><a-input v-model:value="form.ext.contractEnd" type="date" /></a-form-item></a-col>
+        </a-row>
 
-          <!-- 社保保险登记 -->
-          <section class="fsec">
-            <div class="fsec-title">社保保险登记</div>
-            <div class="fgrid">
-              <label>是否缴纳社保
-                <select v-model="form.ext.hasSocial"><option value="0">否</option><option value="1">是</option></select>
-              </label>
-              <label>社保缴纳金额(元/月)<input v-model.number="form.ext.socialAmount" type="number" /></label>
-              <label>社保补助(元/月)<input v-model.number="form.ext.socialSubsidy" type="number" /></label>
-              <label>是否缴纳商业险
-                <select v-model="form.ext.hasCommercial"><option value="0">否</option><option value="1">是</option></select>
-              </label>
-              <label>商业险种<input v-model="form.ext.commercialType" placeholder="如 意外险/雇主责任险" /></label>
-              <label>社保核对日期<input v-model="form.ext.socialCheckDate" type="date" /></label>
-              <label>是否住宿（只登记）
-                <select v-model="form.ext.isDorm"><option value="0">否</option><option value="1">是</option></select>
-              </label>
-            </div>
-          </section>
-        </div>
-        <div class="dialog-foot">
-          <button class="btn" @click="close">取消</button>
-          <button class="btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存' }}</button>
-        </div>
-      </div>
-    </div>
+        <!-- 社保保险登记 -->
+        <div class="fsec">社保保险登记</div>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="是否缴纳社保"><a-select v-model:value="form.ext.hasSocial"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="社保缴纳金额(元/月)"><a-input-number v-model:value="form.ext.socialAmount" :min="0" style="width:100%" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="社保补助(元/月)"><a-input-number v-model:value="form.ext.socialSubsidy" :min="0" style="width:100%" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="是否缴纳商业险"><a-select v-model:value="form.ext.hasCommercial"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="商业险种"><a-input v-model:value="form.ext.commercialType" placeholder="如 意外险/雇主责任险" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="社保核对日期"><a-input v-model:value="form.ext.socialCheckDate" type="date" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="是否住宿(只登记)"><a-select v-model:value="form.ext.isDorm"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
+        </a-row>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -434,50 +429,9 @@ function toggleId(arr: number[], id: number) {
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 .head-actions { display: flex; gap: 8px; align-items: center; }
-.imp { display: inline-flex; align-items: center; cursor: pointer; }
-.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 10px 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
-.filter-bar input, .filter-bar select { height: 32px; border: 1px solid #E5E8EF; border-radius: 6px; padding: 0 10px; font-size: 13px; outline: none; }
-.filter-bar input { width: 160px; }
-.filter-bar input:focus, .filter-bar select:focus { border-color: #1E5EFF; }
-.btn { height: 32px; padding: 0 14px; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; font-size: 13px; color: #4E5969; cursor: pointer; }
-.btn:hover { border-color: #1E5EFF; color: #1E5EFF; }
-.btn.ghost { background: transparent; }
-.btn-primary { height: 32px; padding: 0 16px; background: #1E5EFF; border: none; border-radius: 6px; font-size: 13px; color: #fff; cursor: pointer; }
-.btn-primary:hover { background: #1747c7; }
-.btn-primary:disabled { opacity: .6; cursor: not-allowed; }
 
-.msg { padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
-.msg-success { background: #E8F8F0; color: #00B388; border: 1px solid #B7E8D0; }
-.msg-error { background: #FEECEC; color: #F53F3F; border: 1px solid #FAC7C7; }
+.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
 
-.tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-.st-试用 { background: #FFF7E8; color: #FF9500; }
-.st-在职 { background: #E8F8F0; color: #00B388; }
-.st-离职 { background: #FEECEC; color: #F53F3F; }
-.st-长假 { background: #E8F0FF; color: #1E5EFF; }
-.ops a { color: #1E5EFF; cursor: pointer; margin-right: 10px; }
-.ops a:hover { text-decoration: underline; }
-
-/* 弹窗 */
-.mask { position: fixed; inset: 0; background: rgba(29,33,41,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.dialog { width: 920px; max-width: 95vw; max-height: 90vh; background: #fff; border-radius: 12px; display: flex; flex-direction: column; }
-.dialog-title { font-size: 16px; font-weight: 600; padding: 16px 20px; border-bottom: 1px solid #F0F2F5; }
-.dialog-body { flex: 1; overflow: auto; padding: 16px 20px; }
-.dialog-foot { padding: 12px 20px; border-top: 1px solid #F0F2F5; display: flex; justify-content: flex-end; gap: 10px; }
-
-.fsec { margin-bottom: 20px; }
-.fsec-title { font-size: 14px; font-weight: 600; color: #1D2129; margin-bottom: 10px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
-.fgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 16px; }
-.fgrid.mt { margin-top: 12px; }
-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #4E5969; }
-label input, label select { height: 32px; border: 1px solid #E5E8EF; border-radius: 6px; padding: 0 10px; font-size: 13px; outline: none; color: #1D2129; }
-label input:focus, label select:focus { border-color: #1E5EFF; }
-label input:disabled { background: #F5F7FA; color: #86909C; }
-.col2 { grid-column: span 2; }
-.req { color: #F53F3F; margin-right: 2px; }
-.sub-label { font-size: 12px; color: #4E5969; margin-bottom: 6px; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { padding: 4px 10px; border: 1px solid #E5E8EF; border-radius: 6px; font-size: 12px; cursor: pointer; color: #4E5969; background: #fff; }
-.chip.on { background: #E8F0FF; border-color: #1E5EFF; color: #1E5EFF; }
-.tip { color: #C9CDD4; font-size: 12px; }
+.fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
+.fsec:first-child { margin-top: 0; }
 </style>
