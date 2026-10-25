@@ -55,6 +55,12 @@ public class SysDeptBo implements Serializable {
     private Long buildingId;
 
     /**
+     * 位置路径(文本)：楼/楼层/车间/房间 逐级拼接，选到哪层填到哪层
+     */
+    @Size(min = 0, max = 200, message = "位置路径长度不能超过{max}个字符")
+    private String location;
+
+    /**
      * 显示顺序
      */
     @NotNull(message = "显示顺序不能为空")

@@ -53,6 +53,11 @@ public class SysDept extends BaseEntity {
     private Long buildingId;
 
     /**
+     * 位置路径(文本)：楼/楼层/车间/房间 逐级拼接，选到哪层填到哪层（如 一号厂房/裁剪车间）
+     */
+    private String location;
+
+    /**
      * 显示顺序
      */
     private Integer orderNum;

@@ -66,6 +66,11 @@ public class SysDeptVo implements Serializable {
     private Long buildingId;
 
     /**
+     * 位置路径(文本)：楼/楼层/车间/房间 逐级拼接
+     */
+    private String location;
+
+    /**
      * 显示顺序
      */
     private Integer orderNum;
