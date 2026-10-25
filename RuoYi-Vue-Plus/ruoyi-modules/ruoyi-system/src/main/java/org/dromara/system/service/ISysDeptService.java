@@ -8,6 +8,7 @@ import org.dromara.system.domain.vo.SysDeptVo;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 部门管理 服务层
@@ -72,6 +73,29 @@ public interface ISysDeptService {
      * @return 部门列表信息
      */
     List<SysDeptVo> selectDeptByIds(Collection<Long> deptIds);
+
+    /**
+     * 查询某部门管辖的被管部门ID列表
+     *
+     * @param deptId 管辖方部门ID
+     * @return 被管部门ID列表
+     */
+    List<Long> selectManagedDeptIds(Long deptId);
+
+    /**
+     * 设置某部门管辖的被管部门（全量覆盖）
+     *
+     * @param deptId  管辖方部门ID
+     * @param deptIds 被管部门ID列表（空=清空）
+     */
+    void updateManagedDepts(Long deptId, List<Long> deptIds);
+
+    /**
+     * 查询全部部门的被管数量（deptId -> 被管部门数）
+     *
+     * @return 管辖方部门ID -> 被管部门数
+     */
+    Map<Long, Long> selectManagedCounts();
 
     /**
      * 根据ID查询所有子部门数（正常状态）
