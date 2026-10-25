@@ -19,7 +19,9 @@ const router = useRouter()
 // ===== 列表 =====
 const rows = ref<any[]>([])
 const loading = ref(false)
+const keyword = ref('')                 // 搜索编号/名称/地址
 const buildingType = ref<string | undefined>()   // 用途类别筛选（空=全部）
+const statusFilter = ref<string | undefined>()   // 状态筛选（空=全部）
 
 // 用途类别：厂房 / 行政楼 / 宿舍楼（仓库是建筑内区域，不在此列）
 const typeOptions = ['厂房', '行政楼', '宿舍楼']
@@ -75,12 +77,23 @@ function toCamel(o: any): any {
 async function loadList() {
   loading.value = true
   try {
-    const res: any = await api.get('/system/building/list', { params: { buildingType: buildingType.value ?? '' } })
+    const res: any = await api.get('/system/building/list', {
+      params: {
+        keyword: keyword.value,
+        buildingType: buildingType.value ?? '',
+        status: statusFilter.value ?? '',
+      },
+    })
     if (res.code === 200) rows.value = (res.data || []).map(toCamel)
     else message.error(res.msg || '加载建筑失败')
   } catch (e: any) {
     message.error(e?.response?.data?.msg || '加载建筑失败')
   } finally { loading.value = false }
+}
+
+function resetFilter() {
+  keyword.value = ''; buildingType.value = undefined; statusFilter.value = undefined
+  loadList()
 }
 
 // ===== 新增/编辑 =====
@@ -201,9 +214,6 @@ onMounted(loadList)
         <span class="head-sub">建筑=物理资产（一栋楼：面积/楼层/地址/建成年份），部门坐落在建筑里</span>
       </div>
       <div class="head-actions">
-        <a-select v-model:value="buildingType" placeholder="用途类别" allow-clear style="width:120px" @change="loadList">
-          <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
-        </a-select>
         <a-button :loading="loading" @click="loadList">
           <ReloadOutlined />刷新
         </a-button>
@@ -211,6 +221,26 @@ onMounted(loadList)
           <PlusOutlined />新增建筑
         </a-button>
       </div>
+    </div>
+
+    <!-- 筛选（a-input/a-select 统一控件，与人员信息风格一致） -->
+    <div class="filter-bar">
+      <a-input v-model:value="keyword" placeholder="搜索编号/名称/地址" allow-clear style="width:200px" @press-enter="loadList" />
+      <a-select v-model:value="buildingType" placeholder="用途类别" allow-clear style="width:120px" @change="loadList">
+        <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+      </a-select>
+      <a-select v-model:value="statusFilter" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+        <a-select-option value="0">在用</a-select-option>
+        <a-select-option value="1">闲置</a-select-option>
+        <a-select-option value="2">维修</a-select-option>
+      </a-select>
+      <a-button type="primary" @click="loadList">查询</a-button>
+      <a-button @click="resetFilter">重置</a-button>
+    </div>
+
+    <!-- 列表工具行：条数 -->
+    <div class="table-bar">
+      <span class="total">共 {{ rows.length }} 条</span>
     </div>
 
     <!-- 建筑列表（条数少，不分页） -->
@@ -354,6 +384,10 @@ onMounted(loadList)
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 .head-sub { font-size: 12px; color: #86909C; }
 .head-actions { display: flex; gap: 8px; align-items: center; }
+
+.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.table-bar .total { font-size: 13px; color: #4E5969; }
 
 .plant-table { width: 100%; background: #fff; border-radius: 10px; }
 .plant-table :deep(.ant-table) { font-size: 13px; }
