@@ -8,13 +8,14 @@
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
  * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, computed, onMounted, defineComponent, h } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, defineComponent, h, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
 const router = useRouter()
+const route = useRoute()
 
 // ===== 列表 =====
 const rows = ref<any[]>([])
@@ -177,7 +178,21 @@ const emptyForm = () => ({
 })
 const form = ref(emptyForm())
 
-onMounted(() => { loadList(); loadOptions() })
+onMounted(() => {
+  // 从全局搜索跳入时，带 keyword 自动填充并查询（定位到该人）
+  const q = route.query.keyword
+  if (typeof q === 'string' && q) keyword.value = q
+  loadList(); loadOptions()
+})
+
+// 已在人员页时，从搜索再次跳入（query 变化）也重新定位
+watch(() => route.query.keyword, (q) => {
+  if (typeof q === 'string' && q && route.name === 'Person') {
+    keyword.value = q
+    pageNum.value = 1
+    loadList()
+  }
+})
 
 async function loadList() {
   loading.value = true
