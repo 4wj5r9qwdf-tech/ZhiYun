@@ -40,7 +40,7 @@ const columns = [
   { title: '用途类别', key: 'buildingType', width: 90 },
   { title: '建筑编号', dataIndex: 'plantCode', key: 'plantCode', width: 100 },
   { title: '建筑名称', dataIndex: 'plantName', key: 'plantName', width: 150 },
-  { title: '楼层情况', dataIndex: 'floorInfo', key: 'floorInfo', width: 100 },
+  { title: '楼层', dataIndex: 'floorInfo', key: 'floorInfo', width: 100 },
   { title: '占地面积(㎡)', dataIndex: 'landArea', key: 'landArea', width: 120 },
   { title: '建筑面积(㎡)', dataIndex: 'buildingArea', key: 'buildingArea', width: 120 },
   { title: '地址', dataIndex: 'address', key: 'address', ellipsis: true },
@@ -94,7 +94,7 @@ const emptyForm = () => ({
   buildingType: '厂房',
   plantCode: '',
   plantName: '',
-  floorInfo: undefined as string | undefined,   // a-select：单层/双层/三层/多层（allowClear 自由填）
+  floorInfo: undefined as number | undefined,   // 楼层（几层，数字）
   landArea: undefined as number | undefined,
   buildingArea: undefined as number | undefined,
   address: '',
@@ -107,8 +107,6 @@ const form = ref(emptyForm())
 const rules: any = {
   plantName: [{ required: true, message: '请输入建筑名称', trigger: 'blur' }],
 }
-
-const floorOptions = ['单层', '双层', '三层', '多层']
 
 function openAdd() {
   isEdit.value = false
@@ -130,7 +128,7 @@ async function openEdit(row: any) {
     buildingType: d.buildingType || '厂房',
     plantCode: d.plantCode || '',
     plantName: d.plantName || '',
-    floorInfo: d.floorInfo || undefined,
+    floorInfo: d.floorInfo === null || d.floorInfo === undefined || d.floorInfo === '' ? undefined : Number(d.floorInfo),
     // 数字字段后端可能回字符串，Number() 归一；空值保持 undefined
     landArea: d.landArea === null || d.landArea === undefined || d.landArea === '' ? undefined : Number(d.landArea),
     buildingArea: d.buildingArea === null || d.buildingArea === undefined || d.buildingArea === '' ? undefined : Number(d.buildingArea),
@@ -151,7 +149,7 @@ async function save() {
       buildingType: form.value.buildingType || '厂房',
       plantCode: form.value.plantCode || undefined,
       plantName: form.value.plantName,
-      floorInfo: form.value.floorInfo || undefined,
+      floorInfo: form.value.floorInfo ?? undefined,
       landArea: form.value.landArea ?? undefined,
       buildingArea: form.value.buildingArea ?? undefined,
       address: form.value.address || undefined,
@@ -237,7 +235,7 @@ onMounted(loadList)
           <span class="plant-name">{{ record.plantName }}</span>
         </template>
         <template v-else-if="column.key === 'floorInfo'">
-          {{ record.floorInfo || '—' }}
+          {{ record.floorInfo ? record.floorInfo + ' 层' : '—' }}
         </template>
         <template v-else-if="column.key === 'landArea'">
           {{ fmtArea(record.landArea) }}
@@ -298,14 +296,14 @@ onMounted(loadList)
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="楼层情况">
-              <a-select
+            <a-form-item label="楼层（几层）">
+              <a-input-number
                 v-model:value="form.floorInfo"
-                allow-clear
-                placeholder="请选择或自由输入"
-              >
-                <a-select-option v-for="f in floorOptions" :key="f" :value="f">{{ f }}</a-select-option>
-              </a-select>
+                :min="1"
+                :max="99"
+                style="width:100%"
+                placeholder="如 1、2、3"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
