@@ -43,7 +43,7 @@ function resolveIcon(name?: string) {
 }
 
 // 卡片运行态（配置）：宽高独立（自由拉伸，非等比）
-type CardState = Card & { sort: number; cardW: number; cardH: number; isTop: boolean; inWorkbench: boolean }
+type CardState = Card & { sort: number; cardW: number; cardH: number; isTop: boolean; inWorkbench: boolean; locked: boolean }
 const state = ref<CardState[]>([])
 
 // 拖拽排序
@@ -56,9 +56,8 @@ let resizeStartY = 0
 let resizeStartW = 0
 let resizeStartH = 0
 
-// 等比锁定（默认锁定=正方形档位；点卡片上的锁可解开成长方形档位）
+// 等比锁定：每张卡各自独立（默认锁定=正方形档位；点该卡的锁解开成长方形档位）
 const LOCK_DEFAULT = true
-const locked = ref(LOCK_DEFAULT)
 
 // ===== 卡片尺寸：档位制（对齐安卓小组件，不做任意像素，保证网格整齐）=====
 // 单元 = UNIT（卡片内容）+ GAP（间距）构成一个网格格子；卡片尺寸只能取「格子数」的整数倍。
@@ -80,7 +79,7 @@ const DEFAULT_W = colsToW(1), DEFAULT_H = rowsToH(1) // 默认 = 1×1 正方形�
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
-    ...c, sort: i, cardW: DEFAULT_W, cardH: DEFAULT_H, isTop: false, inWorkbench: false,
+    ...c, sort: i, cardW: DEFAULT_W, cardH: DEFAULT_H, isTop: false, inWorkbench: false, locked: LOCK_DEFAULT,
   }))
   await loadConfig()
   bindResize()
@@ -132,7 +131,7 @@ async function saveCard(c: CardState) {
 
 function toggleTop(c: CardState) { c.isTop = !c.isTop; saveCard(c) }
 function toggleWorkbench(c: CardState) { c.inWorkbench = !c.inWorkbench; saveCard(c) }
-function toggleLock() { locked.value = !locked.value }
+function toggleLock(c: CardState) { c.locked = !c.locked; saveCard(c) }
 
 // ===== 拖拽排序 =====
 function onDragStart(i: number, e: DragEvent) { dragIndex.value = i; e.dataTransfer?.setData('text/plain', String(i)) }
@@ -166,7 +165,7 @@ function onResizeMove(e: MouseEvent) {
   const c = state.value.find(x => x.key === resizing.value!.key)
   if (!c) return
   const { axis } = resizing.value
-  if (locked.value) {
+  if (c.locked) {
     // 等比（正方形档位）：宽=高，取 1×1 / 2×2 / 3×3
     const delta = axis === 'h' ? (e.clientY - resizeStartY) : (e.clientX - resizeStartX)
     const startSide = Math.max(resizeStartW, resizeStartH)
@@ -207,7 +206,7 @@ function openCard(c: CardState) {
       v-for="(c, i) in sorted"
       :key="c.key"
       class="fc-card"
-      :class="{ top: c.isTop, dragging: dragIndex === i, over: overIndex === i && dragIndex !== i, readonly }"
+      :class="{ top: c.isTop, dragging: dragIndex === i, over: overIndex === i && dragIndex !== i, readonly, resizing: resizing?.key === c.key }"
       :style="{ '--w': c.cardW + 'px', '--h': c.cardH + 'px' }"
       :draggable="!readonly"
       @dragstart="onDragStart(i, $event)"
@@ -231,7 +230,7 @@ function openCard(c: CardState) {
         <div v-if="!readonly" class="fc-actions">
           <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
           <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
-          <button class="fc-act" :class="{ on: locked }" :title="locked ? '解锁：可自由拉宽高(长方形)' : '锁定：等比缩放(正方形)'" @click.stop="toggleLock">{{ locked ? '🔒' : '🔓' }}</button>
+          <button class="fc-act" :class="{ on: c.locked }" :title="c.locked ? '解锁：本卡可自由拉宽高(长方形)' : '锁定：本卡等比缩放(正方形)'" @click.stop="toggleLock(c)">{{ c.locked ? '🔒' : '🔓' }}</button>
         </div>
       </div>
 
@@ -249,6 +248,7 @@ function openCard(c: CardState) {
 .fc-card.readonly { cursor: pointer; }
 .fc-card:hover { border-color: #1E5EFF; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(30,94,255,.12); }
 .fc-card.dragging { opacity: .5; }
+.fc-card.resizing { z-index: 20; }
 .fc-card.over { border-color: #1E5EFF; box-shadow: 0 0 0 2px #E8F0FF; transform: none; }
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; z-index: 2; }
@@ -265,10 +265,12 @@ function openCard(c: CardState) {
 .fc-act { width: 26px; height: 26px; flex: none; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 14px; line-height: 1; color: #4E5969; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .fc-act:hover { border-color: #1E5EFF; color: #1E5EFF; }
 .fc-act.on { background: #E8F0FF; border-color: #1E5EFF; color: #1E5EFF; }
-/* 拉伸手柄：右=宽(ew)，下=高(ns)，右下角=宽高(nwse) */
+/* 拉伸手柄：右=宽(ew)，下=高(ns)，右下角=宽高(nwse)
+   注意：卡片 overflow:hidden，手柄必须放在卡内(right/bottom=0)否则被裁剪点不到；
+   拉伸中的卡加 .resizing 提到最上层，避免被右侧/下方相邻卡盖住手柄。 */
 .fc-resize { position: absolute; z-index: 3; }
-.fc-resize-w { right: -3px; top: 20%; bottom: 20%; width: 8px; cursor: ew-resize; }
-.fc-resize-h { left: 20%; right: 20%; bottom: -3px; height: 8px; cursor: ns-resize; }
+.fc-resize-w { right: 0; top: 20%; bottom: 20%; width: 8px; cursor: ew-resize; }
+.fc-resize-h { left: 20%; right: 20%; bottom: 0; height: 8px; cursor: ns-resize; }
 .fc-resize-wh { right: 4px; bottom: 4px; width: 16px; height: 16px; cursor: nwse-resize; color: #C9CDD4; font-size: 12px; display: flex; align-items: center; justify-content: center; }
 .fc-resize-w:hover, .fc-resize-h:hover, .fc-resize-wh:hover { color: #1E5EFF; }
 </style>
