@@ -9,7 +9,7 @@
  */
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -214,9 +214,6 @@ onMounted(loadList)
         <span class="head-sub">建筑=物理资产（一栋楼：面积/楼层/地址/建成年份），部门坐落在建筑里</span>
       </div>
       <div class="head-actions">
-        <a-button :loading="loading" @click="loadList">
-          <ReloadOutlined />刷新
-        </a-button>
         <a-button type="primary" size="middle" @click="openAdd">
           <PlusOutlined />新增建筑
         </a-button>
