@@ -27,6 +27,7 @@ const columns = [
   { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
   { title: '层级', dataIndex: 'deptCategory', key: 'deptCategory', width: 90 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
+  { title: '位置', key: 'location', width: 160 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
   { title: '电话', dataIndex: 'phone', key: 'phone', width: 130 },
   { title: '状态', key: 'status', width: 100 },
@@ -71,6 +72,16 @@ function buildingLabel(id: any) {
   if (id === null || id === undefined || id === '') return ''
   return buildingNameMap.value[String(id)] || '—'
 }
+// 组装位置路径：楼/层/尾段，选到哪段拼到哪段（不强制填满）
+function composeLocation() {
+  const parts: string[] = []
+  const b = form.value.buildingId ? buildingLabel(form.value.buildingId) : ''
+  if (b && b !== '—') parts.push(b)
+  if (form.value.floor != null && form.value.floor !== 0) parts.push(`${form.value.floor}层`)
+  const tail = (form.value.location || '').trim().replace(/^\/+|\/+$/g, '')
+  if (tail) parts.push(tail)
+  return parts.join('/')
+}
 async function loadBuildings() {
   try {
     const res: any = await api.get('/system/building/list')
@@ -104,7 +115,9 @@ const emptyForm = () => ({
   parentId: undefined as number | undefined,
   deptName: '',
   deptCategory: undefined as string | undefined,
-  buildingId: undefined as number | undefined,   // 所在建筑（仅车间层）
+  buildingId: undefined as number | undefined,   // 所在建筑（哪栋楼，可选，所有层级都能填）
+  floor: undefined as number | undefined,        // 楼层（几层，可选；buildingId 选了才出现）
+  location: '',                                   // 位置路径尾段（车间/房间等，可选，自由填）
   orderNum: 0,
   leader: '',
   phone: '',
@@ -149,12 +162,24 @@ async function openEdit(row: any) {
   const res: any = await api.get(`/system/dept/${row.deptId}`)
   if (res.code !== 200) { message.error('加载详情失败'); return }
   const d = res.data
+  // 回填位置：location 是拼好的路径（楼/层/尾段），反解出 buildingId/floor/尾段
+  const loc = d.location || ''
+  const bName = buildingLabel(d.buildingId)
+  let rest = loc
+  if (bName && loc.startsWith(bName)) rest = loc.slice(bName.length).replace(/^\/+/, '')
+  const segs = rest.split('/').filter(Boolean)
+  let floor: number | undefined
+  let tail = ''
+  if (segs.length && /^\d+层?$/.test(segs[0])) { floor = Number(segs[0].replace('层', '')); tail = segs.slice(1).join('/') }
+  else tail = segs.join('/')
   form.value = {
     deptId: Number(d.deptId),
     parentId: d.parentId === 0 || d.parentId === '0' ? undefined : Number(d.parentId),
     deptName: d.deptName || '',
     deptCategory: d.deptCategory || undefined,
     buildingId: d.buildingId ? Number(d.buildingId) : undefined,
+    floor,
+    location: tail,
     orderNum: Number(d.orderNum ?? 0),
     leader: d.leader || '',
     phone: d.phone || '',
@@ -175,7 +200,8 @@ async function save() {
       parentId: form.value.parentId ?? 0,
       deptName: form.value.deptName,
       deptCategory: form.value.deptCategory,
-      buildingId: form.value.deptCategory === '车间' ? (form.value.buildingId ?? null) : null,
+      buildingId: form.value.buildingId ?? null,
+      location: composeLocation(),
       orderNum: form.value.orderNum ?? 0,
       leader: form.value.leader || '',
       phone: form.value.phone || '',
@@ -252,7 +278,11 @@ onMounted(() => { loadTree(); loadBuildings() })
           <a-tag :color="categoryColor[record.deptCategory]">{{ record.deptCategory || '-' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'buildingId'">
-          {{ record.deptCategory === '车间' ? (buildingLabel(record.buildingId) || '—') : '—' }}
+          {{ buildingLabel(record.buildingId) || '—' }}
+        </template>
+        <template v-else-if="column.key === 'location'">
+          <span v-if="record.location" class="loc-cell">📍 {{ record.location }}</span>
+          <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'leader'">
           {{ record.leader || '-' }}
@@ -305,11 +335,23 @@ onMounted(() => { loadTree(); loadBuildings() })
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col v-if="form.deptCategory === '车间'" :span="12">
-            <a-form-item label="所在建筑（车间坐落在哪栋楼）">
+          <!-- 所在位置（渐进式：选楼→选层→填车间/房间，选到哪段算哪段，均可不填） -->
+          <a-col :span="12">
+            <a-form-item label="所在建筑（哪栋楼，可不填）">
               <a-select v-model:value="form.buildingId" allow-clear placeholder="请选择建筑（建筑档案）">
                 <a-select-option v-for="b in buildings" :key="Number(b.plantId)" :value="Number(b.plantId)">{{ b.plantName }}</a-select-option>
               </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col v-if="form.buildingId" :span="12">
+            <a-form-item label="楼层（几层，可不填）">
+              <a-input-number v-model:value="form.floor" :min="1" :max="99" style="width:100%" placeholder="如 3" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="位置（车间/房间，可不填；如 裁剪车间 / 302室）">
+              <a-input v-model:value="form.location" :maxlength="100" placeholder="选到哪填到哪，不强制" />
+              <div v-if="composeLocation()" class="loc-preview">📍 {{ composeLocation() }}</div>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -377,4 +419,7 @@ onMounted(() => { loadTree(); loadBuildings() })
 .dept-name { font-weight: 500; color: #1D2129; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
+.loc-preview { margin-top: 4px; font-size: 12px; color: #1E5EFF; background: #F4F7FF; border-radius: 4px; padding: 2px 8px; }
+.loc-cell { color: #1E5EFF; font-size: 12px; }
+.muted { color: #C9CDD4; }
 </style>
