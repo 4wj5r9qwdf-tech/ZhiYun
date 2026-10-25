@@ -311,7 +311,15 @@ public class SysDeptServiceImpl implements ISysDeptService, DeptService {
     @CacheEvict(cacheNames = CacheNames.SYS_DEPT_AND_CHILD, allEntries = true)
     @Override
     public int insertDept(SysDeptBo bo) {
-        SysDept info = deptMapper.selectById(bo.getParentId());
+        SysDept dept = MapstructUtils.convert(bo, SysDept.class);
+        Long parentId = bo.getParentId();
+        // 顶层部门：parentId 为 null 或 0 → 无需父部门，ancestors="0"
+        if (parentId == null || parentId == 0L) {
+            dept.setParentId(0L);
+            dept.setAncestors("0");
+            return deptMapper.insert(dept);
+        }
+        SysDept info = deptMapper.selectById(parentId);
         // 如果父节点不存在或不为正常状态,则不允许新增子节点
         if (ObjectUtil.isNull(info)) {
             throw new ServiceException("父部门不存在");
@@ -319,7 +327,6 @@ public class SysDeptServiceImpl implements ISysDeptService, DeptService {
         if (!SystemConstants.NORMAL.equals(info.getStatus())) {
             throw new ServiceException("部门停用，不允许新增");
         }
-        SysDept dept = MapstructUtils.convert(bo, SysDept.class);
         dept.setAncestors(info.getAncestors() + StringUtils.SEPARATOR + dept.getParentId());
         return deptMapper.insert(dept);
     }
@@ -343,14 +350,23 @@ public class SysDeptServiceImpl implements ISysDeptService, DeptService {
             throw new ServiceException("部门不存在，无法修改");
         }
         if (!oldDept.getParentId().equals(dept.getParentId())) {
-            // 如果是新父部门 则校验是否具有新父部门权限 避免越权
-            this.checkDeptDataScope(dept.getParentId());
-            SysDept newParentDept = deptMapper.selectById(dept.getParentId());
-            if (ObjectUtil.isNotNull(newParentDept)) {
-                String newAncestors = newParentDept.getAncestors() + StringUtils.SEPARATOR + newParentDept.getDeptId();
+            Long newParentId = dept.getParentId();
+            if (newParentId == null || newParentId == 0L) {
+                // 移到顶层：ancestors 重置为 "0"
                 String oldAncestors = oldDept.getAncestors();
-                dept.setAncestors(newAncestors);
-                updateDeptChildren(dept.getDeptId(), newAncestors, oldAncestors);
+                dept.setParentId(0L);
+                dept.setAncestors("0");
+                updateDeptChildren(dept.getDeptId(), "0", oldAncestors);
+            } else {
+                // 如果是新父部门 则校验是否具有新父部门权限 避免越权
+                this.checkDeptDataScope(newParentId);
+                SysDept newParentDept = deptMapper.selectById(newParentId);
+                if (ObjectUtil.isNotNull(newParentDept)) {
+                    String newAncestors = newParentDept.getAncestors() + StringUtils.SEPARATOR + newParentDept.getDeptId();
+                    String oldAncestors = oldDept.getAncestors();
+                    dept.setAncestors(newAncestors);
+                    updateDeptChildren(dept.getDeptId(), newAncestors, oldAncestors);
+                }
             }
         } else {
             dept.setAncestors(oldDept.getAncestors());
