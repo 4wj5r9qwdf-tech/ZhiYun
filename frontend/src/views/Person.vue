@@ -8,7 +8,7 @@
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
  * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, computed, onMounted, defineComponent, h, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -99,53 +99,36 @@ function onColResize(key: string, w: number) {
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 
-// a-table components：表头单元格加 resize 手柄（右侧拖拽改列宽）
-const tableComponents = {
-  header: {
-    cell: defineComponent({
-      props: ['column', 'index'],
-      setup(props: any, { slots }: any) {
-        const onStart = (e: MouseEvent) => {
-          const th = (e.currentTarget as HTMLElement).closest('th') as HTMLElement
-          if (!th) return
-          const startX = e.clientX
-          const startW = th.getBoundingClientRect().width
-          // antd 不把 column 传给自绘表头，用 index 映射回可见列（columns 已过滤隐藏列，顺序一致）
-          // antd 不传 column/index，用 th 在表头行中的位置(cellIndex)映射回可见列
-          const key = columns.value[(th as HTMLTableCellElement).cellIndex]?.key
-          const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
-          const onUp = () => {
-            document.removeEventListener('mousemove', onMove)
-            document.removeEventListener('mouseup', onUp)
-            document.body.style.cursor = ''
-          }
-          document.addEventListener('mousemove', onMove)
-          document.addEventListener('mouseup', onUp)
-          document.body.style.cursor = 'col-resize'
-          e.preventDefault()
-          e.stopPropagation()
-        }
-        return () =>
-          h('th', { class: 'zy-resizable-th' }, [
-            h('div', { class: 'zy-th-inner' }, slots.default?.()),
-            // 除操作列外，右侧 resize 手柄
-            columns.value[props.index]?.key !== 'ops'
-              ? h('span', { class: 'zy-resize-handle', onMousedown: onStart })
-              : null,
-          ])
-      },
-    }),
-  },
+// 表头 mousedown：只在 th 右缘 8px 内才开始拖拽（否则让位给排序点击）
+function onHeaderMouseDown(key: string, e: MouseEvent) {
+  if (key === 'ops') return
+  const th = (e.currentTarget as HTMLElement) as HTMLTableCellElement
+  const rect = th.getBoundingClientRect()
+  if (e.clientX < rect.right - 8) return   // 不在右缘 → 不拦截，交给排序
+  const startX = e.clientX
+  const startW = rect.width
+  const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+  e.preventDefault()
+  e.stopPropagation()
 }
 
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏；应用自定义列宽）
+// 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
 const columns = computed(() => {
   const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => {
       const base = ALL_COLUMNS.find(a => a.key === c.key)!
-      return { ...base, width: c.width }
+      return { ...base, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e) }) }
     })
     .filter(Boolean)
   return [...list, ops]
@@ -523,7 +506,6 @@ function resetFilter() {
       :loading="loading"
       :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
-      :components="tableComponents"
       table-layout="fixed"
       row-key="user_id"
       size="middle"
@@ -681,11 +663,10 @@ function resetFilter() {
 .fsec:first-child { margin-top: 0; }
 </style>
 
-<!-- 非 scoped：列宽拖拽手柄由 tableComponents 用 h() 渲染，无 scoped 属性，必须全局样式 -->
+<!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
 <style>
-.zy-resizable-th { position: relative; }
-.zy-th-inner { display: inline-block; max-width: calc(100% - 14px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 3; border-right: 2px solid #E5E8EF; background: transparent; transition: background .12s, border-color .12s; }
-.zy-resizable-th:hover .zy-resize-handle { border-right-color: #C9CDD4; }
-.zy-resize-handle:hover, .zy-resize-handle:active { background: rgba(30,94,255,.18); border-right-color: #1E5EFF; }
+.ant-table-thead > tr > th { position: relative; }
+.ant-table-thead > tr > th::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
+.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
+.ant-table-thead > tr > th:active::after, .ant-table-thead > tr > th.resizing::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
 </style>
