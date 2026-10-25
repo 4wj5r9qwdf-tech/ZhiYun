@@ -673,15 +673,17 @@ function resetFilter() {
 .person-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
-/* 列宽拖拽：表头右侧 resize 手柄——加大加明显便于确认 */
-.zy-resizable-th { position: relative; }
-.zy-th-inner { display: inline-block; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; }
-.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 16px; cursor: col-resize; z-index: 3; border-right: 3px solid #FF4D4F; background: rgba(255,77,79,.12); transition: background .12s, border-color .12s; }
-.zy-resizable-th:hover .zy-resize-handle { border-right-color: #FF7875; background: rgba(255,77,79,.2); }
-.zy-resize-handle:hover, .zy-resize-handle:active { background: rgba(30,94,255,.3); border-right-color: #1E5EFF; }
-
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
 .fsec:first-child { margin-top: 0; }
+</style>
+
+<!-- 非 scoped：列宽拖拽手柄由 tableComponents 用 h() 渲染，无 scoped 属性，必须全局样式 -->
+<style>
+.zy-resizable-th { position: relative; }
+.zy-th-inner { display: inline-block; max-width: calc(100% - 14px); overflow: hidden; text-overflow: ellipsis; }
+.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 3; border-right: 2px solid #E5E8EF; background: transparent; transition: background .12s, border-color .12s; }
+.zy-resizable-th:hover .zy-resize-handle { border-right-color: #C9CDD4; }
+.zy-resize-handle:hover, .zy-resize-handle:active { background: rgba(30,94,255,.18); border-right-color: #1E5EFF; }
 </style>
