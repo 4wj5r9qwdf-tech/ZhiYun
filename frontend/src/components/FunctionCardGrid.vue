@@ -100,6 +100,7 @@ async function loadConfig() {
           c.sort = m.sort
           c.isTop = m.is_top === '1'
           c.inWorkbench = m.in_workbench === '1'
+          c.locked = m.locked !== '0'   // 默认锁定；'0'=解锁
           // 宽高独立（新）；兼容旧单值 icon_size（沿用为宽，高按比例）
           if (m.card_w && m.card_h) { c.cardW = m.card_w; c.cardH = m.card_h }
           else if (m.icon_size) { c.cardW = m.icon_size; c.cardH = Math.round(m.icon_size * 0.65) }
@@ -124,7 +125,7 @@ async function saveCard(c: CardState) {
   try {
     await api.put('/system/profile/menu-config', {
       menuKey: c.key, sort: c.sort, cardW: c.cardW, cardH: c.cardH,
-      isTop: c.isTop ? '1' : '0', inWorkbench: c.inWorkbench ? '1' : '0',
+      isTop: c.isTop ? '1' : '0', inWorkbench: c.inWorkbench ? '1' : '0', locked: c.locked ? '1' : '0',
     })
   } catch { /* ignore */ }
 }
