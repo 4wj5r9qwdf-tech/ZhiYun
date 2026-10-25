@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
+import org.dromara.common.satoken.utils.LoginHelper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -245,6 +246,23 @@ public class PersonController {
     public R<Void> resetPassword(@PathVariable Long userId) {
         jdbcTemplate.update("UPDATE sys_user SET password=?, update_time=now() WHERE user_id=?",
             BCrypt.hashpw(DEFAULT_PASSWORD), userId);
+        return R.ok();
+    }
+
+    /**
+     * 删除人员（软删）：置 del_flag='1' + status='1'停用（不能再登录）。
+     * 人员是登录账号，软删保留历史关联、可恢复，不做物理删。
+     */
+    @SaCheckPermission("system:person:remove")
+    @Log(title = "人员信息", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{userId}")
+    public R<Void> remove(@PathVariable Long userId) {
+        // 不允许删超管（user_id 由 .env 配置的超管身份载体，删了登录会出问题）
+        if (LoginHelper.isSuperAdmin(userId)) {
+            return R.fail("超级管理员账号不允许删除");
+        }
+        jdbcTemplate.update(
+            "UPDATE sys_user SET del_flag='1', status='1', update_time=now() WHERE user_id=?", userId);
         return R.ok();
     }
 
