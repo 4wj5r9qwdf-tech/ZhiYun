@@ -7,8 +7,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
-import { BellOutlined, LogoutOutlined, SettingOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { BellOutlined, LogoutOutlined, SettingOutlined, LockOutlined, UserOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
 import api from '../api'
+import { MODULE_FUNCTIONS } from '../config/modules'
 
 const emit = defineEmits<{ (e: 'search', keyword: string): void }>()
 const router = useRouter()
@@ -82,14 +83,30 @@ async function onMsgOpenChange(open: boolean) {
 }
 
 // 全局搜索：输入≥1字节触发（后端支持中文），命中跳转
+// 全局搜索：合并「功能(本地匹配目录) + 人员(后端)」，单据待业务模块开发后接入
 async function onSearch(v: string) {
   const kw = (v ?? '').trim()
   if (!kw) { suggestions.value = []; return }
   emit('search', kw)
+
+  // 1) 功能：本地匹配功能目录（标题/模块含关键词）
+  const funcHits = MODULE_FUNCTIONS
+    .filter(f => f.title.includes(kw) || f.module.includes(kw))
+    .map(f => ({ type: 'function', key: f.key, title: f.title, route: f.route, module: f.module, value: f.title }))
+
+  // 2) 人员：后端搜姓名/工号/手机号
+  let personHits: any[] = []
   try {
     const res: any = await api.get('/system/profile/search', { params: { keyword: kw } })
-    if (res.code === 200) suggestions.value = res.data || []
-  } catch { suggestions.value = [] }
+    if (res.code === 200) {
+      personHits = (res.data || []).map((p: any) => ({
+        type: 'person', key: 'p' + p.user_id, title: p.nick_name,
+        userName: p.user_name, phone: p.phone, value: `${p.nick_name}(${p.user_name})`,
+      }))
+    }
+  } catch { personHits = [] }
+
+  suggestions.value = [...funcHits, ...personHits]
 }
 
 // 兼容 AutoComplete @select 的两种签名：只带 value（字符串），或带 value+option（对象）
@@ -97,9 +114,12 @@ function pickSug(vOrS: any, opt?: any) {
   const s: any = opt && typeof opt === 'object' ? opt : vOrS
   if (!s || typeof s !== 'object') { keyword.value = ''; return }
   keyword.value = ''
-  if (s.type === 'person') {
-    // 命中人员 → 跳人员模块（后续人员档案页），先提示（逻辑不变）
-    message.info(`命中人员：${s.nick_name}（工号 ${s.user_name}）——人员档案页开发后将跳转到该档案`)
+  if (s.type === 'function') {
+    // 命中功能 → 跳转该功能路由
+    try { router.push({ name: s.route }) } catch { message.info(`功能「${s.title}」页面开发中`) }
+  } else if (s.type === 'person') {
+    // 命中人员 → 跳人员信息列表
+    try { router.push({ name: 'Person' }) } catch { /* ignore */ }
   }
 }
 
@@ -208,9 +228,11 @@ async function savePassword() {
         <!-- 自定义下拉项：图标 + 名称 + 副标题（人员显示工号，其余显示电话等） -->
         <template #option="s">
           <div class="sug-item">
-            <span class="sug-ico">{{ s.type === 'person' ? '👤' : '📄' }}</span>
-            <span class="sug-name">{{ s.nick_name || s.title }}</span>
-            <span class="sug-sub">{{ s.type === 'person' ? '工号 ' + s.user_name : (s.phone || '') }}</span>
+            <!-- 功能：antd 功能图标；人员：用户图标 -->
+            <AppstoreOutlined v-if="s.type === 'function'" class="sug-ico-fn" />
+            <UserOutlined v-else class="sug-ico-user" />
+            <span class="sug-name">{{ s.title }}</span>
+            <span class="sug-sub">{{ s.type === 'person' ? '工号 ' + s.userName : '功能' }}</span>
           </div>
         </template>
       </a-auto-complete>
@@ -316,7 +338,8 @@ async function savePassword() {
 .shortcut { background: #F0F2F5; color: #86909C; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 4px; }
 /* 自定义下拉建议项（覆盖 antd 默认 option 样式） */
 .sug-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13px; }
-.sug-ico { font-size: 15px; }
+.sug-ico-fn { color: #1E5EFF; font-size: 15px; }
+.sug-ico-user { color: #00B388; font-size: 15px; }
 .sug-name { color: #1D2129; }
 .sug-sub { color: #86909C; font-size: 12px; margin-left: auto; }
 
