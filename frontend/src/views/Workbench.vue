@@ -81,6 +81,7 @@ function navModule(key: string) {
   if (key === 'workbench') return
   if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
+  else if (key === 'property') router.push({ name: 'PropertyIndex' })
   else {
     const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
     message.info(`「${label}」模块开发中`)

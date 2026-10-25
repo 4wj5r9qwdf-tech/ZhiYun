@@ -28,14 +28,24 @@ const router = createRouter({
         { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '部门管理' } },
         { path: 'group', name: 'GroupManage', component: () => import('../views/GroupManage.vue'), meta: { title: '小组管理' } },
         { path: 'post', name: 'PostManage', component: () => import('../views/PostManage.vue'), meta: { title: '岗位管理' } },
-        { path: 'plant', name: 'BuildingManage', component: () => import('../views/BuildingManage.vue'), meta: { title: '建筑档案' } },
+      ],
+    },
+    // /property = 物业资产模块布局（左侧导航+顶栏），子路由在内容区渲染
+    //   '' → PropertyIndex（物业资产功能卡片：建筑档案等）
+    //   'building' → BuildingManage（建筑档案页）
+    {
+      path: '/property',
+      component: () => import('../views/Home.vue'),
+      children: [
+        { path: '', name: 'PropertyIndex', component: () => import('../views/PropertyIndex.vue'), meta: { title: '物业资产' } },
+        { path: 'building', name: 'BuildingManage', component: () => import('../views/BuildingManage.vue'), meta: { title: '建筑档案' } },
       ],
     },
   ],
 })
 
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'BuildingManage']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
