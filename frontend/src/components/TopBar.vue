@@ -333,7 +333,9 @@ async function savePassword() {
 .clogo-ph { color: #fff; font-weight: 700; font-size: 13px; }
 .cname { font-size: 16px; font-weight: 600; color: #1D2129; }
 
-.top-search { flex: 1; max-width: 520px; margin: 0 18px; }
+.top-search { flex: 1 1 auto; min-width: 0; max-width: 520px; margin: 0 18px; }
+/* auto-complete 内部 select 撑满父容器（否则会缩成窄条） */
+.top-search :deep(.ant-select) { width: 100% !important; min-width: 0; }
 .top-search :deep(.ant-select-selector) { border-radius: 8px !important; }
 .shortcut { background: #F0F2F5; color: #86909C; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-left: 4px; }
 /* 自定义下拉建议项（覆盖 antd 默认 option 样式） */
