@@ -80,6 +80,7 @@ function navModule(key: string) {
   activeModule.value = key
   if (key === 'workbench') return
   if (key === 'system') router.push({ name: 'SystemIndex' })
+  else if (key === 'person') router.push({ name: 'PersonIndex' })
   else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
 }
 </script>
