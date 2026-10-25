@@ -114,7 +114,10 @@ function onColResize(key: string, w: number) {
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 
-// 表头 mousedown：只在 th 右缘 8px 内才开始拖拽（否则让位给排序点击）
+// 拖拽后短暂抑制 click（否则 mousedown→mouseup 后的 click 会触发 antd 排序，表格重排导致边框跳变）
+let suppressHeaderClickUntil = 0
+
+// 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
   if (key === 'ops') return
   const th = e.currentTarget as HTMLTableCellElement
@@ -127,12 +130,17 @@ function onHeaderMouseDown(key: string, e: MouseEvent) {
     document.removeEventListener('mousemove', onMove)
     document.removeEventListener('mouseup', onUp)
     document.body.style.cursor = ''
+    suppressHeaderClickUntil = Date.now() + 300
   }
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
   document.body.style.cursor = 'col-resize'
   e.preventDefault()
   e.stopPropagation()
+}
+// 表头 click：刚拖拽过则吞掉，避免触发排序
+function onHeaderClick(e: MouseEvent) {
+  if (Date.now() < suppressHeaderClickUntil) { e.preventDefault(); e.stopPropagation() }
 }
 
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
@@ -141,7 +149,7 @@ const columns = computed(() => {
   const ops = { title: '操作', key: 'ops', width: 190, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
-    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e) }) }))
+    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
   return [...list, ops]
 })
