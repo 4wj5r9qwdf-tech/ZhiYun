@@ -173,11 +173,6 @@ function findNode(nodes: any[], id: number): any {
 function onParentChange() {
   form.value.deptCategory = deriveCategory(form.value.parentId)
 }
-// 层级推导说明文案
-function deriveHint(): string {
-  const c = form.value.deptCategory || '厂区'
-  return { 厂区: '无上级 → 厂区(顶层)', 车间: '上级是厂区 → 车间', 区域: '上级是车间 → 区域', 小组: '上级是区域 → 小组' }[c] || ''
-}
 
 function openAddTop() {
   isEdit.value = false
@@ -395,14 +390,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
               />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="层级（按上级自动推导）">
-              <div class="cat-derived">
-                <a-tag :color="categoryColor[form.deptCategory || '厂区']" class="cat-tag">{{ form.deptCategory || '厂区' }}</a-tag>
-                <span class="cat-hint">{{ deriveHint() }}</span>
-              </div>
-            </a-form-item>
-          </a-col>
           <!-- 所在位置（渐进式：选楼→选层→填车间/房间，选到哪段算哪段，均可不填） -->
           <a-col :span="12">
             <a-form-item label="所在建筑（哪栋楼，可不填）">
@@ -493,9 +480,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .loc-preview { margin-top: 4px; font-size: 12px; color: #1E5EFF; background: #F4F7FF; border-radius: 4px; padding: 2px 8px; }
-.cat-derived { display: flex; align-items: center; gap: 8px; height: 32px; }
-.cat-tag { margin: 0; }
-.cat-hint { font-size: 12px; color: #86909C; }
 .loc-cell { color: #1E5EFF; font-size: 12px; }
 .muted { color: #C9CDD4; }
 </style>
