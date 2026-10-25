@@ -28,13 +28,14 @@ const router = createRouter({
         { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '部门管理' } },
         { path: 'group', name: 'GroupManage', component: () => import('../views/GroupManage.vue'), meta: { title: '小组管理' } },
         { path: 'post', name: 'PostManage', component: () => import('../views/PostManage.vue'), meta: { title: '岗位管理' } },
+        { path: 'plant', name: 'PlantManage', component: () => import('../views/PlantManage.vue'), meta: { title: '厂房档案' } },
       ],
     },
   ],
 })
 
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PlantManage']
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {

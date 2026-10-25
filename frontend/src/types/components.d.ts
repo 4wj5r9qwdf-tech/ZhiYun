@@ -45,6 +45,7 @@ declare module 'vue' {
     ATable: typeof import('ant-design-vue/lib')['Table']
     ATag: typeof import('ant-design-vue/lib')['Tag']
     ATextarea: typeof import('ant-design-vue/lib')['Textarea']
+    ATooltip: typeof import('ant-design-vue/lib')['Tooltip']
     ATreeSelect: typeof import('ant-design-vue/lib')['TreeSelect']
     ATypographyTitle: typeof import('ant-design-vue/lib')['TypographyTitle']
     DataTable: typeof import('./../components/DataTable.vue')['default']
