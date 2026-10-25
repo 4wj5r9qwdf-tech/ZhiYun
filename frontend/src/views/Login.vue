@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * 登录页：左侧品牌区（背景图 A/B 模式、logo、公司名、宣传语）不变
+ * 右侧表单改用 ant-design-vue（a-form + a-input + a-button + a-alert）
+ * handleLogin 业务逻辑（/auth/login、存 token、1s 后跳 Workbench）完全不变
+ */
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { CLIENT_ID } from '../api'
@@ -19,6 +24,12 @@ const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
+
+// 表单校验规则（用户名/密码非空）
+const rules: any = {
+  username: [{ required: true, message: '请输入工号/手机号', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+}
 
 onMounted(async () => {
   try {
@@ -55,7 +66,7 @@ async function handleLogin() {
     if (res.code === 200 && res.data?.access_token) {
       localStorage.setItem('token', res.data.access_token)
       successMsg.value = '登录成功，正在跳转...'
-      // 登录成功提示：右上角弹"欢迎，"+ 绿色提示条（延迟 1s 跳转，让用户看到提示）
+      // 登录成功提示：绿色提示条（延迟 1s 跳转，让用户看到提示）
       // 首页=工作台
       setTimeout(() => {
         router.push({ name: 'Workbench' })
@@ -73,7 +84,7 @@ async function handleLogin() {
 
 <template>
   <div class="login-page" :class="'mode-' + loginBgMode">
-    <!-- 左侧：公司品牌区 -->
+    <!-- 左侧：公司品牌区（不变） -->
     <div class="brand-side">
       <!-- 模式A/B：有背景图则铺背景（A=只铺左侧品牌区，B=铺整页），无则用默认工业蓝渐变 -->
       <div
@@ -91,44 +102,54 @@ async function handleLogin() {
       </div>
     </div>
 
-    <!-- 右侧：登录表单区 -->
+    <!-- 右侧：登录表单区（antd 控件） -->
     <div class="form-side">
       <div class="form-card">
         <h2 class="form-title">欢迎登录</h2>
         <p class="form-subtitle">请输入工号/手机号和密码</p>
 
         <!-- 成功提示 -->
-        <div v-if="successMsg" class="msg msg-success">
-          <span class="msg-icon">✓</span>{{ successMsg }}
-        </div>
+        <a-alert
+          v-if="successMsg"
+          class="msg"
+          type="success"
+          show-icon
+          :message="successMsg"
+        />
         <!-- 错误提示 -->
-        <div v-if="errorMsg" class="msg msg-error">
-          <span class="msg-icon">✕</span>{{ errorMsg }}
-        </div>
+        <a-alert
+          v-if="errorMsg"
+          class="msg"
+          type="error"
+          show-icon
+          :message="errorMsg"
+        />
 
-        <form @submit.prevent="handleLogin">
-          <div class="input-group">
-            <label>工号 / 手机号</label>
-            <input
-              v-model="username"
-              type="text"
+        <a-form layout="vertical" @submit.prevent="handleLogin">
+          <a-form-item label="工号 / 手机号" name="username" :rules="rules.username">
+            <a-input
+              v-model:value="username"
               placeholder="6位工号 或 11位手机号"
               autocomplete="username"
             />
-          </div>
-          <div class="input-group">
-            <label>密码</label>
-            <input
-              v-model="password"
-              type="password"
+          </a-form-item>
+          <a-form-item label="密码" name="password" :rules="rules.password">
+            <a-input-password
+              v-model:value="password"
               placeholder="请输入密码"
               autocomplete="current-password"
             />
-          </div>
-          <button type="submit" class="btn-login" :disabled="loading">
-            {{ loading ? '登录中...' : '登 录' }}
-          </button>
-        </form>
+          </a-form-item>
+          <a-button
+            type="primary"
+            html-type="submit"
+            block
+            size="large"
+            :loading="loading"
+          >
+            登 录
+          </a-button>
+        </a-form>
 
         <div class="footer-tip">织云 ERP · 服装代工厂生产管理系统</div>
       </div>
@@ -137,7 +158,7 @@ async function handleLogin() {
 </template>
 
 <style scoped>
-/* 工业蓝主题（前端规范 B 节：主色 #1E5EFF） */
+/* 工业蓝主题（前端规范 B 节：主色 #1E5EFF）—— 布局与品牌区样式不变 */
 .login-page {
   display: flex;
   height: 100vh;
@@ -248,76 +269,17 @@ async function handleLogin() {
   color: #86909c;
   margin-bottom: 28px;
 }
-.input-group {
-  margin-bottom: 20px;
+.msg {
+  margin-bottom: 16px;
 }
-.input-group label {
-  display: block;
-  font-size: 14px;
-  color: #4e5969;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-.input-group input {
-  width: 100%;
-  height: 44px;
-  border: 1px solid #e5e8ef;
+.form-card :deep(.ant-input-affix-wrapper) {
   border-radius: 8px;
-  padding: 0 14px;
-  font-size: 14px;
-  color: #1d2129;
-  outline: none;
-  transition: border-color 0.2s;
-  box-sizing: border-box;
 }
-.input-group input:focus {
-  border-color: #1E5EFF;
-  box-shadow: 0 0 0 3px rgba(30, 94, 255, 0.1);
-}
-.input-group input::placeholder {
-  color: #c9cdd4;
-}
-.btn-login {
-  width: 100%;
-  height: 46px;
-  background: #1E5EFF;
-  color: #fff;
-  border: none;
+.form-card :deep(.ant-btn) {
   border-radius: 8px;
   font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
   letter-spacing: 4px;
-  transition: background 0.2s;
-}
-.btn-login:hover:not(:disabled) {
-  background: #0f3db8;
-}
-.btn-login:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.msg {
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 14px;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.msg-success {
-  background: #e8faf3;
-  color: #00b388;
-  border: 1px solid #b2e8d4;
-}
-.msg-error {
-  background: #ffece8;
-  color: #f53f3f;
-  border: 1px solid #fcc4bd;
-}
-.msg-icon {
-  font-weight: 700;
+  margin-top: 4px;
 }
 .footer-tip {
   margin-top: 24px;

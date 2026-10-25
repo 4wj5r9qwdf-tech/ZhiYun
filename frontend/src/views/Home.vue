@@ -6,34 +6,30 @@
  */
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import message from 'ant-design-vue/es/message'
+import * as AntIcons from '@ant-design/icons-vue'
 import TopBar from '../components/TopBar.vue'
+import { MODULES, type ModuleDef } from '../config/modules'
 
 const router = useRouter()
 const route = useRoute()
 
-// 左侧模块导航
-const modules = [
-  { key: 'workbench', icon: '📋', label: '工作台' },
-  { key: 'order', icon: '📦', label: '订单' },
-  { key: 'prod', icon: '🏭', label: '生产' },
-  { key: 'stock', icon: '📊', label: '库存' },
-  { key: 'person', icon: '👥', label: '人员' },
-  { key: 'dorm', icon: '🏠', label: '宿舍' },
-  { key: 'canteen', icon: '🍜', label: '食堂' },
-  { key: 'vehicle', icon: '🚗', label: '车辆' },
-  { key: 'property', icon: '🏢', label: '物业资产' },
-  { key: 'finance', icon: '💰', label: '财务' },
-  { key: 'approve', icon: '✅', label: '审批' },
-  { key: 'alert', icon: '🔔', label: '预警' },
-  { key: 'system', icon: '⚙️', label: '系统' },
-]
+// 左侧模块导航（目录统一维护在 config/modules.ts）
+const modules = MODULES
+
+// 动态解析 antd 图标组件（icon 存的是组件名字符串）
+const Icon = (name: string) => (AntIcons as any)[name]
+
 const activeModule = computed(() => (route.path.startsWith('/person') ? 'person' : 'system'))
 
 function navModule(key: string) {
   if (key === 'workbench') router.push({ name: 'Workbench' })
   else if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
-  else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
+  else {
+    const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
+    message.info(`「${label}」模块开发中`)
+  }
 }
 </script>
 
@@ -48,7 +44,7 @@ function navModule(key: string) {
         :class="{ active: activeModule === m.key }"
         @click="navModule(m.key)"
       >
-        <span class="ico">{{ m.icon }}</span>
+        <component :is="Icon(m.icon)" class="ico" />
         <span class="lbl">{{ m.label }}</span>
       </div>
     </aside>
@@ -68,8 +64,8 @@ function navModule(key: string) {
 .layout { display: flex; height: 100vh; overflow: hidden; }
 .sidebar { width: 72px; background: #fff; border-right: 1px solid #E5E8EF; display: flex; flex-direction: column; align-items: center; padding-top: 12px; flex-shrink: 0; overflow-y: auto; }
 .logo { width: 44px; height: 44px; border-radius: 10px; background: #1E5EFF; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; margin-bottom: 14px; flex-shrink: 0; }
-.nav-item { position: relative; width: 60px; height: 58px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 5px; color: #4E5969; gap: 2px; flex-shrink: 0; }
-.nav-item:hover { background: #E8F0FF; }
+.nav-item { position: relative; width: 60px; height: 58px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 5px; color: #4E5969; gap: 2px; flex-shrink: 0; transition: background-color .2s, color .2s; }
+.nav-item:hover { background: #E8F0FF; color: #1E5EFF; }
 .nav-item.active { background: #1E5EFF; color: #fff; }
 .nav-item .ico { font-size: 19px; line-height: 1; }
 .nav-item .lbl { font-size: 11px; }

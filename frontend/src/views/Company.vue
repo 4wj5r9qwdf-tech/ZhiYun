@@ -8,7 +8,8 @@
  */
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
 const router = useRouter()
@@ -130,6 +131,8 @@ async function save() {
   finally { saving.value = false }
 }
 
+function onDefaultChange(e: any) { form.value.isDefault = e.target.checked ? '1' : '0' }
+
 function setDefault(row: any) {
   Modal.confirm({
     title: '设为默认',
@@ -247,7 +250,7 @@ function remove(row: any) {
         <a-form-item>
           <a-checkbox
             :checked="form.isDefault === '1'"
-            @change="(e: any) => form.isDefault = e.target.checked ? '1' : '0'"
+            @change="onDefaultChange"
           >
             设为默认展示公司（登录页/首页显示）
           </a-checkbox>
