@@ -50,6 +50,11 @@ public class SysDeptBo implements Serializable {
     private String deptCategory;
 
     /**
+     * 所在建筑(物理资产)=sys_building.plant_id；只车间节点填，下面区域/组继承
+     */
+    private Long buildingId;
+
+    /**
      * 显示顺序
      */
     @NotNull(message = "显示顺序不能为空")
