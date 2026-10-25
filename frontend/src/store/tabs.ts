@@ -75,6 +75,34 @@ export const useTabsStore = defineStore('tabs', {
       this.persist()
       return keep ? keep.name : null
     },
+    /** 关闭左侧（保留 targetName 及其右边）。若当前激活被关，返回应跳转的路由名 targetName。 */
+    closeLeft(targetName: string): string | null {
+      const i = this.tabs.findIndex(t => t.name === targetName)
+      if (i <= 0) return null
+      const removedActive = this.tabs.slice(0, i).some(t => t.name === this.activeName)
+      this.tabs = this.tabs.slice(i)
+      if (removedActive) {
+        this.activeName = targetName
+        this.persist()
+        return targetName
+      }
+      this.persist()
+      return null
+    },
+    /** 关闭右侧（保留 targetName 及其左边）。若当前激活被关，返回应跳转的路由名 targetName。 */
+    closeRight(targetName: string): string | null {
+      const i = this.tabs.findIndex(t => t.name === targetName)
+      if (i === -1 || i === this.tabs.length - 1) return null
+      const removedActive = this.tabs.slice(i + 1).some(t => t.name === this.activeName)
+      this.tabs = this.tabs.slice(0, i + 1)
+      if (removedActive) {
+        this.activeName = targetName
+        this.persist()
+        return targetName
+      }
+      this.persist()
+      return null
+    },
     /** 关闭全部；返回 null（调用方回模块首页/工作台）。 */
     closeAll(): null {
       this.tabs = []
