@@ -10,7 +10,8 @@
  */
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
 const router = useRouter()
@@ -106,6 +107,8 @@ function onTableChange(_pag: any, _filt: any, sorter: any) {
 }
 
 function onPageChange(p: number, ps: number) { pageNum.value = p; pageSize.value = ps; loadList() }
+
+function showTotalText(t: number) { return `共 ${t} 条` }
 
 // 导出 CSV
 async function exportCsv() {
@@ -311,7 +314,7 @@ function resetFilter() {
       :columns="columns"
       :data-source="rows"
       :loading="loading"
-      :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条`, onChange: onPageChange, showQuickJumper: true }"
+      :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
       :scroll="{ x: 1290 }"
       row-key="user_id"
       size="middle"

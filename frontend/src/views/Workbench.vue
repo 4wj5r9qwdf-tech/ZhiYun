@@ -7,32 +7,23 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import message from 'ant-design-vue/es/message'
+import * as AntIcons from '@ant-design/icons-vue'
 import api from '../api'
 import TopBar from '../components/TopBar.vue'
 import FunctionCardGrid from '../components/FunctionCardGrid.vue'
+import { MODULES, functionMap, type ModuleDef } from '../config/modules'
 
 const router = useRouter()
 
-// 所有功能目录（key→信息），供工作台展示已加入的功能
-const allFunctions: Record<string, any> = {
-  company: { title: '公司档案', desc: '公司名/logo/登录背景', icon: '🏛️', route: 'Company', module: 'system' },
-}
-// 模块目录（左侧导航，待办数从 todo/count 累加）
-const modules = [
-  { key: 'workbench', icon: '📋', label: '工作台' },
-  { key: 'order', icon: '📦', label: '订单' },
-  { key: 'prod', icon: '🏭', label: '生产' },
-  { key: 'stock', icon: '📊', label: '库存' },
-  { key: 'person', icon: '👥', label: '人员' },
-  { key: 'dorm', icon: '🏠', label: '宿舍' },
-  { key: 'canteen', icon: '🍜', label: '食堂' },
-  { key: 'vehicle', icon: '🚗', label: '车辆' },
-  { key: 'property', icon: '🏢', label: '物业资产' },
-  { key: 'finance', icon: '💰', label: '财务' },
-  { key: 'approve', icon: '✅', label: '审批' },
-  { key: 'alert', icon: '🔔', label: '预警' },
-  { key: 'system', icon: '⚙️', label: '系统' },
-]
+// 所有功能目录（key→信息，来自 config/modules.ts），供工作台展示已加入的功能
+const allFunctions = functionMap()
+
+// 模块目录（左侧导航，待办数从 todo/count 累加，目录统一维护在 config/modules.ts）
+const modules = MODULES
+
+// 动态解析 antd 图标组件（icon 存的是组件名字符串）
+const Icon = (name: string) => (AntIcons as any)[name]
 
 const activeModule = ref('workbench')
 const workbenchKeys = ref<string[]>([])     // 已加入工作台的功能key
@@ -76,12 +67,24 @@ const benchCards = computed(() => {
 
 function moduleTodo(key: string) { return todoByModule.value[key] || 0 }
 
+// 待办汇总列表数据源（模块 key → 显示名 + 待办数）
+const todoEntries = computed(() =>
+  Object.entries(todoByModule.value).map(([mk, cnt]) => ({
+    key: mk,
+    label: (modules.find((m: ModuleDef) => m.key === mk) as ModuleDef | undefined)?.label ?? mk,
+    count: cnt,
+  })),
+)
+
 function navModule(key: string) {
   activeModule.value = key
   if (key === 'workbench') return
   if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
-  else alert(`「${modules.find(m => m.key === key)?.label}」模块开发中`)
+  else {
+    const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
+    message.info(`「${label}」模块开发中`)
+  }
 }
 </script>
 
@@ -97,10 +100,15 @@ function navModule(key: string) {
         :class="{ active: activeModule === m.key }"
         @click="navModule(m.key)"
       >
-        <span class="ico">{{ m.icon }}</span>
+        <component :is="Icon(m.icon)" class="ico" />
         <span class="lbl">{{ m.label }}</span>
         <!-- 待办红点：模块级累加，无待办不显示 -->
-        <i v-if="moduleTodo(m.key) > 0" class="todo-dot">{{ moduleTodo(m.key) > 99 ? '99+' : moduleTodo(m.key) }}</i>
+        <a-badge
+          v-if="moduleTodo(m.key) > 0"
+          class="todo-dot"
+          :count="moduleTodo(m.key)"
+          :overflow-count="99"
+        />
       </div>
     </aside>
 
@@ -113,9 +121,7 @@ function navModule(key: string) {
         <!-- 工作台：加入的功能卡片 + 待办汇总 -->
         <div class="group">
           <div class="group-title">我的工作台</div>
-          <div v-if="benchCards.length === 0" class="empty-hint">
-            暂无加入工作台的功能。到「系统」模块的功能卡片上点「加入工作台」即可。
-          </div>
+          <a-empty v-if="benchCards.length === 0" class="empty-hint" description="暂无加入工作台的功能。到「系统」模块的功能卡片上点「加入工作台」即可。" />
           <!-- 只读模式：不带拖拽/置顶/加工作台手柄，仅展示 + 待办红点 -->
           <FunctionCardGrid v-else module-key="workbench" :cards="benchCards" :todo="todoByMenu" readonly />
         </div>
@@ -123,13 +129,15 @@ function navModule(key: string) {
         <!-- 待办汇总 -->
         <div class="group">
           <div class="group-title">待办汇总</div>
-          <div v-if="Object.keys(todoByModule).length === 0" class="empty-hint">暂无待办</div>
-          <div v-else class="todo-list">
-            <div v-for="(cnt, mk) in todoByModule" :key="mk" class="todo-row">
-              <span class="todo-module">{{ modules.find(m => m.key === mk)?.label || mk }}</span>
-              <span class="todo-count">{{ cnt }} 项待处理</span>
-            </div>
-          </div>
+          <a-empty v-if="Object.keys(todoByModule).length === 0" class="empty-hint" description="暂无待办" />
+          <a-list v-else class="todo-list" :data-source="todoEntries">
+            <template #renderItem="{ item }">
+              <a-list-item class="todo-row">
+                <span class="todo-module">{{ item.label }}</span>
+                <span class="todo-count">{{ item.count }} 项待处理</span>
+              </a-list-item>
+            </template>
+          </a-list>
         </div>
       </div>
     </div>
@@ -140,14 +148,15 @@ function navModule(key: string) {
 .layout { display: flex; height: 100vh; overflow: hidden; }
 .sidebar { width: 72px; background: #fff; border-right: 1px solid #E5E8EF; display: flex; flex-direction: column; align-items: center; padding-top: 12px; flex-shrink: 0; overflow-y: auto; }
 .logo { width: 44px; height: 44px; border-radius: 10px; background: #1E5EFF; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; margin-bottom: 14px; flex-shrink: 0; }
-.nav-item { position: relative; width: 60px; height: 58px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 5px; color: #4E5969; gap: 2px; flex-shrink: 0; }
-.nav-item:hover { background: #E8F0FF; }
+.nav-item { position: relative; width: 60px; height: 58px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; margin-bottom: 5px; color: #4E5969; gap: 2px; flex-shrink: 0; transition: background-color .2s, color .2s; }
+.nav-item:hover { background: #E8F0FF; color: #1E5EFF; }
 .nav-item.active { background: #1E5EFF; color: #fff; }
 .nav-item .ico { font-size: 19px; line-height: 1; }
 .nav-item .lbl { font-size: 11px; }
 
-/* 待办红点（模块级累加）：有才显示 */
-.todo-dot { position: absolute; top: 2px; right: 6px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
+/* 待办红点（模块级累加）：有才显示（a-badge，超 99 自动截断为 99+） */
+.nav-item :deep(.todo-dot) { position: absolute; top: 2px; right: 4px; z-index: 2; }
+.nav-item :deep(.todo-dot .ant-badge-count) { min-width: 15px; height: 15px; min-height: 15px; line-height: 15px; font-size: 10px; padding: 0 4px; box-shadow: none; }
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
@@ -156,11 +165,11 @@ function navModule(key: string) {
 .group-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #1E5EFF; }
 
 .empty-hint { color: #86909C; font-size: 13px; padding: 12px 0; }
+.empty-hint :deep(.ant-empty-description) { color: #86909C; font-size: 13px; }
 
-/* 待办汇总列表 */
-.todo-list { background: #fff; border-radius: 10px; padding: 4px 0; }
-.todo-row { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #F0F2F5; }
-.todo-row:last-child { border-bottom: none; }
+/* 待办汇总列表（a-list 包裹美化） */
+.todo-list { background: #fff; border-radius: 10px; }
+.todo-list :deep(.ant-list-item) { padding: 12px 16px; }
 .todo-module { font-size: 14px; color: #1D2129; }
 .todo-count { margin-left: auto; font-size: 13px; color: #F53F3F; }
 </style>

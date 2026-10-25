@@ -15,6 +15,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import * as AntIcons from '@ant-design/icons-vue'
 
 interface Card {
   key: string
@@ -33,6 +34,13 @@ const props = withDefaults(defineProps<{
 }>(), { readonly: false })
 
 const router = useRouter()
+
+// icon 字段兼容两种：antd 图标组件名字符串（如 'TeamOutlined'）→ 渲染组件；否则当 emoji/字符显示
+function resolveIcon(name?: string) {
+  if (!name) return null
+  if (/Outlined$|Filled$|TwoTone$/.test(name)) return (AntIcons as any)[name] || null
+  return null
+}
 
 // 卡片运行态（配置）：宽高独立（自由拉伸，非等比）
 type CardState = Card & { sort: number; cardW: number; cardH: number; isTop: boolean; inWorkbench: boolean }
@@ -198,6 +206,7 @@ function openCard(c: CardState) {
       <!-- 图标区：flex 撑满上方（居中，不被文字盖）；文字/按钮固定底部 -->
       <div class="fc-ico">
         <img v-if="c.iconUrl" class="fc-ico-img" :src="c.iconUrl" :alt="c.title" />
+        <component v-else-if="resolveIcon(c.icon)" :is="resolveIcon(c.icon)" class="fc-ico-comp" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.4) + 'px' }" />
         <span v-else class="fc-ico-txt" :style="{ fontSize: Math.round(Math.min(c.cardW, c.cardH) * 0.36) + 'px' }">{{ c.icon }}</span>
       </div>
       <div class="fc-body">
@@ -232,6 +241,7 @@ function openCard(c: CardState) {
 /* 图标区：撑满上方剩余空间，居中；柔和渐变背景做卡片底 */
 .fc-ico { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); overflow: hidden; }
 .fc-ico-txt { line-height: 1; filter: grayscale(0.12); opacity: .9; }
+.fc-ico-comp { color: #1E5EFF; opacity: .9; }
 .fc-ico-img { max-width: 64%; max-height: 80%; object-fit: contain; }
 /* 文字/按钮层：固定底部，白底不透明（不再盖图标） */
 .fc-body { position: relative; z-index: 1; flex: none; padding: 8px 12px 12px; background: #fff; border-top: 1px solid #F0F2F5; }

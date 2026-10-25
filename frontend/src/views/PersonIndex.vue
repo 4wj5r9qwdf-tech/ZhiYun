@@ -7,11 +7,19 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import FunctionCardGrid from '../components/FunctionCardGrid.vue'
+import { functionsOf } from '../config/modules'
 
-// 人员模块功能卡片目录（key 唯一，新功能加到这即可）
-const cards = [
-  { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: '👥', route: 'Person' },
-]
+// 功能卡片目录统一维护在 config/modules.ts。FunctionCardGrid 的 icon 字段只按文本字符渲染（emoji 方式），
+// 因此此处把配置里的 antd 图标名映射为对应 emoji 展示值，保持卡片图标的设计特色。
+const ICON_EMOJI: Record<string, string> = { TeamOutlined: '👥' }
+
+const cards = functionsOf('person').map(f => ({
+  key: f.key,
+  title: f.title,
+  desc: f.desc,
+  icon: ICON_EMOJI[f.icon] ?? '👥',
+  route: f.route,
+}))
 
 const todoByMenu = ref<Record<string, number>>({})
 onMounted(loadTodo)
@@ -31,7 +39,7 @@ async function loadTodo() {
 <template>
   <div>
     <div class="group">
-      <div class="group-title">人员管理</div>
+      <a-typography-title :level="4" class="group-title">人员管理</a-typography-title>
       <p class="tip">拖拽卡片调顺序 · 手柄自由拉伸 · ⤒置顶 · ★加工作台 · 配置自动保存</p>
       <FunctionCardGrid module-key="person" :cards="cards" :todo="todoByMenu" />
     </div>
@@ -40,6 +48,6 @@ async function loadTodo() {
 
 <style scoped>
 .group { margin-bottom: 24px; }
-.group-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #1E5EFF; }
+.group-title { font-weight: 600; color: #1D2129; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #1E5EFF; }
 .tip { font-size: 12px; color: #86909C; margin-bottom: 12px; }
 </style>
