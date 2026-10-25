@@ -32,15 +32,26 @@ public class BuildingController {
      */
     @SaCheckPermission("system:building:list")
     @GetMapping("/list")
-    public R<List<Map<String, Object>>> list(@RequestParam(required = false) String buildingType) {
+    public R<List<Map<String, Object>>> list(@RequestParam(required = false) String keyword,
+                                             @RequestParam(required = false) String buildingType,
+                                             @RequestParam(required = false) String status) {
         StringBuilder sql = new StringBuilder(
             "SELECT b.*, " +
             "  (SELECT count(*) FROM sys_dept d WHERE d.building_id = b.plant_id AND d.del_flag='0') AS dept_count " +
             "FROM sys_building b WHERE b.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (b.plant_code LIKE ? OR b.plant_name LIKE ? OR b.address LIKE ?)");
+            String kw = "%" + keyword.trim() + "%";
+            args.add(kw); args.add(kw); args.add(kw);
+        }
         if (buildingType != null && !buildingType.isBlank()) {
             sql.append(" AND b.building_type = ?");
             args.add(buildingType.trim());
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND b.status = ?");
+            args.add(status.trim());
         }
         sql.append(" ORDER BY b.building_type, b.plant_id");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
@@ -50,7 +61,7 @@ public class BuildingController {
     /**
      * 厂房详情。
      */
-    @SaCheckPermission("system:plant:query")
+    @SaCheckPermission("system:building:query")
     @GetMapping("/{plantId}")
     public R<Map<String, Object>> getInfo(@PathVariable Long plantId) {
         Map<String, Object> row = jdbcTemplate.queryForMap(
