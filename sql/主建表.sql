@@ -4,6 +4,7 @@
 --       （见 智能体交接说明.md 四、协作流程第 5 步）
 -- 依赖：RuoYi-Vue-Plus 基础表已导入（script/sql/postgres/*.sql）
 --       本文件只建"织云自建地基表"，不重复建 RuoYi 自带表
+-- 关联：组织树数据预置见 sql/迁移_组织树服装厂.sql（厂→车间→区域→小组，dept_category 区分；仓走库存模块）
 -- 执行：psql -U zhizhun -d zhizhun_erp -f sql/主建表.sql
 -- 更新：2026-10-24
 -- ============================================================
@@ -213,7 +214,8 @@ CREATE TABLE IF NOT EXISTS sys_person_ext (
     cert_expire_date   date,                            -- 证件到期日（进证件预警）
     -- 任职信息（车间=sys_user.dept_id；岗位/角色走 sys_user_post/sys_user_role）
     hire_date          date,                            -- 入职日期（必填）
-    group_name         varchar(50),                     -- 小组（文本登记，小组档案后期若建表再改关联）
+    group_name         varchar(50),                     -- 小组名（文本冗余，展示/兼容用；权威关联看 group_id）
+    group_id           bigint,                          -- 小组关联=sys_dept.dept_id(dept_category='小组'，组织树厂→车间→区域→小组)
     emp_type           varchar(20),                     -- 员工性质 正式/临时/劳务
     leave_date         date,                            -- 离职日期
     card_no            varchar(30),                     -- 员工卡（工牌号）
@@ -242,7 +244,8 @@ COMMENT ON TABLE  sys_person_ext              IS '人员扩展信息（一对一
 COMMENT ON COLUMN sys_person_ext.user_id      IS '主键=sys_user.user_id（员工ID，不变）';
 COMMENT ON COLUMN sys_person_ext.cert_no      IS '证件号码（敏感，脱敏展示）';
 COMMENT ON COLUMN sys_person_ext.hire_date    IS '入职日期（必填）';
-COMMENT ON COLUMN sys_person_ext.group_name   IS '小组（文本登记）';
+COMMENT ON COLUMN sys_person_ext.group_name   IS '小组名（文本冗余，展示/兼容用）';
+COMMENT ON COLUMN sys_person_ext.group_id     IS '小组关联=sys_dept.dept_id（dept_category=小组；组织树 厂→车间→区域→小组，仓走库存模块不进组织树）';
 COMMENT ON COLUMN sys_person_ext.emp_status   IS '在职状态 试用/在职/离职/长假（状态机）';
 COMMENT ON COLUMN sys_person_ext.bank_card_no IS '银行卡号（敏感，脱敏展示）';
 COMMENT ON COLUMN sys_person_ext.has_social   IS '是否缴纳社保 0否1是（临工可0）';

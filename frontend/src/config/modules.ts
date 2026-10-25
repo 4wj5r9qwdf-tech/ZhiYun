@@ -32,6 +32,9 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: 'BankOutlined', route: 'Company', module: 'system' },
   // 人员模块
   { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' },
+  { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' },
+  { key: 'person_group', title: '小组管理', desc: '小组挂车间/区域下', icon: 'ClusterOutlined', route: 'GroupManage', module: 'person' },
+  { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' },
 ]
 
 // 取某模块的功能卡片

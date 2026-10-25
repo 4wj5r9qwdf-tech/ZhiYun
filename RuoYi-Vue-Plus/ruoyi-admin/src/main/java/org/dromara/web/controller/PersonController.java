@@ -114,7 +114,7 @@ public class PersonController {
     /** 列表/导出共用 SELECT。 */
     private String selectSql() {
         return "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
-            "  u.phone_number, u.dept_id, d.dept_name, e.group_name, e.emp_status, e.emp_type, " +
+            "  u.phone_number, u.dept_id, d.dept_name, e.group_name, e.group_id, e.emp_status, e.emp_type, " +
             "  e.hire_date, e.card_no, e.is_dorm, " +
             "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
             "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
@@ -303,17 +303,27 @@ public class PersonController {
     private void saveExt(Long userId, Map<String, Object> body) {
         @SuppressWarnings("unchecked")
         Map<String, Object> ext = body.get("ext") instanceof Map ? (Map<String, Object>) body.get("ext") : java.util.Map.of();
+        // 小组：优先 group_id 关联（组织树 dept_category=小组）；带 group_id 时同步冗余 group_name（取小组节点名，找不到则用传入文本）
+        Object gidRaw = ext.get("groupId");
+        Long groupId = (gidRaw instanceof Number n) ? n.longValue() : null;
+        String groupName = str(ext.get("groupName"));
+        if (groupId != null) {
+            String node = jdbcTemplate.query(
+                "SELECT dept_name FROM sys_dept WHERE dept_id=? AND dept_category='小组'", rs -> rs.next() ? rs.getString(1) : null, groupId);
+            if (node != null) groupName = node;
+        }
         jdbcTemplate.update(
             "INSERT INTO sys_person_ext (user_id, marital_status, cert_type, cert_no, nation, education, birth_date, " +
-            "  graduate_school, native_place, address, cert_expire_date, hire_date, group_name, emp_type, leave_date, " +
+            "  graduate_school, native_place, address, cert_expire_date, hire_date, group_name, group_id, emp_type, leave_date, " +
             "  card_no, emp_status, bank_card_no, sign_entity, contract_years, contract_start, contract_end, " +
             "  has_social, social_amount, social_subsidy, has_commercial, commercial_type, social_check_date, is_dorm, update_time) " +
-            "VALUES (?,?,?,?,?,?,?::date,?,?,?,?::date,?::date,?,?,?::date,?,?,?,?,?::numeric,?::date,?::date,?,?::numeric,?::numeric,?,?,?::date,?,now()) " +
+            "VALUES (?,?,?,?,?,?,?::date,?,?,?,?::date,?::date,?,?,?,?::date,?,?,?,?,?::numeric,?::date,?::date,?,?::numeric,?::numeric,?,?,?::date,?,now()) " +
             "ON CONFLICT (user_id) DO UPDATE SET " +
             "  marital_status=EXCLUDED.marital_status, cert_type=EXCLUDED.cert_type, cert_no=EXCLUDED.cert_no, " +
             "  nation=EXCLUDED.nation, education=EXCLUDED.education, birth_date=EXCLUDED.birth_date, " +
             "  graduate_school=EXCLUDED.graduate_school, native_place=EXCLUDED.native_place, address=EXCLUDED.address, " +
             "  cert_expire_date=EXCLUDED.cert_expire_date, hire_date=EXCLUDED.hire_date, group_name=EXCLUDED.group_name, " +
+            "  group_id=EXCLUDED.group_id, " +
             "  emp_type=EXCLUDED.emp_type, leave_date=EXCLUDED.leave_date, card_no=EXCLUDED.card_no, " +
             "  emp_status=EXCLUDED.emp_status, bank_card_no=EXCLUDED.bank_card_no, sign_entity=EXCLUDED.sign_entity, " +
             "  contract_years=EXCLUDED.contract_years, contract_start=EXCLUDED.contract_start, contract_end=EXCLUDED.contract_end, " +
@@ -322,7 +332,7 @@ public class PersonController {
             "  social_check_date=EXCLUDED.social_check_date, is_dorm=EXCLUDED.is_dorm, update_time=now()",
             userId, ext.get("maritalStatus"), ext.get("certType"), ext.get("certNo"), ext.get("nation"),
             ext.get("education"), ext.get("birthDate"), ext.get("graduateSchool"), ext.get("nativePlace"),
-            ext.get("address"), ext.get("certExpireDate"), ext.get("hireDate"), ext.get("groupName"),
+            ext.get("address"), ext.get("certExpireDate"), ext.get("hireDate"), groupName, groupId,
             ext.get("empType"), ext.get("leaveDate"), ext.get("cardNo"),
             str(ext.getOrDefault("empStatus", "试用")), ext.get("bankCardNo"), ext.get("signEntity"),
             ext.get("contractYears"), ext.get("contractStart"), ext.get("contractEnd"),
