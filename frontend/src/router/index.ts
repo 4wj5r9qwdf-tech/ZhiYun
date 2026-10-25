@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useTabsStore } from '../store/tabs'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -13,7 +14,7 @@ const router = createRouter({
       component: () => import('../views/Home.vue'),
       children: [
         { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统' } },
-        { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案' } },
+        { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案', tab: true } },
       ],
     },
     // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
@@ -24,10 +25,10 @@ const router = createRouter({
       component: () => import('../views/Home.vue'),
       children: [
         { path: '', name: 'PersonIndex', component: () => import('../views/PersonIndex.vue'), meta: { title: '人员' } },
-        { path: 'person-info', name: 'Person', component: () => import('../views/Person.vue'), meta: { title: '人员信息' } },
-        { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '部门管理' } },
-        { path: 'group', name: 'GroupManage', component: () => import('../views/GroupManage.vue'), meta: { title: '小组管理' } },
-        { path: 'post', name: 'PostManage', component: () => import('../views/PostManage.vue'), meta: { title: '岗位管理' } },
+        { path: 'person-info', name: 'Person', component: () => import('../views/Person.vue'), meta: { title: '人员信息', tab: true } },
+        { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '部门管理', tab: true } },
+        { path: 'group', name: 'GroupManage', component: () => import('../views/GroupManage.vue'), meta: { title: '小组管理', tab: true } },
+        { path: 'post', name: 'PostManage', component: () => import('../views/PostManage.vue'), meta: { title: '岗位管理', tab: true } },
       ],
     },
     // /property = 物业资产模块布局（左侧导航+顶栏），子路由在内容区渲染
@@ -38,7 +39,7 @@ const router = createRouter({
       component: () => import('../views/Home.vue'),
       children: [
         { path: '', name: 'PropertyIndex', component: () => import('../views/PropertyIndex.vue'), meta: { title: '物业资产' } },
-        { path: 'building', name: 'BuildingManage', component: () => import('../views/BuildingManage.vue'), meta: { title: '建筑档案' } },
+        { path: 'building', name: 'BuildingManage', component: () => import('../views/BuildingManage.vue'), meta: { title: '建筑档案', tab: true } },
       ],
     },
   ],
@@ -55,6 +56,17 @@ router.beforeEach((to) => {
   const t = to.meta?.title as string | undefined
   document.title = t ? `织云 ERP - ${t}` : '织云 ERP'
   return true
+})
+
+// 多标签页同步：进入带 meta.tab 的功能页 → 开 tab；进入模块首页 → 不开（但保留已开 tab，仅切激活）
+router.afterEach((to) => {
+  const tabs = useTabsStore()
+  if (to.meta?.tab && to.name) {
+    tabs.openTab({ name: String(to.name), title: String(to.meta.title || to.name), path: to.fullPath })
+  } else if (to.name) {
+    // 模块首页/工作台：不清 tab，仅在该 name 恰好是 tab 时同步激活（一般不会）
+    tabs.setActive(String(to.name))
+  }
 })
 
 export default router
