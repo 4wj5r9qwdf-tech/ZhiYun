@@ -46,9 +46,12 @@ public class PersonController {
                                        @RequestParam(required = false) String posts,
                                        @RequestParam(required = false) String roles,
                                        @RequestParam(required = false) String orderBy,
+                                       @RequestParam(defaultValue = "0") String delFlag,
                                        @RequestParam(defaultValue = "1") int pageNum,
                                        @RequestParam(defaultValue = "20") int pageSize) {
-        StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
+        // delFlag：0=正常(默认) / 1=已删除(查已删可恢复) / all=全部
+        String delCond = "all".equals(delFlag) ? "" : ("u.del_flag='" + ("1".equals(delFlag) ? "1" : "0") + "'");
+        StringBuilder where = new StringBuilder(delCond.isEmpty() ? "WHERE 1=1" : ("WHERE " + delCond));
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
         Long total = jdbcTemplate.queryForObject(
@@ -190,7 +193,9 @@ public class PersonController {
         if (jobNo == null || jobNo.length() != 6 || !jobNo.matches("\\d{6}")) {
             return R.fail("工号必须是6位数字");
         }
-        Long exists = jdbcTemplate.queryForObject("SELECT count(*) FROM sys_user WHERE user_name=?", Long.class, jobNo);
+        // 工号唯一：只在"未删除"里查重（软删的不占工号，可复用给新人）
+        Long exists = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM sys_user WHERE user_name=? AND del_flag='0'", Long.class, jobNo);
         if (exists != null && exists > 0) {
             return R.fail("工号已存在：" + jobNo);
         }
@@ -263,6 +268,32 @@ public class PersonController {
         }
         jdbcTemplate.update(
             "UPDATE sys_user SET del_flag='1', status='1', update_time=now() WHERE user_id=?", userId);
+        return R.ok();
+    }
+
+    /**
+     * 恢复已删除人员：del_flag 置回 '0'（status 恢复为在职，可重新登录/使用）。
+     * 已删人员工号不占用，恢复前需确认该工号未被新人占用。
+     */
+    @SaCheckPermission("system:person:edit")
+    @Log(title = "人员信息", businessType = BusinessType.UPDATE)
+    @PutMapping("/{userId}/restore")
+    public R<Void> restore(@PathVariable Long userId) {
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "SELECT user_name, del_flag FROM sys_user WHERE user_id=?", userId);
+        if (!"1".equals(str(row.get("del_flag")))) {
+            return R.fail("该人员未被删除，无需恢复");
+        }
+        String jobNo = str(row.get("user_name"));
+        // 工号若已被新人占用（未删除的同工号），不能恢复
+        Long conflict = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM sys_user WHERE user_name=? AND del_flag='0' AND user_id<>?",
+            Long.class, jobNo, userId);
+        if (conflict != null && conflict > 0) {
+            return R.fail("工号 " + jobNo + " 已被其他在职人员占用，无法恢复");
+        }
+        jdbcTemplate.update(
+            "UPDATE sys_user SET del_flag='0', status='0', update_time=now() WHERE user_id=?", userId);
         return R.ok();
     }
 

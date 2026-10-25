@@ -32,6 +32,7 @@ const gender = ref<string | undefined>()
 const postsFilter = ref('')
 const rolesFilter = ref('')
 const orderBy = ref('')   // 字段:asc|desc
+const showDeleted = ref(false)   // 查看已删除人员（可恢复）
 
 // 状态颜色
 const statusColor: Record<string, string> = { 试用: 'orange', 在职: 'green', 离职: 'red', 长假: 'blue' }
@@ -203,6 +204,7 @@ async function loadList() {
         keyword: keyword.value, empStatus: empStatus.value ?? '',
         deptId: deptId.value ?? undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
+        delFlag: showDeleted.value ? '1' : '0',
       },
     })
     if (res.code === 200) { rows.value = res.data.rows; total.value = res.data.total }
@@ -390,6 +392,20 @@ function removePerson(row: any) {
   })
 }
 
+// 恢复已删除人员
+function restorePerson(row: any) {
+  Modal.confirm({
+    title: '恢复人员',
+    content: `确认恢复「${row.nick_name || row.name}（工号 ${row.job_no}）」？恢复后可重新登录使用。`,
+    okText: '恢复', cancelText: '取消',
+    onOk: async () => {
+      const res: any = await api.put(`/system/person/${row.user_id}/restore`)
+      if (res.code === 200) { message.success('已恢复'); loadList() }
+      else message.error(res.msg || '恢复失败')
+    },
+  })
+}
+
 function resetFilter() {
   keyword.value = ''; empStatus.value = undefined; deptId.value = undefined
   gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
@@ -433,6 +449,8 @@ function resetFilter() {
       <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
       <a-button type="primary" @click="loadList">查询</a-button>
       <a-button @click="resetFilter">重置</a-button>
+      <a-divider type="vertical" />
+      <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
     </div>
 
     <!-- 列表工具行：条数 + 列设置（受控下拉，操作期间不自动收起） -->
@@ -480,11 +498,17 @@ function resetFilter() {
           <a-tag :color="statusColor[record.emp_status]">{{ record.emp_status || '-' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a @click="openEdit(record)">编辑</a>
-          <a-divider type="vertical" />
-          <a @click="resetPwd(record)">重置密码</a>
-          <a-divider type="vertical" />
-          <a class="danger-link" @click="removePerson(record)">删除</a>
+          <!-- 查看已删除时：只给"恢复"；正常列表：编辑/重置密码/删除 -->
+          <template v-if="showDeleted">
+            <a @click="restorePerson(record)">恢复</a>
+          </template>
+          <template v-else>
+            <a @click="openEdit(record)">编辑</a>
+            <a-divider type="vertical" />
+            <a @click="resetPwd(record)">重置密码</a>
+            <a-divider type="vertical" />
+            <a class="danger-link" @click="removePerson(record)">删除</a>
+          </template>
         </template>
       </template>
     </a-table>
