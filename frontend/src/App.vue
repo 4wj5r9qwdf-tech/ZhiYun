@@ -4,6 +4,7 @@
  * 视觉定制走 Design Token，不覆盖组件样式。
  */
 import theme from 'ant-design-vue/es/theme'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 // 紧凑算法：收紧间距/控件尺寸，整体更轻（符合"卡片化、现代美学"）
 const themeConfig = {
@@ -16,10 +17,13 @@ const themeConfig = {
   },
   algorithm: [theme.defaultAlgorithm, theme.compactAlgorithm],
 }
+
+// 全站中文（分页"X 条/页"、日期、空态等 antd 文案统一中文化）
+const localeCN = zhCN
 </script>
 
 <template>
-  <a-config-provider :theme="themeConfig">
+  <a-config-provider :theme="themeConfig" :locale="localeCN">
     <router-view />
   </a-config-provider>
 </template>
