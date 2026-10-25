@@ -376,6 +376,20 @@ function resetPwd(row: any) {
   })
 }
 
+// 删除人员（软删，二次确认）
+function removePerson(row: any) {
+  Modal.confirm({
+    title: '删除人员',
+    content: `确认删除「${row.nick_name || row.name}（工号 ${row.job_no}）」？删除后该账号将无法登录。`,
+    okText: '删除', okType: 'danger', cancelText: '取消',
+    onOk: async () => {
+      const res: any = await api.delete(`/system/person/${row.user_id}`)
+      if (res.code === 200) { message.success('已删除'); loadList() }
+      else message.error(res.msg || '删除失败')
+    },
+  })
+}
+
 function resetFilter() {
   keyword.value = ''; empStatus.value = undefined; deptId.value = undefined
   gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
@@ -469,6 +483,8 @@ function resetFilter() {
           <a @click="openEdit(record)">编辑</a>
           <a-divider type="vertical" />
           <a @click="resetPwd(record)">重置密码</a>
+          <a-divider type="vertical" />
+          <a class="danger-link" @click="removePerson(record)">删除</a>
         </template>
       </template>
     </a-table>
@@ -601,6 +617,8 @@ function resetFilter() {
 .zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
 .zy-resize-handle:hover, .zy-resize-handle:active { background: #1E5EFF; opacity: .35; }
 
+.danger-link { color: #F53F3F; }
+.danger-link:hover { color: #cb2634; }
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
 .fsec:first-child { margin-top: 0; }
 </style>
