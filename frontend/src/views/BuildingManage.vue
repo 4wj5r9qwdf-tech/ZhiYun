@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
- * 厂房档案（物理资产/固定资产）—— ant-design-vue：
- * - 厂房=一栋建筑（面积/楼层/地址/建成年份），部门（车间/组）坐落在厂房里，一厂房=一一车间
- * - a-table：厂房编号/名称/楼层/占地/建筑面积/地址/建成年份/状态/关联车间/操作
- * - a-modal + a-form：新增/编辑（GET /system/plant/{plantId} 详情回填）
+ * 建筑档案（物理资产/固定资产）—— ant-design-vue：
+ * - 建筑=一栋楼（面积/楼层/地址/建成年份），部门（车间/组）坐落在建筑里；用途类别：厂房/行政楼/宿舍楼（仓库是建筑内区域不在此列）
+ * - a-table：用途类别/编号/名称/楼层/占地/建筑面积/地址/建成年份/状态/关联车间/操作
+ * - a-modal + a-form：新增/编辑（GET /system/building/{plantId} 详情回填）
  * - 删除：Modal.confirm 二次确认；有车间占用（deptCount>0）后端拒绝，透出后端 msg
- * - 后端：/system/plant（list/{id}/POST/PUT/DELETE/{plantId}）
+ * - 后端：/system/building（list/{id}/POST/PUT/DELETE/{plantId}）
  */
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -19,6 +19,13 @@ const router = useRouter()
 // ===== 列表 =====
 const rows = ref<any[]>([])
 const loading = ref(false)
+const buildingType = ref<string | undefined>()   // 用途类别筛选（空=全部）
+
+// 用途类别：厂房 / 行政楼 / 宿舍楼（仓库是建筑内区域，不在此列）
+const typeOptions = ['厂房', '行政楼', '宿舍楼']
+const typeColor: Record<string, string> = { '厂房': 'blue', '行政楼': 'green', '宿舍楼': 'purple' }
+function typeText(v: any) { return v || '厂房' }
+function typeColorOf(v: any) { return typeColor[String(v || '厂房')] || 'blue' }
 
 // 状态字典：'0' 在用 / '1' 闲置 / '2' 维修
 const statusMap: Record<string, { text: string; color: string }> = {
@@ -30,8 +37,9 @@ function statusText(v: any) { return statusMap[String(v ?? '0')]?.text || '在�
 function statusColor(v: any) { return statusMap[String(v ?? '0')]?.color || 'green' }
 
 const columns = [
-  { title: '厂房编号', dataIndex: 'plantCode', key: 'plantCode', width: 100 },
-  { title: '厂房名称', dataIndex: 'plantName', key: 'plantName', width: 150 },
+  { title: '用途类别', key: 'buildingType', width: 90 },
+  { title: '建筑编号', dataIndex: 'plantCode', key: 'plantCode', width: 100 },
+  { title: '建筑名称', dataIndex: 'plantName', key: 'plantName', width: 150 },
   { title: '楼层情况', dataIndex: 'floorInfo', key: 'floorInfo', width: 100 },
   { title: '占地面积(㎡)', dataIndex: 'landArea', key: 'landArea', width: 120 },
   { title: '建筑面积(㎡)', dataIndex: 'buildingArea', key: 'buildingArea', width: 120 },
@@ -56,11 +64,11 @@ function fmtYear(v: any) {
 async function loadList() {
   loading.value = true
   try {
-    const res: any = await api.get('/system/plant/list')
+    const res: any = await api.get('/system/building/list', { params: { buildingType: buildingType.value ?? '' } })
     if (res.code === 200) rows.value = res.data || []
-    else message.error(res.msg || '加载厂房失败')
+    else message.error(res.msg || '加载建筑失败')
   } catch (e: any) {
-    message.error(e?.response?.data?.msg || '加载厂房失败')
+    message.error(e?.response?.data?.msg || '加载建筑失败')
   } finally { loading.value = false }
 }
 
@@ -72,6 +80,7 @@ const formRef = ref()
 
 const emptyForm = () => ({
   plantId: null as number | null,
+  buildingType: '厂房',
   plantCode: '',
   plantName: '',
   floorInfo: undefined as string | undefined,   // a-select：单层/双层/三层/多层（allowClear 自由填）
@@ -85,7 +94,7 @@ const emptyForm = () => ({
 const form = ref(emptyForm())
 
 const rules: any = {
-  plantName: [{ required: true, message: '请输入厂房名称', trigger: 'blur' }],
+  plantName: [{ required: true, message: '请输入建筑名称', trigger: 'blur' }],
 }
 
 const floorOptions = ['单层', '双层', '三层', '多层']
@@ -101,12 +110,13 @@ async function openEdit(row: any) {
   // 先 GET 详情回填；接口异常时退化用行数据
   let d: any = null
   try {
-    const res: any = await api.get(`/system/plant/${row.plantId}`)
+    const res: any = await api.get(`/system/building/${row.plantId}`)
     if (res.code === 200) d = res.data
   } catch { d = null }
   if (!d) d = row
   form.value = {
     plantId: Number(d.plantId),
+    buildingType: d.buildingType || '厂房',
     plantCode: d.plantCode || '',
     plantName: d.plantName || '',
     floorInfo: d.floorInfo || undefined,
@@ -127,6 +137,7 @@ async function save() {
   try {
     // undefined 字段不传（后端按 null/缺省处理）
     const payload: any = {
+      buildingType: form.value.buildingType || '厂房',
       plantCode: form.value.plantCode || undefined,
       plantName: form.value.plantName,
       floorInfo: form.value.floorInfo || undefined,
@@ -139,8 +150,8 @@ async function save() {
     }
     if (isEdit.value) payload.plantId = form.value.plantId
     const res: any = isEdit.value
-      ? await api.put('/system/plant', payload)
-      : await api.post('/system/plant', payload)
+      ? await api.put('/system/building', payload)
+      : await api.post('/system/building', payload)
     if (res.code === 200) { message.success('保存成功'); showDlg.value = false; loadList() }
     else message.error(res.msg || '保存失败')
   } catch (e: any) {
@@ -149,14 +160,14 @@ async function save() {
 }
 
 // ===== 删除 =====
-function removePlant(row: any) {
+function removeBuilding(row: any) {
   Modal.confirm({
-    title: '删除厂房',
-    content: `确认删除厂房「${row.plantName}」？若有车间占用，后端将拒绝删除。`,
+    title: '删除建筑',
+    content: `确认删除建筑「${row.plantName}」？若有车间占用，后端将拒绝删除。`,
     okText: '删除', okType: 'danger', cancelText: '取消',
     onOk: async () => {
       try {
-        const res: any = await api.delete(`/system/plant/${row.plantId}`)
+        const res: any = await api.delete(`/system/building/${row.plantId}`)
         if (res.code === 200) { message.success('已删除'); loadList() }
         else message.error(res.msg || '删除失败')
       } catch (e: any) {
@@ -177,20 +188,23 @@ onMounted(loadList)
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
-        <span class="head-title">厂房档案</span>
-        <span class="head-sub">厂房=物理资产（一栋建筑：面积/楼层/地址/建成年份），部门坐落在厂房里</span>
+        <span class="head-title">建筑档案</span>
+        <span class="head-sub">建筑=物理资产（一栋楼：面积/楼层/地址/建成年份），部门坐落在建筑里</span>
       </div>
       <div class="head-actions">
+        <a-select v-model:value="buildingType" placeholder="用途类别" allow-clear style="width:120px" @change="loadList">
+          <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+        </a-select>
         <a-button :loading="loading" @click="loadList">
           <ReloadOutlined />刷新
         </a-button>
         <a-button type="primary" size="middle" @click="openAdd">
-          <PlusOutlined />新增厂房
+          <PlusOutlined />新增建筑
         </a-button>
       </div>
     </div>
 
-    <!-- 厂房列表（条数少，不分页） -->
+    <!-- 建筑列表（条数少，不分页） -->
     <a-table
       :columns="columns"
       :data-source="rows"
@@ -202,7 +216,10 @@ onMounted(loadList)
       class="plant-table"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'plantCode'">
+        <template v-if="column.key === 'buildingType'">
+          <a-tag :color="typeColorOf(record.buildingType)">{{ typeText(record.buildingType) }}</a-tag>
+        </template>
+        <template v-else-if="column.key === 'plantCode'">
           {{ record.plantCode || '—' }}
         </template>
         <template v-else-if="column.key === 'plantName'">
@@ -235,7 +252,7 @@ onMounted(loadList)
         <template v-else-if="column.key === 'ops'">
           <a @click="openEdit(record)">编辑</a>
           <a-divider type="vertical" />
-          <a class="danger-link" @click="removePlant(record)">删除</a>
+          <a class="danger-link" @click="removeBuilding(record)">删除</a>
         </template>
       </template>
     </a-table>
@@ -243,7 +260,7 @@ onMounted(loadList)
     <!-- 新增/编辑 -->
     <a-modal
       v-model:open="showDlg"
-      :title="isEdit ? '编辑厂房' : '新增厂房'"
+      :title="isEdit ? '编辑建筑' : '新增建筑'"
       width="640px"
       :confirm-loading="saving"
       ok-text="保存"
@@ -253,13 +270,20 @@ onMounted(loadList)
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="厂房编号">
+            <a-form-item label="用途类别">
+              <a-select v-model:value="form.buildingType" placeholder="请选择">
+                <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="建筑编号">
               <a-input v-model:value="form.plantCode" :maxlength="30" placeholder="如 P1（选填）" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="厂房名称" name="plantName">
-              <a-input v-model:value="form.plantName" :maxlength="50" placeholder="请输入厂房名称" />
+            <a-form-item label="建筑名称" name="plantName">
+              <a-input v-model:value="form.plantName" :maxlength="50" placeholder="请输入建筑名称" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
