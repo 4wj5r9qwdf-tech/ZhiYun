@@ -10,9 +10,11 @@ import message from 'ant-design-vue/es/message'
 import * as AntIcons from '@ant-design/icons-vue'
 import TopBar from '../components/TopBar.vue'
 import { MODULES, type ModuleDef } from '../config/modules'
+import { useTabsStore } from '../store/tabs'
 
 const router = useRouter()
 const route = useRoute()
+const tabsStore = useTabsStore()
 
 // 左侧模块导航（目录统一维护在 config/modules.ts）
 const modules = MODULES
@@ -36,6 +38,31 @@ function navModule(key: string) {
     message.info(`「${label}」模块开发中`)
   }
 }
+
+// ===== 多标签页 =====
+function switchTab(name: string) {
+  const t = tabsStore.tabs.find(x => x.name === name)
+  if (t) router.push(t.path)
+}
+
+function closeTab(name: string) {
+  const next = tabsStore.closeTab(name)
+  // 若关的是当前页，跳到下一个 tab；没有 tab 了回当前模块首页
+  if (route.name === name) {
+    if (next) {
+      const t = tabsStore.tabs.find(x => x.name === next)
+      if (t) { router.push(t.path); return }
+    }
+    router.push({ name: moduleHomeRoute.value })
+  }
+}
+
+// 当前所在模块的首页路由（关完所有 tab 回这里）
+const moduleHomeRoute = computed(() => {
+  if (route.path.startsWith('/person')) return 'PersonIndex'
+  if (route.path.startsWith('/property')) return 'PropertyIndex'
+  return 'SystemIndex'
+})
 </script>
 
 <template>
@@ -57,6 +84,20 @@ function navModule(key: string) {
     <div class="main">
       <TopBar />
 
+      <!-- 多标签页：打开的功能页以 tab 呈现，点标签切换、× 关闭 -->
+      <div v-if="tabsStore.tabs.length" class="tab-bar">
+        <div
+          v-for="t in tabsStore.tabs"
+          :key="t.name"
+          class="tab"
+          :class="{ active: tabsStore.activeName === t.name }"
+          @click="switchTab(t.name)"
+        >
+          <span class="tab-title">{{ t.title }}</span>
+          <span class="tab-close" @click.stop="closeTab(t.name)">×</span>
+        </div>
+      </div>
+
       <div class="content">
         <router-view />
       </div>
@@ -76,4 +117,12 @@ function navModule(key: string) {
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
+
+/* 多标签页 */
+.tab-bar { display: flex; align-items: center; gap: 4px; background: #fff; border-bottom: 1px solid #E5E8EF; padding: 6px 12px 0; flex-shrink: 0; overflow-x: auto; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 13px; color: #4E5969; background: #F5F7FA; border: 1px solid #E5E8EF; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap; user-select: none; }
+.tab:hover { color: #1E5EFF; }
+.tab.active { background: #fff; color: #1E5EFF; font-weight: 500; border-color: #E5E8EF; box-shadow: 0 -1px 0 #fff inset; margin-bottom: -1px; padding-bottom: 8px; }
+.tab-close { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; font-size: 13px; line-height: 1; color: #86909C; }
+.tab-close:hover { background: #E5E8EF; color: #1D2129; }
 </style>
