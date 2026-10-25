@@ -118,8 +118,8 @@ function pickSug(vOrS: any, opt?: any) {
     // 命中功能 → 跳转该功能路由
     try { router.push({ name: s.route }) } catch { message.info(`功能「${s.title}」页面开发中`) }
   } else if (s.type === 'person') {
-    // 命中人员 → 跳人员信息列表
-    try { router.push({ name: 'Person' }) } catch { /* ignore */ }
+    // 命中人员 → 跳人员信息列表，并带 keyword（用工号精确定位到该人）
+    try { router.push({ name: 'Person', query: { keyword: s.userName || s.title } }) } catch { /* ignore */ }
   }
 }
 
