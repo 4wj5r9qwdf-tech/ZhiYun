@@ -61,11 +61,18 @@ const LOCK_DEFAULT = true
 const locked = ref(LOCK_DEFAULT)
 
 // 卡片尺寸边界；要调整只改这些常量
-const MIN_S = 100          // 等比（正方形）时的最小边
-const MAX_S = 400          // 等比时的最大边
+// 基准尺寸 = 正方形 DEFAULT_S × DEFAULT_S；等比最多放大 MAX_ZOOM 倍；
+// 解锁后可拖成长方形，长/高各自最多 MAX_W_ZOOM / MAX_H_ZOOM 倍基准。
+const DEFAULT_S = 160            // 基准边长（正方形，原本大小）
+const MAX_ZOOM = 2               // 等比（正方形）最大放大倍数 → 最大边 = 160×2 = 320
+const MIN_S = 100                // 等比最小边（比基准小一点，可缩小）
+const MAX_W_ZOOM = 3             // 自由模式：最大宽度 = 基准×3 = 480（长）
+const MAX_H_ZOOM = 2             // 自由模式：最大高度 = 基准×2 = 320（高）
 const MIN_W = 120, MIN_H = 100   // 自由模式最小宽/高
-const MAX_W = 480, MAX_H = 320   // 自由模式最大宽/高
-const DEFAULT_W = 160, DEFAULT_H = 160 // 默认宽/高（正方形）
+const MAX_W = DEFAULT_S * MAX_W_ZOOM   // 480
+const MAX_H = DEFAULT_S * MAX_H_ZOOM   // 320
+const MAX_S = DEFAULT_S * MAX_ZOOM     // 320（等比最大边）
+const DEFAULT_W = DEFAULT_S, DEFAULT_H = DEFAULT_S // 默认宽/高（正方形）
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
@@ -93,6 +100,9 @@ async function loadConfig() {
           // 宽高独立（新）；兼容旧单值 icon_size（沿用为宽，高按比例）
           if (m.card_w && m.card_h) { c.cardW = m.card_w; c.cardH = m.card_h }
           else if (m.icon_size) { c.cardW = m.icon_size; c.cardH = Math.round(m.icon_size * 0.65) }
+          // 兼容旧配置：夹到当前边界内（防止早期超大尺寸越界）
+          c.cardW = Math.max(MIN_W, Math.min(MAX_W, c.cardW))
+          c.cardH = Math.max(MIN_H, Math.min(MAX_H, c.cardH))
         }
       }
     }
@@ -211,12 +221,11 @@ function openCard(c: CardState) {
       </div>
       <div class="fc-body">
         <div class="fc-title" :title="c.title">{{ c.title }}</div>
-        <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
 
         <div v-if="!readonly" class="fc-actions">
           <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
           <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
-          <button class="fc-act" :class="{ on: locked }" :title="locked ? '解锁：可自由拉宽高' : '锁定：等比缩放(正方形)'" @click.stop="toggleLock">{{ locked ? '🔒' : '🔓' }}</button>
+          <button class="fc-act" :class="{ on: locked }" :title="locked ? '解锁：可自由拉宽高(长方形)' : '锁定：等比缩放(正方形)'" @click.stop="toggleLock">{{ locked ? '🔒' : '🔓' }}</button>
         </div>
       </div>
 
@@ -246,7 +255,6 @@ function openCard(c: CardState) {
 /* 文字/按钮层：固定底部，白底不透明（不再盖图标） */
 .fc-body { position: relative; z-index: 1; flex: none; padding: 8px 12px 12px; background: #fff; border-top: 1px solid #F0F2F5; }
 .fc-title { font-size: 15px; font-weight: 600; color: #1D2129; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.fc-desc { font-size: 12px; color: #86909C; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fc-actions { display: flex; gap: 6px; margin-top: auto; }
 .fc-act { width: 26px; height: 26px; flex: none; border: 1px solid #E5E8EF; background: #fff; border-radius: 6px; font-size: 14px; line-height: 1; color: #4E5969; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .fc-act:hover { border-color: #1E5EFF; color: #1E5EFF; }
