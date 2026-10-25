@@ -151,8 +151,47 @@ const columns = computed(() => {
 
 // 下拉数据
 const depts = ref<any[]>([])
+const deptTree = ref<any[]>([])   // 原始部门树（含 dept_category），供小组级联
 const posts = ref<any[]>([])
 const roles = ref<any[]>([])
+
+// 组织层级：厂→车间→区域→小组（dept_category）；车间选项=直属厂区下一级
+const workshops = computed(() => depts.value.filter(d => d.dept_category === '车间'))
+
+// 小组级联选项：从部门树中裁出 车间→区域→小组（去掉厂区顶层，只留可挂人的层级）
+const groupOptions = computed(() => {
+  const build = (nodes: any[]): any[] => nodes
+    .filter(n => n.dept_category === '车间' || n.dept_category === '区域' || n.dept_category === '小组')
+    .map(n => ({ ...n, children: build(n.children || []) }))
+  return build(deptTree.value)
+})
+
+// 由 groupId 反查 车间/区域/小组 路径（dept_id 数组）
+function buildGroupPath(gid?: number): number[] {
+  if (!gid) return []
+  const path: number[] = []
+  const find = (nodes: any[], acc: number[]): boolean => {
+    for (const n of nodes) {
+      const cur = [...acc, Number(n.deptId)]
+      if (Number(n.deptId) === gid) { path.push(...cur); return true }
+      if (n.children?.length && find(n.children, cur)) return true
+    }
+    return false
+  }
+  find(deptTree.value, [])
+  return path
+}
+
+// 选中小组后：groupId=路径最后一段；groupName 同步为小组节点名（后端也会按 group_id 校正）
+function onGroupChange(val: any[]) {
+  const path = Array.isArray(val) ? val : []
+  form.value.ext.groupId = path.length ? Number(path[path.length - 1]) : undefined
+  const gid = form.value.ext.groupId
+  form.value.ext.groupName = gid ? (depts.value.find(d => Number(d.deptId) === gid)?.deptName || '') : ''
+  // 若选到了非"小组"层级（change-on-select 允许中途选），仅当末段是小组才生效
+  const node = depts.value.find(d => Number(d.deptId) === gid)
+  if (node && node.dept_category !== '小组') { form.value.ext.groupId = undefined }
+}
 
 // ===== 弹窗 =====
 const showDlg = ref(false)
@@ -170,7 +209,7 @@ const emptyForm = () => ({
   ext: {
     maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
-    hireDate: '', groupName: '', empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
+    hireDate: '', groupName: '', groupId: undefined as number | undefined, groupPath: [] as number[], empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
     bankCardNo: '', signEntity: '', contractYears: undefined as number | undefined, contractStart: '', contractEnd: '',
     hasSocial: '0', socialAmount: undefined as number | undefined, socialSubsidy: undefined as number | undefined,
     hasCommercial: '0', commercialType: '', socialCheckDate: '',
@@ -292,7 +331,7 @@ async function loadOptions() {
       api.get('/system/post/list', { params: { pageNum: 1, pageSize: 100 } }),
       api.get('/system/role/list', { params: { pageNum: 1, pageSize: 100 } }),
     ])
-    if (d.code === 200) depts.value = flattenDept(d.data || [])
+    if (d.code === 200) { deptTree.value = d.data || []; depts.value = flattenDept(d.data || []) }
     if (p.code === 200) posts.value = p.data.rows || []
     if (r.code === 200) roles.value = r.data.rows || []
   } catch { /* ignore */ }
@@ -322,7 +361,7 @@ async function openEdit(row: any) {
       nation: d.nation || '', education: d.education || '', birthDate: d.birth_date || '',
       graduateSchool: d.graduate_school || '', nativePlace: d.native_place || '', address: d.address || '',
       certExpireDate: d.cert_expire_date || '',
-      hireDate: d.hire_date || '', groupName: d.group_name || '', empType: d.emp_type || '正式',
+      hireDate: d.hire_date || '', groupName: d.group_name || '', groupId: d.group_id ? Number(d.group_id) : undefined, groupPath: buildGroupPath(d.group_id ? Number(d.group_id) : undefined), empType: d.emp_type || '正式',
       leaveDate: d.leave_date || '', cardNo: d.card_no || '', empStatus: d.emp_status || '试用',
       bankCardNo: d.bank_card_no || '', signEntity: d.sign_entity || '',
       contractYears: d.contract_years ?? undefined, contractStart: d.contract_start || '', contractEnd: d.contract_end || '',
@@ -548,8 +587,8 @@ function resetFilter() {
         <div class="fsec">任职信息</div>
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="入职日期" name="ext.hireDate"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="所属车间(部门)"><a-select v-model:value="form.deptId" allow-clear placeholder="请选择"><a-select-option v-for="d in depts" :key="Number(d.deptId)" :value="Number(d.deptId)">{{ d.deptName }}</a-select-option></a-select></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="所属小组"><a-input v-model:value="form.ext.groupName" placeholder="如 裁剪一组" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属车间(部门)"><a-select v-model:value="form.deptId" allow-clear placeholder="请选择"><a-select-option v-for="d in workshops" :key="Number(d.deptId)" :value="Number(d.deptId)">{{ d.deptName }}</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属小组"><a-cascader v-model:value="form.ext.groupPath" :options="groupOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" change-on-select allow-clear placeholder="车间 / 区域 / 小组" @change="onGroupChange" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工性质"><a-select v-model:value="form.ext.empType"><a-select-option value="正式">正式</a-select-option><a-select-option value="临时">临时</a-select-option><a-select-option value="劳务">劳务</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="在职状态" name="ext.empStatus"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工卡"><a-input v-model:value="form.ext.cardNo" placeholder="工牌号" /></a-form-item></a-col>
