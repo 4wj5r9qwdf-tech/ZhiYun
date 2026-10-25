@@ -433,12 +433,21 @@ function removeDept(row: any) {
 // 弹窗关闭时重置校验状态
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-// 左树点节点 → 右侧只显示该节点及下级（再点取消）
+// 左树点节点 → 右侧只显示该节点及下级，并自动展开该节点的行（再点取消）
+const expandedRowKeys = ref<string[]>([])
 function onTreeSelect(keys: any[]) {
-  selectedDeptId.value = keys.length ? String(keys[0]) : null
+  const id = keys.length ? String(keys[0]) : null
+  selectedDeptId.value = id
+  expandedRowKeys.value = id ? [id] : []
 }
 // 取消选中（回到全部）
-function clearTreeSelect() { selectedDeptId.value = null }
+function clearTreeSelect() { selectedDeptId.value = null; expandedRowKeys.value = [] }
+// 手动点行首 +/- 展开收起，同步受控 expandedRowKeys
+function onRowExpand(exp: boolean, record: any) {
+  const id = String(record.deptId)
+  if (exp) { if (!expandedRowKeys.value.includes(id)) expandedRowKeys.value.push(id) }
+  else expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
+}
 
 onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState() })
 </script>
@@ -533,6 +542,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       :pagination="false"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       :components="tableComponents"
+      :expanded-row-keys="expandedRowKeys"
+      @expand="(exp: boolean, record: any) => onRowExpand(exp, record)"
       row-key="deptId"
       size="middle"
       class="dept-table"
