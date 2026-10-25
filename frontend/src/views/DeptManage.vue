@@ -6,7 +6,7 @@
  * - 操作：编辑 / 新增下级 / 删除（后端校验子部门与人员占用，失败弹 msg）
  * - 顶部工具栏：新增顶层部门、按名称前端过滤、刷新
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, defineComponent, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
@@ -92,6 +92,49 @@ function moveCol(index: number, dir: -1 | 1) {
   if (j < 0 || j >= arr.length) return
   ;[arr[index], arr[j]] = [arr[j], arr[index]]
   saveColState()
+}
+
+// 列宽拖拽：改 colState 里对应列的 width 并持久化
+function onColResize(key: string, w: number) {
+  const s = colState.value.find(c => c.key === key)
+  if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
+}
+
+// a-table components：表头单元格加 resize 手柄（右侧拖拽改列宽）
+const tableComponents = {
+  header: {
+    cell: defineComponent({
+      props: ['column', 'index'],
+      setup(props: any, { slots }: any) {
+        const onStart = (e: MouseEvent) => {
+          const th = (e.currentTarget as HTMLElement).closest('th') as HTMLElement
+          if (!th) return
+          const startX = e.clientX
+          const startW = th.getBoundingClientRect().width
+          const key = props.column?.key
+          const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove)
+            document.removeEventListener('mouseup', onUp)
+            document.body.style.cursor = ''
+          }
+          document.addEventListener('mousemove', onMove)
+          document.addEventListener('mouseup', onUp)
+          document.body.style.cursor = 'col-resize'
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return () =>
+          h('th', { class: 'zy-resizable-th' }, [
+            h('div', { class: 'zy-th-inner' }, slots.default?.()),
+            // 除操作列外，右侧 resize 手柄
+            props.column?.key !== 'ops'
+              ? h('span', { class: 'zy-resize-handle', onMousedown: onStart })
+              : null,
+          ])
+      },
+    }),
+  },
 }
 
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
@@ -406,6 +449,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       :loading="loading"
       :pagination="false"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+      :components="tableComponents"
       row-key="deptId"
       size="middle"
       class="dept-table"
@@ -569,6 +613,12 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
 .col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
 .col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
+
+/* 列宽拖拽：表头右侧 resize 手柄 */
+.zy-resizable-th { position: relative; }
+.zy-th-inner { display: inline-block; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
+.zy-resize-handle:hover, .zy-resize-handle:active { background: #1E5EFF; opacity: .35; }
 
 .dept-table { width: 100%; background: #fff; border-radius: 10px; }
 .dept-table :deep(.ant-table) { font-size: 13px; }
