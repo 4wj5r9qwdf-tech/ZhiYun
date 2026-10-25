@@ -4,7 +4,7 @@
  * 右侧表单改用 ant-design-vue（a-form + a-input + a-button + a-alert）
  * handleLogin 业务逻辑（/auth/login、存 token、1s 后跳 Workbench）完全不变
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { CLIENT_ID } from '../api'
 
@@ -19,17 +19,9 @@ const loginBgUrl = ref('')
 const loginBgMode = ref('A')  // A=铺满左侧品牌区 / B=铺满整页
 
 // 登录表单
-// 登录表单（绑定 a-form :model，校验状态随输入自动清除）
+// 登录表单（绑定 a-form :model，校验状态随输入/blur 自动清除）
 const loginForm = ref({ username: '', password: '' })
 const formRef = ref()
-const username = computed({
-  get: () => loginForm.value.username,
-  set: (v: string) => { loginForm.value.username = v },
-})
-const password = computed({
-  get: () => loginForm.value.password,
-  set: (v: string) => { loginForm.value.password = v },
-})
 const loading = ref(false)
 const errorMsg = ref('')
 const successMsg = ref('')
@@ -57,22 +49,23 @@ onMounted(async () => {
 })
 
 async function handleLogin() {
-  // 触发 a-form 校验（校验状态随输入自动清除，不再挂死红字）
-  try { await formRef.value?.validate() } catch { return }
-  if (!username.value || !password.value) {
+  // 手动校验（不依赖 a-form validate，避免静默 reject 无提示）
+  if (!loginForm.value.username.trim() || !loginForm.value.password) {
     errorMsg.value = '请输入工号/手机号和密码'
+    // 触发一次校验让红字显示
+    formRef.value?.validate().catch(() => {})
     return
   }
-  loading.value = true
   errorMsg.value = ''
+  loading.value = true
   successMsg.value = ''
   try {
     // RuoYi-Vue-Plus 6.x 登录：clientId 取 sys_client 表 pc 客户端
     const res: any = await api.post('/auth/login', {
       clientId: CLIENT_ID,
       grantType: 'password',
-      username: username.value.trim(),
-      password: password.value,
+      username: loginForm.value.username.trim(),
+      password: loginForm.value.password,
     })
     if (res.code === 200 && res.data?.access_token) {
       localStorage.setItem('token', res.data.access_token)
@@ -136,27 +129,27 @@ async function handleLogin() {
           :message="errorMsg"
         />
 
-        <a-form ref="formRef" :model="loginForm" layout="vertical" @submit.prevent="handleLogin">
+        <a-form ref="formRef" :model="loginForm" layout="vertical">
           <a-form-item label="工号 / 手机号" name="username" :rules="rules.username">
             <a-input
-              v-model:value="username"
+              v-model:value="loginForm.username"
               placeholder="6位工号 或 11位手机号"
               autocomplete="username"
             />
           </a-form-item>
           <a-form-item label="密码" name="password" :rules="rules.password">
             <a-input-password
-              v-model:value="password"
+              v-model:value="loginForm.password"
               placeholder="请输入密码"
               autocomplete="current-password"
             />
           </a-form-item>
           <a-button
             type="primary"
-            html-type="submit"
             block
             size="large"
             :loading="loading"
+            @click="handleLogin"
           >
             登 录
           </a-button>
