@@ -202,6 +202,15 @@ async function handleLogin() {
   background: transparent;
   z-index: 1;
 }
+/* mode-B：品牌信息(logo/公司名/宣传语)浮在铺满的背景图之上，白字加投影保证可读 */
+.mode-B .brand-content {
+  position: relative;
+  z-index: 2;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+}
+.mode-B .brand-logo {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
 .mode-B .form-side {
   position: relative;
   z-index: 1;
