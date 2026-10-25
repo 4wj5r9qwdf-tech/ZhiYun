@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * 部门管理（系统管理模块）—— ant-design-vue：
- * - 组织层级：厂 → 车间 → 区域 → 小组（sys_dept.dept_category 区分）
- * - a-table 树形展开表：部门名称/层级/负责人/电话/状态/排序/操作
- * - 操作：编辑 / 新增下级 / 删除（后端校验子部门与人员占用，失败弹 msg）
- * - 顶部工具栏：新增顶层部门、按名称前端过滤、刷新
+ * 部门管理（人员模块）—— ant-design-vue：左树 + 右表分栏
+ * - 左侧组织树（点节点→右侧只显示该节点及下级）
+ * - 层级 = 树深度，按 ancestors 实时算（一级/二级/三级…），不依赖 dept_category
+ * - a-table 树形展开表 + 列设置 + 列宽拖拽（对齐人员信息标准布局）
+ * - 操作：编辑 / 新增下级 / 删除；位置(楼/层/房间)渐进式；业务管辖关联
  */
 import { ref, computed, onMounted, watch, defineComponent, h } from 'vue'
 import { useRouter } from 'vue-router'
@@ -56,13 +56,14 @@ async function loadManageCounts() {
 }
 function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
 
-// 层级标签配色：厂区=蓝 车间=绿 区域=橙 小组=紫
-const categoryColor: Record<string, string> = { 厂区: 'blue', 车间: 'green', 区域: 'orange', 小组: 'purple' }
+// 层级标签配色：按级数 1级=蓝 2级=绿 3级=橙 4级及以上=紫
+const levelColor: Record<number, string> = { 1: 'blue', 2: 'green', 3: 'orange' }
+function levelColorOf(n: any): string { return levelColor[deptLevel(n)] || 'purple' }
 
 // 全部列（不含操作列，操作列固定最后）
 const ALL_COLUMNS = [
   { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
-  { title: '层级', dataIndex: 'deptCategory', key: 'deptCategory', width: 90 },
+  { title: '层级', key: 'deptCategory', width: 90 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
   { title: '位置', key: 'location', width: 160 },
   { title: '管辖', key: 'manages', width: 80 },
@@ -162,12 +163,12 @@ const columns = computed(() => {
 const deptTree = computed(() => {
   const base = selectedSubtree.value
   const kw = keyword.value.trim()
-  const cat = filterCategory.value
+  const lvl = filterCategory.value   // 层级筛选：值为数字字符串如 '1'/'2'
   const st = filterStatus.value
-  if (!kw && !cat && !st) return base
+  if (!kw && !lvl && !st) return base
   const match = (n: any) => {
     if (kw && !String(n.deptName || '').includes(kw)) return false
-    if (cat && n.deptCategory !== cat) return false
+    if (lvl && String(deptLevel(n)) !== lvl) return false
     if (st && n.status !== st) return false
     return true
   }
@@ -285,13 +286,6 @@ const rules: any = {
   deptName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
 }
 
-// 由上级部门推导本级层级：厂区→车间→区域→小组；无上级(顶层)=厂区
-const NEXT_CATEGORY: Record<string, string> = { 厂区: '车间', 车间: '区域', 区域: '小组' }
-function deriveCategory(parentId: any): string {
-  if (!parentId) return '厂区'
-  const node = findNode(tree.value, String(parentId))
-  return NEXT_CATEGORY[node?.deptCategory] || '小组'
-}
 function findNode(nodes: any[], id: string): any {
   for (const n of nodes) {
     if (String(n.deptId) === id) return n
@@ -300,25 +294,41 @@ function findNode(nodes: any[], id: string): any {
   }
   return null
 }
+
+// ===== 层级 = 树深度（按 ancestors 实时算，不依赖 dept_category）=====
+// ancestors 形如 "0" / "0,父id" / "0,父id,祖父id" → 段数 = 层级（顶层=1级）
+function deptLevel(n: any): number {
+  const anc = String(n?.ancestors ?? '0')
+  return anc.split(',').filter(x => x !== '').length || 1
+}
+// 由上级推导本级层级（新节点）：父级深度+1
+function deriveLevel(parentId: any): number {
+  if (!parentId) return 1
+  const node = findNode(tree.value, String(parentId))
+  return node ? deptLevel(node) + 1 : 2
+}
+function levelLabel(n: any): string { return `${deptLevel(n)} 级` }
+
 // 上级部门变化 → 层级自动跟随
 function onParentChange() {
-  form.value.deptCategory = deriveCategory(form.value.parentId)
+  form.value.deptCategory = levelLabelOf(deriveLevel(form.value.parentId))
 }
+function levelLabelOf(level: number): string { return `${level} 级` }
 
 function openAddTop() {
   isEdit.value = false
   form.value = emptyForm()
-  form.value.deptCategory = '厂区'
+  form.value.deptCategory = '1 级'
   managedIds.value = []
   showDlg.value = true
 }
 
-// 新增下级：parentId=当前部门；层级按 厂区→车间→区域→小组 推导
+// 新增下级：parentId=当前部门；层级=父级深度+1
 function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
   form.value.parentId = String(row.deptId)
-  form.value.deptCategory = deriveCategory(row.deptId)
+  form.value.deptCategory = levelLabelOf(deptLevel(row) + 1)
   managedIds.value = []
   showDlg.value = true
 }
@@ -342,7 +352,7 @@ async function openEdit(row: any) {
     deptId: String(d.deptId),
     parentId: d.parentId === 0 || d.parentId === '0' ? undefined : String(d.parentId),
     deptName: d.deptName || '',
-    deptCategory: d.deptCategory || undefined,
+    deptCategory: levelLabelOf(deptLevel(d)),
     buildingId: d.buildingId ? Number(d.buildingId) : undefined,
     floor,
     location: tail,
@@ -439,7 +449,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           :selected-keys="selectedDeptId ? [selectedDeptId] : []"
           @select="onTreeSelect"
         />
-        <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层厂区" />
+        <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层部门" />
       </div>
     </div>
 
@@ -458,10 +468,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
       <a-select v-model:value="filterCategory" allow-clear placeholder="层级" style="width:110px">
-        <a-select-option value="厂区">厂区</a-select-option>
-        <a-select-option value="车间">车间</a-select-option>
-        <a-select-option value="区域">区域</a-select-option>
-        <a-select-option value="小组">小组</a-select-option>
+        <a-select-option value="1">一级</a-select-option>
+        <a-select-option value="2">二级</a-select-option>
+        <a-select-option value="3">三级</a-select-option>
+        <a-select-option value="4">四级</a-select-option>
       </a-select>
       <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px">
         <a-select-option value="0">启用</a-select-option>
@@ -514,7 +524,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span class="dept-name">{{ record.deptName }}</span>
         </template>
         <template v-else-if="column.key === 'deptCategory'">
-          <a-tag :color="categoryColor[record.deptCategory]">{{ record.deptCategory || '-' }}</a-tag>
+          <a-tag :color="levelColorOf(record)">{{ levelLabel(record) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'buildingId'">
           {{ buildingLabel(record.buildingId) || '—' }}
