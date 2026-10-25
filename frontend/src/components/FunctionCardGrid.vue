@@ -56,23 +56,27 @@ let resizeStartY = 0
 let resizeStartW = 0
 let resizeStartH = 0
 
-// 等比锁定（默认锁定=始终正方形；点卡片上的锁可解开自由拉宽高）
+// 等比锁定（默认锁定=正方形档位；点卡片上的锁可解开成长方形档位）
 const LOCK_DEFAULT = true
 const locked = ref(LOCK_DEFAULT)
 
-// 卡片尺寸边界；要调整只改这些常量
-// 基准尺寸 = 正方形 DEFAULT_S × DEFAULT_S；等比最多放大 MAX_ZOOM 倍；
-// 解锁后可拖成长方形，长/高各自最多 MAX_W_ZOOM / MAX_H_ZOOM 倍基准。
-const DEFAULT_S = 160            // 基准边长（正方形，原本大小）
-const MAX_ZOOM = 2               // 等比（正方形）最大放大倍数 → 最大边 = 160×2 = 320
-const MIN_S = 100                // 等比最小边（比基准小一点，可缩小）
-const MAX_W_ZOOM = 3             // 自由模式：最大宽度 = 基准×3 = 480（长）
-const MAX_H_ZOOM = 2             // 自由模式：最大高度 = 基准×2 = 320（高）
-const MIN_W = 120, MIN_H = 100   // 自由模式最小宽/高
-const MAX_W = DEFAULT_S * MAX_W_ZOOM   // 480
-const MAX_H = DEFAULT_S * MAX_H_ZOOM   // 320
-const MAX_S = DEFAULT_S * MAX_ZOOM     // 320（等比最大边）
-const DEFAULT_W = DEFAULT_S, DEFAULT_H = DEFAULT_S // 默认宽/高（正方形）
+// ===== 卡片尺寸：档位制（对齐安卓小组件，不做任意像素，保证网格整齐）=====
+// 单元 = UNIT（卡片内容）+ GAP（间距）构成一个网格格子；卡片尺寸只能取「格子数」的整数倍。
+// 例：1×1=单格(正方形)、2×1=两格宽一格高(横长)、1×2=一格宽两格高(竖长)、2×2=田字(大正方形)。
+const UNIT = 150           // 单个格子的内容边长
+const GAP = 14             // 格子间距（也是卡片间隙）
+const CELL = UNIT + GAP    // 一个完整格子占位（含间距）
+const MIN_COLS = 1, MAX_COLS = 3   // 宽/高可取的格子数档位（1-3 格）
+const MIN_ROWS = 1, MAX_ROWS = 3
+
+// 档位 → 像素（内容宽高，卡片本身按内容尺寸，grid gap 负责间距）
+function colsToW(cols: number) { return cols * UNIT + (cols - 1) * GAP }
+function rowsToH(rows: number) { return rows * UNIT + (rows - 1) * GAP }
+// 像素 → 最近档位
+function wToCols(w: number) { return Math.max(MIN_COLS, Math.min(MAX_COLS, Math.round((w + GAP) / CELL))) }
+function hToRows(h: number) { return Math.max(MIN_ROWS, Math.min(MAX_ROWS, Math.round((h + GAP) / CELL))) }
+
+const DEFAULT_W = colsToW(1), DEFAULT_H = rowsToH(1) // 默认 = 1×1 正方形单格
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
@@ -100,9 +104,9 @@ async function loadConfig() {
           // 宽高独立（新）；兼容旧单值 icon_size（沿用为宽，高按比例）
           if (m.card_w && m.card_h) { c.cardW = m.card_w; c.cardH = m.card_h }
           else if (m.icon_size) { c.cardW = m.icon_size; c.cardH = Math.round(m.icon_size * 0.65) }
-          // 兼容旧配置：夹到当前边界内（防止早期超大尺寸越界）
-          c.cardW = Math.max(MIN_W, Math.min(MAX_W, c.cardW))
-          c.cardH = Math.max(MIN_H, Math.min(MAX_H, c.cardH))
+          // 兼容旧配置：把像素尺寸吸附到最近档位（防止旧的任意像素越界/对不齐）
+          c.cardW = colsToW(wToCols(c.cardW))
+          c.cardH = rowsToH(hToRows(c.cardH))
         }
       }
     }
@@ -146,7 +150,7 @@ function onDrop(i: number) {
 }
 function resetDrag() { dragIndex.value = -1; overIndex.value = -1 }
 
-// ===== 自由拉伸尺寸（宽高独立，非等比；右把手=宽，下把手=高，右下角=宽高）=====
+// ===== 档位缩放（对齐安卓小组件：只在几档之间切换，不做任意像素）=====
 function startResize(c: CardState, axis: 'w' | 'h' | 'wh', e: MouseEvent) {
   e.stopPropagation(); e.preventDefault()
   resizing.value = { key: c.key, axis }
@@ -163,17 +167,19 @@ function onResizeMove(e: MouseEvent) {
   if (!c) return
   const { axis } = resizing.value
   if (locked.value) {
-    // 等比（正方形）：以主轴变化量定边长，宽高同步
+    // 等比（正方形档位）：宽=高，取 1×1 / 2×2 / 3×3
     const delta = axis === 'h' ? (e.clientY - resizeStartY) : (e.clientX - resizeStartX)
-    const side = Math.max(MIN_S, Math.min(MAX_S, Math.max(resizeStartW, resizeStartH) + delta))
-    c.cardW = side
-    c.cardH = side
+    const startSide = Math.max(resizeStartW, resizeStartH)
+    const n = Math.max(MIN_COLS, Math.min(MAX_COLS, wToCols(startSide + delta)))
+    c.cardW = colsToW(n)
+    c.cardH = rowsToH(n)
   } else {
+    // 自由（成长方形档位）：宽高各自取最近档（如 2×1、1×2、3×2）
     if (axis === 'w' || axis === 'wh') {
-      c.cardW = Math.max(MIN_W, Math.min(MAX_W, resizeStartW + (e.clientX - resizeStartX)))
+      c.cardW = colsToW(wToCols(resizeStartW + (e.clientX - resizeStartX)))
     }
     if (axis === 'h' || axis === 'wh') {
-      c.cardH = Math.max(MIN_H, Math.min(MAX_H, resizeStartH + (e.clientY - resizeStartY)))
+      c.cardH = rowsToH(hToRows(resizeStartH + (e.clientY - resizeStartY)))
     }
   }
 }
@@ -238,7 +244,7 @@ function openCard(c: CardState) {
 </template>
 
 <style scoped>
-.fc-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.fc-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
 .fc-card { position: relative; display: flex; flex-direction: column; width: var(--w, 140px); min-height: var(--h, 140px); background: #fff; border-radius: 10px; padding: 0; cursor: grab; box-shadow: 0 2px 8px rgba(29,33,41,.06); border: 1px solid transparent; transition: transform .15s, border-color .15s, box-shadow .15s; user-select: none; box-sizing: border-box; overflow: hidden; }
 .fc-card.readonly { cursor: pointer; }
 .fc-card:hover { border-color: #1E5EFF; transform: translateY(-2px); box-shadow: 0 4px 16px rgba(30,94,255,.12); }

@@ -8,15 +8,11 @@ import api from '../api'
 import FunctionCardGrid from '../components/FunctionCardGrid.vue'
 import { functionsOf } from '../config/modules'
 
-// 功能卡片目录统一维护在 config/modules.ts。FunctionCardGrid 的 icon 字段只按文本字符渲染（emoji 方式），
-// 因此此处把配置里的 antd 图标名映射为对应 emoji 展示值，保持卡片图标的设计特色。
-const ICON_EMOJI: Record<string, string> = { BankOutlined: '🏛️' }
-
+// 功能卡片目录统一维护在 config/modules.ts；icon 直接传 antd 图标名（FunctionCardGrid 渲染 antd 组件）
 const cards = functionsOf('system').map(f => ({
   key: f.key,
   title: f.title,
-  desc: f.desc,
-  icon: ICON_EMOJI[f.icon] ?? '🔧',
+  icon: f.icon,
   route: f.route,
 }))
 
