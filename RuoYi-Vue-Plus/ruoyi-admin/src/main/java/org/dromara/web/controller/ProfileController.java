@@ -107,7 +107,7 @@ public class ProfileController {
     public R<List<Map<String, Object>>> menuConfig() {
         Long userId = LoginHelper.getUserId();
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench " +
+            "SELECT menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench, locked " +
             "FROM sys_user_menu_config WHERE user_id=? ORDER BY is_top DESC, sort", userId);
         return R.ok(rows);
     }
@@ -131,14 +131,15 @@ public class ProfileController {
         Integer iconSize = cardW; // 兼容旧列，保持同步
         String isTop = (String) body.getOrDefault("isTop", "0");
         String inWorkbench = (String) body.getOrDefault("inWorkbench", "0");
+        String locked = (String) body.getOrDefault("locked", "1");   // 卡片等比锁定
 
         jdbcTemplate.update(
-            "INSERT INTO sys_user_menu_config (user_id, menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench, update_time) " +
-            "VALUES (?,?,?,?,?,?,?,?,now()) " +
+            "INSERT INTO sys_user_menu_config (user_id, menu_key, sort, card_w, card_h, icon_size, is_top, in_workbench, locked, update_time) " +
+            "VALUES (?,?,?,?,?,?,?,?,?,now()) " +
             "ON CONFLICT (user_id, menu_key) DO UPDATE SET " +
             "  sort=EXCLUDED.sort, card_w=EXCLUDED.card_w, card_h=EXCLUDED.card_h, icon_size=EXCLUDED.icon_size, " +
-            "  is_top=EXCLUDED.is_top, in_workbench=EXCLUDED.in_workbench, update_time=now()",
-            userId, menuKey, sort, cardW, cardH, iconSize, isTop, inWorkbench);
+            "  is_top=EXCLUDED.is_top, in_workbench=EXCLUDED.in_workbench, locked=EXCLUDED.locked, update_time=now()",
+            userId, menuKey, sort, cardW, cardH, iconSize, isTop, inWorkbench, locked);
 
         // 同步工作台表
         if ("1".equals(inWorkbench)) {
