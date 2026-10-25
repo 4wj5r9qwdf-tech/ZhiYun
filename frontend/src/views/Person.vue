@@ -8,7 +8,7 @@
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
  * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, defineComponent, h } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -49,8 +49,8 @@ const ALL_COLUMNS = [
   { title: '员工卡', dataIndex: 'card_no', key: 'card_no', width: 100, sorter: true },
 ]
 
-// 列设置：显隐 + 顺序，按"列表页+用户"持久化（localStorage，key 带 userId）
-type ColState = { key: string; visible: boolean }
+// 列设置：显隐 + 顺序 + 列宽，按"列表页+用户"持久化（localStorage，key 带 userId）
+type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colStoreKey = computed(() => `person_list:${localStorage.getItem('userId') || 'anon'}`)
 
@@ -62,28 +62,85 @@ function loadColState() {
       const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
       const ordered: ColState[] = []
       for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
-      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true, width: c.width })
       colState.value = ordered
       return
     }
   } catch { /* ignore */ }
-  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true, width: c.width }))
 }
 function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
 function toggleCol(key: string) {
   const s = colState.value.find(c => c.key === key)
   if (s) { s.visible = !s.visible; saveColState() }
 }
-function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function showAllCols() {
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true, width: c.width }))
+  saveColState()
+}
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
+// 列设置里上下移动排序（拖拽或按钮）
+function moveCol(index: number, dir: -1 | 1) {
+  const arr = colState.value
+  const j = index + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[index], arr[j]] = [arr[j], arr[index]]
+  saveColState()
+}
 onMounted(loadColState)
 
-// 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
+// 列宽拖拽调整：改 colState 里对应列的 width 并持久化
+function onColResize(key: string, w: number) {
+  const s = colState.value.find(c => c.key === key)
+  if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
+}
+
+// a-table components：表头单元格加 resize 手柄（右侧拖拽改列宽）
+const tableComponents = {
+  header: {
+    cell: defineComponent({
+      props: ['column', 'index'],
+      setup(props: any, { slots }: any) {
+        const onStart = (e: MouseEvent) => {
+          const th = (e.currentTarget as HTMLElement).closest('th') as HTMLElement
+          if (!th) return
+          const startX = e.clientX
+          const startW = th.getBoundingClientRect().width
+          const key = props.column?.key
+          const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove)
+            document.removeEventListener('mouseup', onUp)
+            document.body.style.cursor = ''
+          }
+          document.addEventListener('mousemove', onMove)
+          document.addEventListener('mouseup', onUp)
+          document.body.style.cursor = 'col-resize'
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return () =>
+          h('th', { class: 'zy-resizable-th' }, [
+            h('div', { class: 'zy-th-inner' }, slots.default?.()),
+            // 除操作列外，右侧 resize 手柄
+            props.column?.key !== 'ops'
+              ? h('span', { class: 'zy-resize-handle', onMousedown: onStart })
+              : null,
+          ])
+      },
+    }),
+  },
+}
+
+// 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏；应用自定义列宽）
 const columns = computed(() => {
   const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
-    .map(c => ALL_COLUMNS.find(a => a.key === c.key)!)
+    .map(c => {
+      const base = ALL_COLUMNS.find(a => a.key === c.key)!
+      return { ...base, width: c.width ?? base.width }
+    })
     .filter(Boolean)
   return [...list, ops]
 })
@@ -354,11 +411,15 @@ function resetFilter() {
         <a-button size="middle">⚙ 列设置</a-button>
         <template #overlay>
           <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
-            <div v-for="c in colState" :key="c.key" class="col-set-item">
+            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
               <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+              <span class="col-move">
+                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
+              </span>
             </div>
             <a-divider style="margin: 6px 0" />
-            <a size="small" @click="showAllCols">恢复默认（全部显示）</a>
+            <a size="small" @click="showAllCols">恢复默认（全部显示+顺序）</a>
           </a-card>
         </template>
       </a-dropdown>
@@ -371,6 +432,7 @@ function resetFilter() {
       :loading="loading"
       :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+      :components="tableComponents"
       row-key="user_id"
       size="middle"
       class="person-table"
@@ -494,8 +556,11 @@ function resetFilter() {
 /* 表格工具行（条数 + 列设置） */
 .table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .table-bar .total { font-size: 13px; color: #4E5969; }
-.col-set-panel { width: 180px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
-.col-set-item { padding: 4px 8px; }
+.col-set-panel { width: 200px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-item { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+.col-move { display: inline-flex; }
+.col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
+.col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
 
 /* 表格：撑满容器 + 列间浅竖线（不加粗外框，保持美观） */
 .person-table { width: 100%; background: #fff; border-radius: 10px; }
@@ -508,6 +573,12 @@ function resetFilter() {
 /* 表头底部、行底部分隔线 */
 .person-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
+
+/* 列宽拖拽：表头右侧 resize 手柄 */
+.zy-resizable-th { position: relative; }
+.zy-th-inner { display: inline-block; max-width: calc(100% - 12px); overflow: hidden; text-overflow: ellipsis; }
+.zy-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 1; }
+.zy-resize-handle:hover, .zy-resize-handle:active { background: #1E5EFF; opacity: .35; }
 
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
 .fsec:first-child { margin-top: 0; }
