@@ -10,6 +10,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
+import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
@@ -20,6 +21,19 @@ const tree = ref<any[]>([])        // 原始部门树（含 children）
 const loading = ref(false)
 const keyword = ref('')
 
+// 业务管辖：每个部门管辖了多少被管部门（deptId -> 数），列表展示
+const manageCounts = ref<Record<string, number>>({})
+// 表单里被管部门选择（管理范围多选）
+const managedIds = ref<number[]>([])
+
+async function loadManageCounts() {
+  try {
+    const res: any = await api.get('/system/dept/manage-counts')
+    if (res.code === 200) manageCounts.value = res.data || {}
+  } catch { /* ignore */ }
+}
+function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
+
 // 层级标签配色：厂区=蓝 车间=绿 区域=橙 小组=紫
 const categoryColor: Record<string, string> = { 厂区: 'blue', 车间: 'green', 区域: 'orange', 小组: 'purple' }
 
@@ -28,6 +42,7 @@ const columns = [
   { title: '层级', dataIndex: 'deptCategory', key: 'deptCategory', width: 90 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
   { title: '位置', key: 'location', width: 160 },
+  { title: '管辖', key: 'manages', width: 80 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
   { title: '电话', dataIndex: 'phone', key: 'phone', width: 130 },
   { title: '状态', key: 'status', width: 100 },
@@ -168,6 +183,7 @@ function openAddTop() {
   isEdit.value = false
   form.value = emptyForm()
   form.value.deptCategory = '厂区'
+  managedIds.value = []
   showDlg.value = true
 }
 
@@ -177,6 +193,7 @@ function openAddChild(row: any) {
   form.value = emptyForm()
   form.value.parentId = Number(row.deptId)
   form.value.deptCategory = deriveCategory(row.deptId)
+  managedIds.value = []
   showDlg.value = true
 }
 
@@ -210,6 +227,15 @@ async function openEdit(row: any) {
     status: d.status || '0',
   }
   showDlg.value = true
+  loadManages(Number(d.deptId))
+}
+
+// 加载该部门当前管辖的被管部门
+async function loadManages(deptId: number) {
+  try {
+    const res: any = await api.get(`/system/dept/${deptId}/manages`)
+    if (res.code === 200) managedIds.value = (res.data || []).map((x: any) => Number(x))
+  } catch { managedIds.value = [] }
 }
 
 async function save() {
@@ -232,7 +258,11 @@ async function save() {
       status: form.value.status || '0',
     }
     const res: any = isEdit.value ? await api.put('/system/dept', payload) : await api.post('/system/dept', payload)
-    if (res.code === 200) { message.success('保存成功'); showDlg.value = false; loadTree() }
+    if (res.code === 200) {
+      // 编辑时同步保存管辖范围（新增部门先保存再编辑设置管辖）
+      if (isEdit.value) await api.put(`/system/dept/${payload.deptId}/manages`, managedIds.value)
+      message.success('保存成功'); showDlg.value = false; loadTree(); loadManageCounts()
+    }
     else message.error(res.msg || '保存失败')
   } catch (e: any) { message.error(e?.response?.data?.msg || '保存失败') }
   finally { saving.value = false }
@@ -255,7 +285,7 @@ function removeDept(row: any) {
 // 弹窗关闭时重置校验状态
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-onMounted(() => { loadTree(); loadBuildings() })
+onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
 </script>
 
 <template>
@@ -305,6 +335,10 @@ onMounted(() => { loadTree(); loadBuildings() })
         </template>
         <template v-else-if="column.key === 'location'">
           <span v-if="record.location" class="loc-cell">📍 {{ record.location }}</span>
+          <span v-else class="muted">—</span>
+        </template>
+        <template v-else-if="column.key === 'manages'">
+          <a-tag v-if="manageCount(record.deptId)" color="geekblue">管 {{ manageCount(record.deptId) }}</a-tag>
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'leader'">
@@ -386,6 +420,23 @@ onMounted(() => { loadTree(); loadBuildings() })
             <a-form-item label="位置（车间/房间，可不填；如 裁剪车间 / 302室）">
               <a-input v-model:value="form.location" :maxlength="100" placeholder="选到哪填到哪，不强制" />
               <div v-if="composeLocation()" class="loc-preview">📍 {{ composeLocation() }}</div>
+            </a-form-item>
+          </a-col>
+          <!-- 业务管辖（管理部门管哪些部门，与组织树无关，可不填） -->
+          <a-col :span="24">
+            <a-form-item label="管辖范围（本部门管理哪些部门，可不填；如生产部管三个车间）">
+              <a-tree-select
+                v-model:value="managedIds"
+                :tree-data="parentTree"
+                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
+                multiple
+                allow-clear
+                tree-checkable
+                tree-default-expand-all
+                :show-checked-strategy="SHOW_PARENT"
+                placeholder="不选 = 不管理部门"
+              />
+              <div v-if="managedIds.length" class="loc-preview">🤝 管辖 {{ managedIds.length }} 个部门（业务管理关系，不改变组织树层级）</div>
             </a-form-item>
           </a-col>
           <a-col :span="12">

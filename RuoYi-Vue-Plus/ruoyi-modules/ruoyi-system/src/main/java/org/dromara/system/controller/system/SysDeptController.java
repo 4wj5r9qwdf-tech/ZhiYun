@@ -12,6 +12,7 @@ import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.system.domain.bo.SysDeptBo;
 import org.dromara.system.domain.vo.SysDeptVo;
+import org.dromara.system.mapper.SysDeptManageMapper;
 import org.dromara.system.service.ISysDeptService;
 import org.dromara.system.service.ISysPostService;
 import org.springframework.validation.annotation.Validated;
@@ -32,6 +33,7 @@ public class SysDeptController extends BaseController {
 
     private final ISysDeptService deptService;
     private final ISysPostService postService;
+    private final SysDeptManageMapper deptManageMapper;
 
     /**
      * 查询部门列表。
@@ -140,6 +142,9 @@ public class SysDeptController extends BaseController {
         if (postService.countPostByDeptId(deptId) > 0) {
             return R.warn("部门存在岗位,不允许删除");
         }
+        if (deptManageMapper.countManaged(deptId) > 0) {
+            return R.warn("该部门被其他部门管辖,请先在管辖部门中移除");
+        }
         deptService.checkDeptDataScope(deptId);
         return toAjax(deptService.deleteDeptById(deptId));
     }
@@ -154,6 +159,48 @@ public class SysDeptController extends BaseController {
     @GetMapping("/optionselect")
     public R<List<SysDeptVo>> optionselect(@RequestParam(required = false) Long[] deptIds) {
         return R.ok(deptService.selectDeptByIds(deptIds == null ? null : List.of(deptIds)));
+    }
+
+    // ==================== 业务管辖关联（管理部门↔被管部门，多对多，与组织树层级无关） ====================
+
+    /**
+     * 查询某部门管辖的被管部门ID列表。
+     *
+     * @param deptId 管辖方部门ID
+     * @return 被管部门ID列表
+     */
+    @SaCheckPermission("system:dept:query")
+    @GetMapping("/{deptId}/manages")
+    public R<List<Long>> listManages(@PathVariable Long deptId) {
+        return R.ok(deptService.selectManagedDeptIds(deptId));
+    }
+
+    /**
+     * 设置某部门管辖的被管部门（全量覆盖）。
+     *
+     * @param deptId  管辖方部门ID
+     * @param deptIds 被管部门ID列表（空=清空）
+     * @return 操作结果
+     */
+    @SaCheckPermission("system:dept:edit")
+    @Log(title = "部门管辖", businessType = BusinessType.UPDATE)
+    @RepeatSubmit()
+    @PutMapping("/{deptId}/manages")
+    public R<Void> updateManages(@PathVariable Long deptId, @RequestBody List<Long> deptIds) {
+        deptService.checkDeptDataScope(deptId);
+        deptService.updateManagedDepts(deptId, deptIds == null ? List.of() : deptIds);
+        return R.ok();
+    }
+
+    /**
+     * 查询全部部门的被管数量（deptId -> 管辖的部门数），供列表展示管辖范围。
+     *
+     * @return 管辖方部门ID -> 被管部门数
+     */
+    @SaCheckPermission("system:dept:query")
+    @GetMapping("/manage-counts")
+    public R<java.util.Map<Long, Long>> manageCounts() {
+        return R.ok(deptService.selectManagedCounts());
     }
 
 }

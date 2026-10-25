@@ -26,6 +26,7 @@ import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.bo.SysDeptBo;
 import org.dromara.system.domain.vo.SysDeptVo;
 import org.dromara.system.mapper.SysDeptMapper;
+import org.dromara.system.mapper.SysDeptManageMapper;
 import org.dromara.system.mapper.SysRoleMapper;
 import org.dromara.system.mapper.SysUserMapper;
 import org.dromara.system.service.ISysDeptService;
@@ -49,6 +50,7 @@ public class SysDeptServiceImpl implements ISysDeptService, DeptService {
     private final SysDeptMapper deptMapper;
     private final SysRoleMapper roleMapper;
     private final SysUserMapper userMapper;
+    private final SysDeptManageMapper deptManageMapper;
 
     /**
      * 分页查询部门管理数据
@@ -433,6 +435,36 @@ public class SysDeptServiceImpl implements ISysDeptService, DeptService {
             .in(SysDept::getDeptId, deptIds)
             .list();
         return StreamUtils.toMap(list, SysDept::getDeptId, SysDept::getDeptName);
+    }
+
+    // ==================== 业务管辖关联（管理部门↔被管部门） ====================
+
+    @Override
+    public List<Long> selectManagedDeptIds(Long deptId) {
+        return deptManageMapper.selectManagedIds(deptId);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    @Override
+    public void updateManagedDepts(Long deptId, List<Long> deptIds) {
+        deptManageMapper.deleteByManageDeptId(deptId);
+        if (deptIds != null) {
+            for (Long id : deptIds) {
+                if (id != null && !id.equals(deptId)) {  // 不能管自己
+                    deptManageMapper.insertManage(deptId, id);
+                }
+            }
+        }
+    }
+
+    @Override
+    public Map<Long, Long> selectManagedCounts() {
+        List<Map<String, Object>> rows = deptManageMapper.selectManagedCounts();
+        Map<Long, Long> map = new HashMap<>();
+        for (Map<String, Object> r : rows) {
+            map.put(Convert.toLong(r.get("manageDeptId")), Convert.toLong(r.get("cnt")));
+        }
+        return map;
     }
 
 }
