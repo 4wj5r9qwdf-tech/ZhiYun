@@ -8,7 +8,7 @@
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
  * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -36,7 +36,7 @@ const orderBy = ref('')   // 字段:asc|desc
 const statusColor: Record<string, string> = { 试用: 'orange', 在职: 'green', 离职: 'red', 长假: 'blue' }
 
 // 表格列（a-table）：sortable → 后端 orderBy；fixed 操作列
-const columns = [
+const ALL_COLUMNS = [
   { title: '工号', dataIndex: 'job_no', key: 'job_no', width: 100, sorter: true },
   { title: '姓名', dataIndex: 'name', key: 'name', width: 120, sorter: true },
   { title: '性别', dataIndex: 'gender', key: 'gender', width: 70 },
@@ -47,8 +47,46 @@ const columns = [
   { title: '角色', dataIndex: 'roles', key: 'roles', width: 120, ellipsis: true },
   { title: '状态', dataIndex: 'emp_status', key: 'emp_status', width: 90, sorter: true },
   { title: '员工卡', dataIndex: 'card_no', key: 'card_no', width: 100, sorter: true },
-  { title: '操作', key: 'ops', width: 130, fixed: 'right' as const },
 ]
+
+// 列设置：显隐 + 顺序，按"列表页+用户"持久化（localStorage，key 带 userId）
+type ColState = { key: string; visible: boolean }
+const colState = ref<ColState[]>([])
+const colStoreKey = computed(() => `person_list:${localStorage.getItem('userId') || 'anon'}`)
+
+function loadColState() {
+  try {
+    const raw = localStorage.getItem(colStoreKey.value)
+    if (raw) {
+      const saved: ColState[] = JSON.parse(raw)
+      const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
+      const ordered: ColState[] = []
+      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
+      colState.value = ordered
+      return
+    }
+  } catch { /* ignore */ }
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+}
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
+function toggleCol(key: string) {
+  const s = colState.value.find(c => c.key === key)
+  if (s) { s.visible = !s.visible; saveColState() }
+}
+function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
+onMounted(loadColState)
+
+// 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
+const columns = computed(() => {
+  const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
+  const list = colState.value
+    .filter(c => c.visible)
+    .map(c => ALL_COLUMNS.find(a => a.key === c.key)!)
+    .filter(Boolean)
+  return [...list, ops]
+})
 
 // 下拉数据
 const depts = ref<any[]>([])
@@ -309,15 +347,33 @@ function resetFilter() {
       <a-button @click="resetFilter">重置</a-button>
     </div>
 
-    <!-- 列表（a-table：排序/列设置/固定列/分页 全自带） -->
+    <!-- 列表工具行：条数 + 列设置 -->
+    <div class="table-bar">
+      <span class="total">共 {{ total }} 条</span>
+      <a-dropdown :trigger="['click']">
+        <a-button size="middle">⚙ 列设置</a-button>
+        <template #overlay>
+          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div v-for="c in colState" :key="c.key" class="col-set-item">
+              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+            </div>
+            <a-divider style="margin: 6px 0" />
+            <a size="small" @click="showAllCols">恢复默认（全部显示）</a>
+          </a-card>
+        </template>
+      </a-dropdown>
+    </div>
+
+    <!-- 列表（a-table：撑满 + 列间竖线 + 列设置） -->
     <a-table
       :columns="columns"
       :data-source="rows"
       :loading="loading"
       :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
-      :scroll="{ x: 1290 }"
+      :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       row-key="user_id"
       size="middle"
+      class="person-table"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
@@ -434,6 +490,24 @@ function resetFilter() {
 .head-actions { display: flex; gap: 8px; align-items: center; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+
+/* 表格工具行（条数 + 列设置） */
+.table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.table-bar .total { font-size: 13px; color: #4E5969; }
+.col-set-panel { width: 180px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-item { padding: 4px 8px; }
+
+/* 表格：撑满容器 + 列间浅竖线（不加粗外框，保持美观） */
+.person-table { width: 100%; background: #fff; border-radius: 10px; }
+.person-table :deep(.ant-table) { font-size: 13px; }
+/* 列间竖线：只给单元格加右侧浅分割线，不加整表外框 */
+.person-table :deep(.ant-table-thead > tr > th),
+.person-table :deep(.ant-table-tbody > tr > td) { border-right: 1px solid #F0F2F5; }
+.person-table :deep(.ant-table-thead > tr > th:last-child),
+.person-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
+/* 表头底部、行底部分隔线 */
+.person-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
+.person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
 .fsec:first-child { margin-top: 0; }
