@@ -186,11 +186,25 @@ async function loadTree() {
   loading.value = true
   try {
     const res: any = await api.get('/system/dept/list')
-    if (res.code === 200) tree.value = res.data || []
+    if (res.code === 200) tree.value = buildTree(res.data || [])
     else message.error(res.msg || '加载部门失败')
   } catch (e: any) {
     message.error(e?.response?.data?.msg || '加载部门失败')
   } finally { loading.value = false }
+}
+
+// 平铺列表 → 嵌套树（接口返回平铺，前端按 parentId 组树，否则子部门全显示成顶层）
+function buildTree(list: any[]): any[] {
+  const map: Record<string, any> = {}
+  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  const roots: any[] = []
+  for (const n of list) {
+    const node = map[String(n.deptId)]
+    const pid = n.parentId
+    if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
+    else roots.push(node)
+  }
+  return roots
 }
 
 // 建筑档案（车间"所在建筑"下拉 + 列表展示建筑名用）
