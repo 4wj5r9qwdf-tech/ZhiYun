@@ -58,7 +58,6 @@ function navModule(key: string) {
       <TopBar />
 
       <div class="content">
-        <div class="module-title">模块 / {{ activeModule === 'person' ? '人员' : activeModule === 'property' ? '物业资产' : '系统' }}</div>
         <router-view />
       </div>
     </div>
@@ -77,5 +76,4 @@ function navModule(key: string) {
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
-.module-title { font-size: 14px; color: #4E5969; margin-bottom: 16px; }
 </style>
