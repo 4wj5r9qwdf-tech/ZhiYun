@@ -20,6 +20,17 @@ const router = useRouter()
 const tree = ref<any[]>([])        // 原始部门树（含 children）
 const loading = ref(false)
 const keyword = ref('')
+// 筛选：层级 + 状态（前端过滤）
+const filterCategory = ref<string | undefined>(undefined)
+const filterStatus = ref<string | undefined>(undefined)
+function resetFilters() { keyword.value = ''; filterCategory.value = undefined; filterStatus.value = undefined }
+// 过滤后部门总数（含下级）
+const deptCount = computed(() => {
+  let n = 0
+  const walk = (nodes: any[]) => { for (const x of nodes) { n++; walk(x.children || []) } }
+  walk(deptTree.value)
+  return n
+})
 
 // 业务管辖：每个部门管辖了多少被管部门（deptId -> 数），列表展示
 const manageCounts = ref<Record<string, number>>({})
@@ -37,7 +48,8 @@ function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
 // 层级标签配色：厂区=蓝 车间=绿 区域=橙 小组=紫
 const categoryColor: Record<string, string> = { 厂区: 'blue', 车间: 'green', 区域: 'orange', 小组: 'purple' }
 
-const columns = [
+// 全部列（不含操作列，操作列固定最后）
+const ALL_COLUMNS = [
   { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
   { title: '层级', dataIndex: 'deptCategory', key: 'deptCategory', width: 90 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
@@ -47,18 +59,68 @@ const columns = [
   { title: '电话', dataIndex: 'phone', key: 'phone', width: 130 },
   { title: '状态', key: 'status', width: 100 },
   { title: '排序', dataIndex: 'orderNum', key: 'orderNum', width: 80 },
-  { title: '操作', key: 'ops', width: 190 },
 ]
 
-// 前端过滤部门名（保留命中节点及其祖先链，树结构不破坏）
+// 列设置：显隐 + 顺序 + 列宽，按"列表页+用户"持久化（localStorage）
+type ColState = { key: string; visible: boolean; width?: number }
+const colState = ref<ColState[]>([])
+const colSetOpen = ref(false)
+const colStoreKey = computed(() => `dept_list:${localStorage.getItem('userId') || 'anon'}`)
+
+function loadColState() {
+  try {
+    const raw = localStorage.getItem(colStoreKey.value)
+    if (raw) {
+      const saved: ColState[] = JSON.parse(raw)
+      const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
+      const ordered: ColState[] = []
+      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
+      colState.value = ordered
+      return
+    }
+  } catch { /* ignore */ }
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+}
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
+function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
+function moveCol(index: number, dir: -1 | 1) {
+  const arr = colState.value
+  const j = index + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[index], arr[j]] = [arr[j], arr[index]]
+  saveColState()
+}
+
+// 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
+const columns = computed(() => {
+  const ops = { title: '操作', key: 'ops', width: 190, fixed: 'right' as const }
+  const list = colState.value
+    .filter(c => c.visible)
+    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width }))
+    .filter(Boolean)
+  return [...list, ops]
+})
+
+// 前端过滤：部门名关键词 + 层级 + 状态（保留命中节点及其祖先链，树结构不破坏）
 const deptTree = computed(() => {
   const kw = keyword.value.trim()
-  if (!kw) return tree.value
+  const cat = filterCategory.value
+  const st = filterStatus.value
+  if (!kw && !cat && !st) return tree.value
+  const match = (n: any) => {
+    if (kw && !String(n.deptName || '').includes(kw)) return false
+    if (cat && n.deptCategory !== cat) return false
+    if (st && n.status !== st) return false
+    return true
+  }
   const walk = (nodes: any[]): any[] => {
     const out: any[] = []
     for (const n of nodes) {
       const kids = walk(n.children || [])
-      if (String(n.deptName || '').includes(kw) || kids.length) out.push({ ...n, children: kids })
+      if (match(n) || kids.length) out.push({ ...n, children: kids })
     }
     return out
   }
@@ -280,7 +342,7 @@ function removeDept(row: any) {
 // 弹窗关闭时重置校验状态
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
+onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState() })
 </script>
 
 <template>
@@ -290,21 +352,51 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
         <span class="head-title">部门管理</span>
       </div>
-      <div class="head-actions">
-        <a-button type="primary" size="middle" @click="openAddTop">
-          <PlusOutlined />新增部门
-        </a-button>
-      </div>
     </div>
 
-    <!-- 工具栏：搜索（前端过滤）+ 刷新 -->
+    <!-- 筛选栏：关键词 + 层级 + 状态 + 查询/重置 + 刷新 + 靠右操作（新增） -->
     <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索部门名称" allow-clear style="width:220px">
+      <a-input v-model:value="keyword" placeholder="搜索部门名称" allow-clear style="width:200px">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
-      <a-button :loading="loading" @click="loadTree">
-        <ReloadOutlined />刷新
-      </a-button>
+      <a-select v-model:value="filterCategory" allow-clear placeholder="层级" style="width:110px">
+        <a-select-option value="厂区">厂区</a-select-option>
+        <a-select-option value="车间">车间</a-select-option>
+        <a-select-option value="区域">区域</a-select-option>
+        <a-select-option value="小组">小组</a-select-option>
+      </a-select>
+      <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px">
+        <a-select-option value="0">启用</a-select-option>
+        <a-select-option value="1">停用</a-select-option>
+      </a-select>
+      <a-button @click="loadTree"><ReloadOutlined />查询</a-button>
+      <a-button @click="resetFilters">重置</a-button>
+      <span class="filter-spacer"></span>
+      <a-button type="primary" @click="openAddTop"><PlusOutlined />新增部门</a-button>
+    </div>
+
+    <!-- 列表工具行：条数 + 列设置 -->
+    <div class="table-bar">
+      <span class="total">共 {{ deptCount }} 个部门</span>
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+        <a-button>⚙ 列设置</a-button>
+        <template #overlay>
+          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
+              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+              <span class="col-move">
+                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
+              </span>
+            </div>
+            <a-divider style="margin: 6px 0" />
+            <div class="col-set-foot">
+              <a size="small" @click="showAllCols">恢复默认</a>
+              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+            </div>
+          </a-card>
+        </template>
+      </a-dropdown>
     </div>
 
     <!-- 树表 -->
@@ -466,6 +558,17 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts() })
 .head-actions { display: flex; gap: 8px; align-items: center; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.filter-spacer { flex: 1 1 auto; min-width: 8px; }
+
+/* 表格工具行（条数 + 列设置） */
+.table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.table-bar .total { font-size: 13px; color: #4E5969; }
+.col-set-panel { width: 200px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-item { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+.col-move { display: inline-flex; }
+.col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
+.col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
+.col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
 
 .dept-table { width: 100%; background: #fff; border-radius: 10px; }
 .dept-table :deep(.ant-table) { font-size: 13px; }
