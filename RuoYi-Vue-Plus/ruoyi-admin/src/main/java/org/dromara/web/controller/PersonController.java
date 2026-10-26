@@ -48,6 +48,7 @@ public class PersonController {
                                        @RequestParam(required = false) String orderBy,
                                        @RequestParam(defaultValue = "0") String delFlag,
                                        @RequestParam(defaultValue = "0") String includeSystem,
+                                       @RequestParam(defaultValue = "0") String subtree,
                                        @RequestParam(defaultValue = "1") int pageNum,
                                        @RequestParam(defaultValue = "20") int pageSize) {
         // delFlag：0=正常(默认) / 1=已删除(查已删可恢复) / all=全部
@@ -56,7 +57,11 @@ public class PersonController {
         // 默认隐藏内置系统账号 admin（它不是工厂员工）；includeSystem=1 才显示
         if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
+        applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : deptId, gender, posts, roles);
+        // 树节点筛选：deptId 按"含下级"双线展开（部门线 OR 小组线，与数据范围同款）
+        if (deptId != null && "1".equals(subtree)) {
+            appendSubtreeFilter(where, deptId);
+        }
         applyDataScope(where, args);
         Long total = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_user u LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " + where, Long.class, args.toArray());
@@ -89,6 +94,9 @@ public class PersonController {
         StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
+        if (deptId != null) {
+            appendSubtreeFilter(where, deptId);
+        }
         applyDataScope(where, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
             selectSql() + where.toString() + " ORDER BY u.user_id DESC", args.toArray());
@@ -195,6 +203,57 @@ public class PersonController {
         cond.append(cond.length() > 0 ? " OR u.user_id=?" : "u.user_id=?");
         args.add(userId);
         where.append(" AND (").append(cond).append(')');
+    }
+
+    /** 树节点筛选：所选节点及下级，双线匹配（人员部门线 OR 小组线）。展开 id 为库内 bigint，字面量拼接无注入。 */
+    private void appendSubtreeFilter(StringBuilder where, Long deptId) {
+        java.util.Set<Long> expanded = expandDeptWithChildren(java.util.Set.of(deptId));
+        String ids = expanded.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(String.valueOf(deptId));
+        where.append(" AND (u.dept_id IN (").append(ids).append(") OR e.group_id IN (").append(ids).append("))");
+    }
+
+    /**
+     * 组织树人数角标：每个节点 = 该节点及下级的在册人数（双线：人员部门∈展开 或 小组∈展开——
+     * 与树节点筛选同口径，角标数 = 点选后列表数）。
+     */
+    @SaCheckPermission("system:person:query")
+    @GetMapping("/org-counts")
+    public R<Map<String, Long>> orgCounts() {
+        List<Map<String, Object>> people = jdbcTemplate.queryForList(
+            "SELECT u.dept_id, e.group_id FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id WHERE u.del_flag='0'");
+        List<Map<String, Object>> depts = jdbcTemplate.queryForList(
+            "SELECT dept_id, ancestors FROM sys_dept");
+        java.util.Map<Long, String> ancMap = new java.util.HashMap<>();
+        for (Map<String, Object> d : depts) {
+            ancMap.put(((Number) d.get("dept_id")).longValue(),
+                String.valueOf(d.get("ancestors") == null ? "" : d.get("ancestors")));
+        }
+        Map<String, Long> out = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> d : depts) {
+            long nodeId = ((Number) d.get("dept_id")).longValue();
+            long cnt = 0;
+            for (Map<String, Object> p : people) {
+                Long pd = p.get("dept_id") == null ? null : ((Number) p.get("dept_id")).longValue();
+                Long pg = p.get("group_id") == null ? null : ((Number) p.get("group_id")).longValue();
+                if (belongTo(pd, nodeId, ancMap) || belongTo(pg, nodeId, ancMap)) {
+                    cnt++;
+                }
+            }
+            out.put(String.valueOf(nodeId), cnt);
+        }
+        return R.ok(out);
+    }
+
+    /** 人员归属节点：自身即节点，或其所在链（ancestors）包含节点。 */
+    private boolean belongTo(Long personNodeId, long nodeId, java.util.Map<Long, String> ancMap) {
+        if (personNodeId == null) {
+            return false;
+        }
+        if (personNodeId == nodeId) {
+            return true;
+        }
+        String anc = ancMap.get(personNodeId);
+        return anc != null && anc.contains(String.valueOf(nodeId));
     }
 
     /** 部门集合展开：所选部门 + 祖先链包含任一所选部门的所有下级。 */
