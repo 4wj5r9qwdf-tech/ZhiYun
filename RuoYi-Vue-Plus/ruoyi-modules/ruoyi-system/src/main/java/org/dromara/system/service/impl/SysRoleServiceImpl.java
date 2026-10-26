@@ -304,7 +304,9 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         // 新增角色信息
         roleMapper.insert(role);
         bo.setRoleId(role.getRoleId());
-        return insertRoleMenu(bo);
+        insertRoleMenu(bo);
+        // 数据权限节点（data_scope=自定义时的勾选）也随新增落库
+        return insertRoleDept(bo);
     }
 
     /**
@@ -374,11 +376,15 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         int rows = 1;
         // 新增用户与角色管理
         List<SysRoleMenu> list = new ArrayList<>();
-        for (Long menuId : role.getMenuIds()) {
-            SysRoleMenu rm = new SysRoleMenu();
-            rm.setRoleId(role.getRoleId());
-            rm.setMenuId(menuId);
-            list.add(rm);
+        // menuIds 可不传（建完角色再"分配权限"），null 防御
+        Long[] menuIds = role.getMenuIds();
+        if (menuIds != null) {
+            for (Long menuId : menuIds) {
+                SysRoleMenu rm = new SysRoleMenu();
+                rm.setRoleId(role.getRoleId());
+                rm.setMenuId(menuId);
+                list.add(rm);
+            }
         }
         if (CollUtil.isNotEmpty(list)) {
             rows = roleMenuMapper.insertBatch(list) ? list.size() : 0;
@@ -395,11 +401,15 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         int rows = 1;
         // 新增角色与部门（数据权限）管理
         List<SysRoleDept> list = new ArrayList<>();
-        for (Long deptId : role.getDeptIds()) {
-            SysRoleDept rd = new SysRoleDept();
-            rd.setRoleId(role.getRoleId());
-            rd.setDeptId(deptId);
-            list.add(rd);
+        // deptIds 可不传（非自定义档），null 防御
+        Long[] deptIds = role.getDeptIds();
+        if (deptIds != null) {
+            for (Long deptId : deptIds) {
+                SysRoleDept rd = new SysRoleDept();
+                rd.setRoleId(role.getRoleId());
+                rd.setDeptId(deptId);
+                list.add(rd);
+            }
         }
         if (CollUtil.isNotEmpty(list)) {
             rows = roleDeptMapper.insertBatch(list) ? list.size() : 0;
