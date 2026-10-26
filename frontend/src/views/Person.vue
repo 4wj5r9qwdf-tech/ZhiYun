@@ -33,6 +33,7 @@ const postsFilter = ref('')
 const rolesFilter = ref('')
 const orderBy = ref('')   // 字段:asc|desc
 const showDeleted = ref(false)   // 查看已删除人员（可恢复）
+const includeSystem = ref(false) // 含系统账号（默认隐藏内置超管 admin）
 
 // 状态颜色
 const statusColor: Record<string, string> = { 试用: 'orange', 在职: 'green', 离职: 'red', 长假: 'blue' }
@@ -236,6 +237,7 @@ async function loadList() {
         deptId: deptId.value ?? undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
         delFlag: showDeleted.value ? '1' : '0',
+        includeSystem: includeSystem.value ? '1' : '0',
       },
     })
     if (res.code === 200) { rows.value = res.data.rows; total.value = res.data.total }
@@ -479,6 +481,8 @@ function resetFilter() {
       <a-button @click="resetFilter">重置</a-button>
       <a-divider type="vertical" />
       <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
+      <a-divider type="vertical" />
+      <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
       <div class="filter-spacer"></div>
       <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
       <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
