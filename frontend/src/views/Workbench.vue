@@ -12,7 +12,7 @@ import * as AntIcons from '@ant-design/icons-vue'
 import api from '../api'
 import TopBar from '../components/TopBar.vue'
 import FunctionCardGrid from '../components/FunctionCardGrid.vue'
-import { MODULES, functionMap, type ModuleDef } from '../config/modules'
+import { visibleModules, functionMap, type ModuleDef } from '../config/modules'
 
 const router = useRouter()
 
@@ -20,7 +20,7 @@ const router = useRouter()
 const allFunctions = functionMap()
 
 // 模块目录（左侧导航，待办数从 todo/count 累加，目录统一维护在 config/modules.ts）
-const modules = MODULES
+const modules = visibleModules()
 
 // 动态解析 antd 图标组件（icon 存的是组件名字符串）
 const Icon = (name: string) => (AntIcons as any)[name]

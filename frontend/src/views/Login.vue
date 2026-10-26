@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ensurePerms } from '../utils/perms'
 /**
  * 登录页：左侧品牌区（背景图 A/B 模式、logo、公司名、宣传语）不变
  * 右侧表单改用 ant-design-vue（a-form + a-input + a-button + a-alert）
@@ -69,6 +70,7 @@ async function handleLogin() {
     })
     if (res.code === 200 && res.data?.access_token) {
       localStorage.setItem('token', res.data.access_token)
+    await ensurePerms()
       successMsg.value = '登录成功，正在跳转...'
       // 登录成功提示：绿色提示条（延迟 1s 跳转，让用户看到提示）
       // 首页=工作台

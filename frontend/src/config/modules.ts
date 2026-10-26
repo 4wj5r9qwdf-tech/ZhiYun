@@ -1,3 +1,4 @@
+import { can } from '../utils/perms'
 /**
  * 全站目录配置（系统级，集中维护）：
  * - modules：左侧竖排模块导航（Home/Workbench 共用）
@@ -25,24 +26,34 @@ export const MODULES: ModuleDef[] = [
 ]
 
 // 功能卡片目录：moduleKey → 功能列表（key 唯一，route=路由 name，module=所属模块）
-export interface FunctionDef { key: string; title: string; desc: string; icon: string; route: string; module: string }
+export interface FunctionDef { key: string; title: string; desc: string; icon: string; route: string; module: string; perm?: string }
 
 export const MODULE_FUNCTIONS: FunctionDef[] = [
   // 系统模块
-  { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: 'BankOutlined', route: 'Company', module: 'system' },
-  { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' },
+  { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: 'BankOutlined', route: 'Company', module: 'system' , perm: 'system:company:list' },
+  { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' , perm: 'system:role:list' },
   // 人员模块
-  { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' },
-  { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' },
-  { key: 'person_group', title: '小组管理', desc: '小组挂车间/区域下', icon: 'ClusterOutlined', route: 'GroupManage', module: 'person' },
-  { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' },
+  { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' , perm: 'system:person:list' },
+  { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' , perm: 'system:dept:list' },
+  { key: 'person_group', title: '小组管理', desc: '小组挂车间/区域下', icon: 'ClusterOutlined', route: 'GroupManage', module: 'person' , perm: 'system:dept:list' },
+  { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' , perm: 'system:post:list' },
   // 物业资产模块
-  { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' },
+  { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' , perm: 'system:building:list' },
 ]
 
 // 取某模块的功能卡片
 export function functionsOf(moduleKey: string): FunctionDef[] {
-  return MODULE_FUNCTIONS.filter(f => f.module === moduleKey)
+  // 按当前用户权限过滤（无 perm 标注人人可见；admin 通配）
+  return MODULE_FUNCTIONS.filter(f => f.module === moduleKey && can(f.perm))
+}
+
+/** 左侧模块图标可见性：模块下有卡片但全部无权限 → 隐藏；未实装模块（无卡片）维持显示 */
+export function visibleModules(): ModuleDef[] {
+  return MODULES.filter(m => {
+    const fs = MODULE_FUNCTIONS.filter(f => f.module === m.key)
+    if (fs.length === 0) return true
+    return fs.some(f => can(f.perm))
+  })
 }
 
 // 取全部功能目录（工作台展示已加入的功能用）

@@ -375,9 +375,11 @@ onMounted(() => { loadList(); loadColState() })
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+          <a v-if="record.roleKey !== 'superadmin'" class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+          <a v-else class="ops-link ops-disabled" title="系统内置角色，不可编辑删除">编辑</a>
           <a class="ops-link" @click="openPerm(record)"><SafetyCertificateOutlined />分配权限</a>
-          <a class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
+          <a v-if="record.roleKey !== 'superadmin'" class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
+          <a v-else class="ops-link ops-disabled" title="系统内置角色，不可编辑删除">删除</a>
         </template>
       </template>
     </a-table>
@@ -511,6 +513,7 @@ onMounted(() => { loadList(); loadColState() })
 
 .role-name { font-weight: 500; color: #1D2129; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
+.ops-disabled { color: #C9CDD4; cursor: not-allowed; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 
