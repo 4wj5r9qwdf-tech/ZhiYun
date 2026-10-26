@@ -8,8 +8,9 @@
  * - a-form + a-modal：新增/编辑（编码、名称、排序、状态、备注）
  * - 后端：RuoYi 自带 /system/post 接口（list/{id}/POST/PUT/DELETE/{postIds}）
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { pinyin } from 'pinyin-pro'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -175,6 +176,20 @@ const rules: any = {
   postName: [{ required: true, message: '请输入岗位名称', trigger: 'blur' }],
 }
 
+// ===== 岗位编码自动生成（可手改）：中文取拼音首字母，非中文原样，全大写 =====
+const postCodeTouched = ref(false)   // 用户手动改过编码后不再自动覆盖
+function suggestCode(name: string): string {
+  if (!name.trim()) return ''
+  const parts = pinyin(name.trim(), {
+    pattern: 'first', type: 'array', nonZh: 'consecutive',
+  })
+  return parts.join('').replace(/\s+/g, '').toUpperCase().slice(0, 30)
+}
+// 新增时：岗位名一变就刷新建议编码（除非用户手动改过）
+watch(() => form.value.postName, (v) => {
+  if (!isEdit.value && !postCodeTouched.value) form.value.postCode = suggestCode(v)
+})
+
 // 状态开关：checked(true)=启用(status='0')
 function onStatusChange(v: any) {
   form.value.status = v ? '0' : '1'
@@ -182,12 +197,14 @@ function onStatusChange(v: any) {
 
 function openAdd() {
   isEdit.value = false
+  postCodeTouched.value = false   // 新增：允许按岗位名自动建议编码
   form.value = emptyForm()
   showDlg.value = true
 }
 
 async function openEdit(row: any) {
   isEdit.value = true
+  postCodeTouched.value = true    // 编辑：保留原编码，不自动覆盖
   // 详情接口返回驼峰字段；若返回 null 则退化用行数据
   let d: any = null
   try {
@@ -365,7 +382,7 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
     >
       <a-form ref="formRef" :model="form" :rules="rules" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-form-item label="岗位编码" name="postCode">
-          <a-input v-model:value="form.postCode" placeholder="如 SEW / QC / CUT" :maxlength="30" />
+          <a-input v-model:value="form.postCode" placeholder="按岗位名自动生成，可修改" :maxlength="30" @change="postCodeTouched = true" />
         </a-form-item>
         <a-form-item label="岗位名称" name="postName">
           <a-input v-model:value="form.postName" placeholder="如 缝纫工 / 质检" :maxlength="30" />
