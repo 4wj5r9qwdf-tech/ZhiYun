@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, ReloadOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
@@ -505,7 +505,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
         <a-select-option value="0">启用</a-select-option>
         <a-select-option value="1">停用</a-select-option>
       </a-select>
-      <a-button @click="loadTree"><ReloadOutlined />查询</a-button>
+      <a-button type="primary" @click="loadTree">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
       <a-button type="primary" @click="openAddTop"><PlusOutlined />新增部门</a-button>
