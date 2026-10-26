@@ -630,6 +630,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
     <!-- 新增/编辑（a-modal + a-form） -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑部门' : '新增部门'"
       width="640px"

@@ -202,6 +202,8 @@ function remove(row: any) {
 
     <!-- 新增/编辑（a-modal + a-form） -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑公司' : '新增公司'"
       width="560px"
