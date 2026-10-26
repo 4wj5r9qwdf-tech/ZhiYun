@@ -8,7 +8,7 @@
  * - a-form + a-modal：新增/编辑（编码、名称、排序、状态、备注）
  * - 后端：RuoYi 自带 /system/post 接口（list/{id}/POST/PUT/DELETE/{postIds}）
  */
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { pinyin } from 'pinyin-pro'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
@@ -78,8 +78,8 @@ function resetFilters() { keyword.value = ''; selectedRowKeys.value = []; loadLi
 
 // ===== 列设置（colState：显隐+顺序+宽度，localStorage 按用户） =====
 const ALL_COLUMNS = [
-  { title: '岗位编码', dataIndex: 'postCode', key: 'postCode' },
   { title: '岗位名称', dataIndex: 'postName', key: 'postName' },
+  { title: '岗位编码', dataIndex: 'postCode', key: 'postCode' },
   { title: '排序', dataIndex: 'postSort', key: 'postSort' },
   { title: '状态', dataIndex: 'status', key: 'status' },
   { title: '备注', dataIndex: 'remark', key: 'remark' },
@@ -87,7 +87,8 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
-const colStoreKey = computed(() => `post_list:${localStorage.getItem('userId') || 'anon'}`)
+// v1：2026-10-26 列顺序调整（岗位名称提首位），升版让新默认顺序对已存 colState 的用户立即生效
+const colStoreKey = computed(() => `post_list_v1:${localStorage.getItem('userId') || 'anon'}`)
 function loadColState() {
   try {
     const raw = localStorage.getItem(colStoreKey.value)
@@ -185,9 +186,13 @@ function suggestCode(name: string): string {
   })
   return parts.join('').replace(/\s+/g, '').toUpperCase().slice(0, 30)
 }
-// 新增时：岗位名一变就刷新建议编码（除非用户手动改过）
+// 新增时：岗位名一变就刷新建议编码（除非用户手动改过）；
+// 生成后主动清掉该字段的陈旧校验红标（曾 blur 空编码触发的"请输入岗位编码"不会因 model 变化自动消失）
 watch(() => form.value.postName, (v) => {
-  if (!isEdit.value && !postCodeTouched.value) form.value.postCode = suggestCode(v)
+  if (!isEdit.value && !postCodeTouched.value) {
+    form.value.postCode = suggestCode(v)
+    nextTick(() => formRef.value?.clearValidate(['postCode']))
+  }
 })
 
 // 状态开关：checked(true)=启用(status='0')
@@ -381,11 +386,11 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
       @ok="save"
     >
       <a-form ref="formRef" :model="form" :rules="rules" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
-        <a-form-item label="岗位编码" name="postCode">
-          <a-input v-model:value="form.postCode" placeholder="按岗位名自动生成，可修改" :maxlength="30" @change="postCodeTouched = true" />
-        </a-form-item>
         <a-form-item label="岗位名称" name="postName">
           <a-input v-model:value="form.postName" placeholder="如 缝纫工 / 质检" :maxlength="30" />
+        </a-form-item>
+        <a-form-item label="岗位编码" name="postCode">
+          <a-input v-model:value="form.postCode" placeholder="按岗位名自动生成，可修改" :maxlength="30" @change="postCodeTouched = true" />
         </a-form-item>
         <a-form-item label="排序" name="postSort">
           <a-input-number v-model:value="form.postSort" :min="0" style="width: 100%" placeholder="数字越小越靠前" />
