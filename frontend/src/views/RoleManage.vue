@@ -44,7 +44,7 @@ function resetFilters() { keyword.value = ''; pageNum.value = 1; loadList() }
 
 // 数据范围映射（RuoYi sys_role.data_scope）
 const DATA_SCOPE: Record<string, string> = {
-  '1': '全部数据', '2': '自定义部门', '3': '本部门及以下', '4': '本部门', '5': '仅本人', '6': '本小组及下级',
+  '1': '全部数据', '2': '自定义节点', '3': '本部门及以下', '5': '仅本人', '6': '本小组及下级',
 }
 function scopeLabel(v: any) { return DATA_SCOPE[String(v)] || String(v ?? '') }
 function statusText(s: any) { return String(s) === '0' ? '启用' : '停用' }
@@ -254,10 +254,9 @@ const deptChecked = ref<string[]>([])
 
 function buildDeptTree(list: any[]): any[] {
   const map: Record<string, any> = {}
-  for (const n of list) if (n.deptCategory !== '小组') map[String(n.deptId)] = { ...n, children: [] }
+  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
   const roots: any[] = []
   for (const n of list) {
-    if (n.deptCategory === '小组') continue
     const node = map[String(n.deptId)]
     const pid = n.parentId
     if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
@@ -405,15 +404,14 @@ onMounted(() => { loadList(); loadColState() })
         <a-form-item label="数据范围">
           <a-select v-model:value="form.dataScope" @change="form.dataScope === '2' ? openDeptPick() : undefined">
             <a-select-option value="1">全部数据</a-select-option>
-            <a-select-option value="2">自定义部门</a-select-option>
+            <a-select-option value="2">自定义节点</a-select-option>
             <a-select-option value="3">本部门及以下</a-select-option>
-            <a-select-option value="4">本部门</a-select-option>
-            <a-select-option value="5">仅本人</a-select-option>
             <a-select-option value="6">本小组及下级</a-select-option>
+            <a-select-option value="5">仅本人</a-select-option>
           </a-select>
           <div v-if="form.dataScope === '2'" class="scope-depts">
-            <a class="pick-btn" @click="openDeptPick">选择部门</a>
-            <span v-if="form.deptIds.length" class="scope-tip">已选 {{ form.deptIds.length }} 个部门（含其下级）</span>
+            <a class="pick-btn" @click="openDeptPick">选择节点</a>
+            <span v-if="form.deptIds.length" class="scope-tip">已选 {{ form.deptIds.length }} 个节点（含其下级）</span>
             <span v-else class="scope-tip">未选择</span>
           </div>
         </a-form-item>
@@ -434,7 +432,7 @@ onMounted(() => { loadList(); loadColState() })
       v-model:open="deptDlg.open"
       :mask-closable="false"
       :keyboard="false"
-      title="选择数据范围部门（勾选即含其全部下级）"
+      title="选择数据范围节点（部门/小组均可勾，均含其全部下级）"
       width="460px"
       ok-text="确定"
       cancel-text="取消"
