@@ -31,10 +31,22 @@ const byId = computed(() => {
   return m
 })
 
-// 层级 = ancestors 深度（"0,父id,祖父id" 段数；顶层=1级）
-function deptLevel(n: any): number {
-  const anc = String(n?.ancestors ?? '0')
-  return anc.split(',').filter(x => x !== '').length || 1
+// 建筑档案（厂房等）：所属车间 = 部门所在建筑（厂房）名
+const buildings = ref<any[]>([])
+const buildingNameMap = computed(() => {
+  const m: Record<string, string> = {}
+  for (const b of buildings.value) m[String(b.plantId ?? b.plant_id)] = String(b.plantName ?? b.plant_name ?? '')
+  return m
+})
+function buildingLabel(id: any) {
+  if (id === null || id === undefined || id === '') return ''
+  return buildingNameMap.value[String(id)] || ''
+}
+async function loadBuildings() {
+  try {
+    const res: any = await api.get('/system/building/list')
+    if (res.code === 200) buildings.value = res.data || []
+  } catch { /* ignore */ }
 }
 
 // 平铺 → 嵌套树（参考 DeptManage.vue buildTree；deptId/parentId 均 String）
@@ -51,12 +63,6 @@ function buildTree(list: any[]): any[] {
   return roots
 }
 
-// 由 ancestors 链反查某层节点：车间 = depth 2（ancestors "0,厂id" + 自己 → level 2）
-function findLevel2(anc: any): any {
-  const segs = String(anc || '').split(',').filter(Boolean)
-  if (segs.length < 2) return null
-  return byId.value[segs[1]] || null
-}
 // 直接父节点（parentId 对应的部门）
 function findParent(n: any): any {
   const pid = n?.parentId
@@ -74,8 +80,7 @@ const rows = computed(() => {
       if (n.deptCategory === '小组') {
         if (!kw || String(n.deptName || '').includes(kw)) {
           const parent = findParent(n)
-          const workshop = findLevel2(n.ancestors)
-          out.push({ ...n, parentName: parent?.deptName || '', workshopName: workshop?.deptName || '' })
+          out.push({ ...n, parentName: parent?.deptName || '', workshopName: buildingLabel(parent?.buildingId) })
         }
       }
       walk(n.children || [])
@@ -130,19 +135,19 @@ const deptTreeOptions = computed(() => {
 })
 
 // 车间下拉：组织树 depth=2 节点（车间按新层级定义）
-const workshopOptions = computed(() => tree.value.filter(n => deptLevel(n) === 2))
+// 所属车间下拉 = 建筑（厂房）选项；值为 buildingId
+const workshopOptions = computed(() => buildings.value.map(b => ({ id: String(b.plantId ?? b.plant_id), name: String(b.plantName ?? b.plant_name ?? '') })))
 
-// 由所选部门反查它链路上的车间（parentId → 祖先链 depth=2）
+// 由所选部门反查它的所在建筑（厂房）→ 车间默认带出
 function workshopOfDept(deptId?: string): string | undefined {
   if (!deptId) return undefined
   const node = byId.value[String(deptId)]
-  if (!node) return undefined
-  const w = findLevel2(node.ancestors)
-  return w ? String(w.deptId) : undefined
+  if (!node || !node.buildingId) return undefined
+  return String(node.buildingId)
 }
 
 function onDeptChange(v: any) {
-  // 换部门后自动带出该部门链路上的车间；取不到则清空（允许用户手动改/留空）
+  // 换部门后自动带出该部门所在建筑（厂房）；取不到则清空（可手动改/留空）
   form.value.workshopId = workshopOfDept(v)
 }
 
@@ -159,11 +164,11 @@ function openAdd() {
 
 function openEdit(row: any) {
   isEdit.value = true
-  const w = findLevel2(row.ancestors)   // 当前小组链路上的车间（depth=2）
+  const parent = findParent(row)   // 所属部门
   form.value = {
     deptId: String(row.deptId),
     parentId: row.parentId ? String(row.parentId) : undefined,
-    workshopId: w ? String(w.deptId) : undefined,
+    workshopId: parent?.buildingId ? String(parent.buildingId) : undefined,
     deptName: row.deptName || '',
     leader: row.leader || '',
     orderNum: Number(row.orderNum ?? 0),   // orderNum 非 bigint，可安全转 Number
@@ -307,7 +312,7 @@ function showTotalText(t: number) { return `共 ${t} 条` }
 
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-onMounted(() => { loadAll(); loadColState() })
+onMounted(() => { loadAll(); loadBuildings(); loadColState() })
 </script>
 
 <template>
@@ -420,14 +425,14 @@ onMounted(() => { loadAll(); loadColState() })
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="所属车间（可选，自动带出，可手改）" name="workshopId">
+            <a-form-item label="所属车间（厂房，可选，选部门后自动带出）" name="workshopId">
               <a-select
                 v-model:value="form.workshopId"
                 allow-clear
-                placeholder="选了部门后自动带出，取不到可留空"
+                placeholder="选了部门后自动带出所在厂房，可改"
               >
-                <a-select-option v-for="w in workshopOptions" :key="String(w.deptId)" :value="String(w.deptId)">
-                  {{ w.deptName }}
+                <a-select-option v-for="w in workshopOptions" :key="w.id" :value="w.id">
+                  {{ w.name }}
                 </a-select-option>
               </a-select>
             </a-form-item>
