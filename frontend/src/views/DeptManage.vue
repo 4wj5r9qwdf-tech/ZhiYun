@@ -277,12 +277,22 @@ const parentTree = computed(() => {
   return walk(tree.value)
 })
 
-// 管辖范围树选择：只排除自己（保留自己的下级，如生产部可管 1车间生产科）
+// 管辖范围树选择：排除自己，但把自己的子节点提升上来（如生产部不显示，但它的 1车间生产科 可选）
 const manageTree = computed(() => {
-  const selfId = isEdit.value ? form.value.deptId : null
-  const walk = (nodes: any[]): any[] => nodes
-    .filter(n => String(n.deptId) !== String(selfId))
-    .map(n => ({ ...n, children: walk(n.children || []) }))
+  const selfId = isEdit.value ? String(form.value.deptId) : null
+  const walk = (nodes: any[]): any[] => {
+    const out: any[] = []
+    for (const n of nodes) {
+      const kids = walk(n.children || [])
+      if (String(n.deptId) === selfId) {
+        // 排除自己，但子节点提升到当前层级（保留可选）
+        out.push(...kids)
+      } else {
+        out.push({ ...n, children: kids })
+      }
+    }
+    return out
+  }
   return walk(tree.value)
 })
 
