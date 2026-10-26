@@ -129,11 +129,13 @@ public class PersonController {
     }
 
     /**
-     * 数据范围过滤（角色 dataScope，与 sys_role/sys_role_dept 联动）：
-     * admin 豁免；任一启用角色=全部数据(1)则放行；多角色取并集——
-     * 自定义部门(2)=所选部门+其下级；本部门及以下(3)=本人部门+下级；本部门(4)=仅本人部门；仅本人(5)=本人；
-     * 本小组及下级(6)=本人所属小组(sys_person_ext.group_id)+下级小组——小组同为 sys_dept 节点，复用 ancestors 展开。
-     * 无启用角色 → 1=0（看不到任何人员）。
+     * 数据范围过滤（统一双线模型，2026-10-26 定版）：
+     * 档位：1=全部数据；2=自定义节点(sys_role_dept 勾选部门/小组)；3=本部门及以下；5=仅本人；6=本小组及下级。
+     * 生效语义（部门与小组统一为组织树节点）：
+     *   员工可见 = (其部门 ∈ 勾选节点及下级) OR (其小组 ∈ 勾选节点及下级) OR (恒含自己)
+     * - admin 豁免；任一启用角色=全部则放行；多角色并集。
+     * - 本部门及以下=自定义{本人部门}；本小组及下级=自定义{本人小组}——同一套展开逻辑。
+     * - 自己永远可见（列表里没自己反直觉）；无任何角色 → 仅自己可见。
      */
     private void applyDataScope(StringBuilder where, java.util.List<Object> args) {
         Long userId = LoginHelper.getUserId();
@@ -143,7 +145,8 @@ public class PersonController {
         java.util.List<Long> roleIds = jdbcTemplate.queryForList(
             "SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, userId);
         if (roleIds.isEmpty()) {
-            where.append(" AND 1=0");
+            where.append(" AND u.user_id=?");
+            args.add(userId);
             return;
         }
         StringBuilder ph = new StringBuilder();
@@ -154,64 +157,44 @@ public class PersonController {
         if (scopes.contains("1")) {
             return;
         }
-        java.util.Set<Long> deptIds = new java.util.LinkedHashSet<>();
-        java.util.Set<Long> groupIds = new java.util.LinkedHashSet<>();
-        boolean selfOnly = false;
+        java.util.Set<Long> nodes = new java.util.LinkedHashSet<>();
         for (Long roleId : roleIds) {
             String scope = jdbcTemplate.query(
                 "SELECT data_scope FROM sys_role WHERE role_id=?", rs -> rs.next() ? rs.getString(1) : null, roleId);
             if (scope == null) continue;
             switch (scope) {
-                case "2" -> jdbcTemplate.queryForList(
-                    "SELECT dept_id FROM sys_role_dept WHERE role_id=?", Long.class, roleId).forEach(deptIds::add);
-                case "3" -> {
+                case "2" -> jdbcTemplate.queryForList(                       // 自定义节点（部门或小组）
+                    "SELECT dept_id FROM sys_role_dept WHERE role_id=?", Long.class, roleId).forEach(nodes::add);
+                case "3" -> {                                                  // 本部门及以下
                     Long myDept = jdbcTemplate.queryForObject(
                         "SELECT dept_id FROM sys_user WHERE user_id=?", Long.class, userId);
-                    if (myDept != null) deptIds.add(myDept);
+                    if (myDept != null) nodes.add(myDept);
                 }
-                case "4" -> {
-                    Long myDept = jdbcTemplate.queryForObject(
-                        "SELECT dept_id FROM sys_user WHERE user_id=?", Long.class, userId);
-                    if (myDept != null) deptIds.add(myDept);
-                }
-                case "5" -> selfOnly = true;
-                case "6" -> {
+                case "6" -> {                                                  // 本小组及下级
                     Long myGroup = jdbcTemplate.query(
                         "SELECT group_id FROM sys_person_ext WHERE user_id=? AND group_id IS NOT NULL",
                         rs -> rs.next() ? rs.getLong(1) : null, userId);
-                    if (myGroup != null) groupIds.add(myGroup);
+                    if (myGroup != null) nodes.add(myGroup);
                 }
+                case "5" -> { }                                                // 仅本人：不产生节点，恒自己兜底
                 default -> { }
             }
         }
-        // 部门档展开"所选 + 其全部下级"
-        java.util.Set<Long> expanded = expandDeptWithChildren(deptIds);
+        // 节点统一展开"自身+全部下级"（部门与小组同为 sys_dept 节点，一套 ancestors 逻辑）
+        java.util.Set<Long> expanded = expandDeptWithChildren(nodes);
         StringBuilder cond = new StringBuilder();
         if (!expanded.isEmpty()) {
             cond.append("u.dept_id IN (");
             for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
+            cond.append(") OR e.group_id IN (");
+            for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
             cond.append(')');
             args.addAll(expanded);
+            args.addAll(expanded);
         }
-        // 小组档：本小组 + 下级小组（小组也是 sys_dept 节点，ancestors 同款展开）
-        java.util.Set<Long> expandedGroups = expandDeptWithChildren(groupIds);
-        if (!expandedGroups.isEmpty()) {
-            if (cond.length() > 0) cond.append(" OR ");
-            cond.append("e.group_id IN (");
-            for (int i = 0; i < expandedGroups.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
-            cond.append(')');
-            args.addAll(expandedGroups);
-        }
-        if (selfOnly) {
-            if (cond.length() > 0) cond.append(" OR ");
-            cond.append("u.user_id=?");
-            args.add(userId);
-        }
-        if (cond.length() == 0) {
-            where.append(" AND 1=0");
-        } else {
-            where.append(" AND (").append(cond).append(')');
-        }
+        cond.append(cond.length() > 0 ? " OR u.user_id=?" : "u.user_id=?");
+        args.add(userId);
+        where.append(" AND (").append(cond).append(')');
     }
 
     /** 部门集合展开：所选部门 + 祖先链包含任一所选部门的所有下级。 */
