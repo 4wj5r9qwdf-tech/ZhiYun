@@ -8,7 +8,9 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.constant.SystemConstants;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.exception.ServiceException;
+import cn.hutool.core.convert.Convert;
 import org.dromara.common.core.utils.MapstructUtils;
+import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.utils.StreamUtils;
 import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.system.api.PostService;
@@ -84,7 +86,13 @@ public class SysPostServiceImpl implements ISysPostService, PostService {
     private Wrapper<SysPost> buildQueryWrapper(SysPostBo bo) {
         Map<String, Object> params = bo.getParams();
         var wrapper = postMapper.lambda()
-            .likeIfText(SysPost::getPostCode, bo.getPostCode())
+            .likeIfText(SysPost::getPostCode, bo.getPostCode());
+        // keyword：名称 OR 编码 模糊（Controller 从查询串塞入 params）
+        String kw = Convert.toStr(bo.getParams().get("keyword"));
+        if (StringUtils.isNotBlank(kw)) {
+            wrapper.and(w -> w.like(SysPost::getPostName, kw).or().like(SysPost::getPostCode, kw));
+        }
+        wrapper
             .likeIfText(SysPost::getPostCategory, bo.getPostCategory())
             .likeIfText(SysPost::getPostName, bo.getPostName())
             .eqIfText(SysPost::getStatus, bo.getStatus())
