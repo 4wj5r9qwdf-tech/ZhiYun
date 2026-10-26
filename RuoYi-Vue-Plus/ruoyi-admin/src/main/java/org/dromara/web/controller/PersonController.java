@@ -47,11 +47,14 @@ public class PersonController {
                                        @RequestParam(required = false) String roles,
                                        @RequestParam(required = false) String orderBy,
                                        @RequestParam(defaultValue = "0") String delFlag,
+                                       @RequestParam(defaultValue = "0") String includeSystem,
                                        @RequestParam(defaultValue = "1") int pageNum,
                                        @RequestParam(defaultValue = "20") int pageSize) {
         // delFlag：0=正常(默认) / 1=已删除(查已删可恢复) / all=全部
         String delCond = "all".equals(delFlag) ? "" : ("u.del_flag='" + ("1".equals(delFlag) ? "1" : "0") + "'");
         StringBuilder where = new StringBuilder(delCond.isEmpty() ? "WHERE 1=1" : ("WHERE " + delCond));
+        // 默认隐藏内置系统账号 admin（它不是工厂员工）；includeSystem=1 才显示
+        if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
         Long total = jdbcTemplate.queryForObject(
