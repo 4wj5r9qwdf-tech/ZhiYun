@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -436,9 +436,8 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a @click="openEdit(record)">编辑</a>
-          <a-divider type="vertical" />
-          <a class="danger-link" @click="removeGroup(record)">删除</a>
+          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+          <a class="ops-link danger-link" @click="removeGroup(record)"><DeleteOutlined />删除</a>
         </template>
       </template>
     </a-table>
@@ -552,6 +551,7 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; }
 .type-tag.is-dept { background: #E8F3FF; color: #1E5EFF; }
 .type-tag.is-group { background: #E8FFEA; color: #00B42A; }
+.ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .muted { color: #C9CDD4; }

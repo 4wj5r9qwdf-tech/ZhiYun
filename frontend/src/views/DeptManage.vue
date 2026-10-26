@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
@@ -619,11 +619,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           />
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a @click="openEdit(record)">编辑</a>
-          <a-divider type="vertical" />
-          <a @click="openAddChild(record)">新增下级</a>
-          <a-divider type="vertical" />
-          <a class="danger-link" @click="removeDept(record)">删除</a>
+          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+          <a class="ops-link" @click="openAddChild(record)"><PlusOutlined />新增下级</a>
+          <a class="ops-link danger-link" @click="removeDept(record)"><DeleteOutlined />删除</a>
         </template>
       </template>
     </a-table>
@@ -772,6 +770,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .dept-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .dept-name { font-weight: 500; color: #1D2129; }
+.ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .loc-preview { margin-top: 4px; font-size: 12px; color: #1E5EFF; background: #F4F7FF; border-radius: 4px; padding: 2px 8px; }

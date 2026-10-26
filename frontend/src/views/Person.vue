@@ -10,6 +10,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -135,7 +136,7 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 150, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => {
@@ -543,14 +544,12 @@ function resetFilter() {
         <template v-else-if="column.key === 'ops'">
           <!-- 查看已删除时：只给"恢复"；正常列表：编辑/重置密码/删除 -->
           <template v-if="showDeleted">
-            <a @click="restorePerson(record)">恢复</a>
+            <a class="ops-link" @click="restorePerson(record)"><UndoOutlined />恢复</a>
           </template>
           <template v-else>
-            <a @click="openEdit(record)">编辑</a>
-            <a-divider type="vertical" />
-            <a @click="resetPwd(record)">重置密码</a>
-            <a-divider type="vertical" />
-            <a class="danger-link" @click="removePerson(record)">删除</a>
+            <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+            <a class="ops-link" @click="resetPwd(record)"><KeyOutlined />重置密码</a>
+            <a class="ops-link danger-link" @click="removePerson(record)"><DeleteOutlined />删除</a>
           </template>
         </template>
       </template>
@@ -678,6 +677,7 @@ function resetFilter() {
 .person-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
