@@ -105,7 +105,7 @@ let suppressHeaderClickUntil = 0
 
 // 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops') return
+  if (key === 'ops' || key === 'index') return
   const th = (e.currentTarget as HTMLElement) as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return   // 不在右缘 → 不拦截，交给排序
@@ -132,6 +132,7 @@ function onHeaderClick(e: MouseEvent) {
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏；应用自定义列宽）
 // 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
 const columns = computed(() => {
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }
   const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
@@ -140,7 +141,7 @@ const columns = computed(() => {
       return { ...base, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }
     })
     .filter(Boolean)
-  return [...list, ops]
+  return [idx, ...list, ops]
 })
 
 // 下拉数据
@@ -527,7 +528,10 @@ function resetFilter() {
       class="person-table"
       @change="onTableChange"
     >
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          {{ (pageNum - 1) * pageSize + index + 1 }}
+        </template>
         <template v-if="column.key === 'gender'">
           {{ record.gender === '1' ? '男' : record.gender === '2' ? '女' : '-' }}
         </template>

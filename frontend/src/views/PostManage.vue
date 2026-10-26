@@ -118,12 +118,13 @@ function moveCol(index: number, dir: -1 | 1) {
 
 // 按 colState 顺序+显隐生成列（操作列固定最后；customHeaderCell 绑拖拽）
 const columns = computed(() => {
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }
   const ops = { title: '操作', key: 'ops', width: 120, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
-  return [...list, ops]
+  return [idx, ...list, ops]
 })
 
 // ===== 列宽拖拽（原生表头 + customHeaderCell） =====
@@ -133,7 +134,7 @@ function onColResize(key: string, w: number) {
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops') return
+  if (key === 'ops' || key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return
@@ -363,7 +364,10 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
       size="middle"
       class="post-table"
     >
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          {{ (pageNum - 1) * pageSize + index + 1 }}
+        </template>
         <template v-if="column.key === 'status'">
           <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
         </template>

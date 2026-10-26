@@ -119,7 +119,7 @@ let suppressHeaderClickUntil = 0
 
 // 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops') return
+  if (key === 'ops' || key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return
@@ -146,12 +146,13 @@ function onHeaderClick(e: MouseEvent) {
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
 // 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
 const columns = computed(() => {
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }
   const ops = { title: '操作', key: 'ops', width: 190, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
-  return [...list, ops]
+  return [idx, ...list, ops]
 })
 
 // 右侧数据源：左树选中节点(及下级) + 关键词/层级/状态过滤（保留命中节点及其祖先链）
@@ -580,7 +581,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       size="middle"
       class="dept-table"
     >
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          {{ index + 1 }}   <!-- 树形无分页，按显示行连续编号 -->
+        </template>
         <template v-if="column.key === 'deptName'">
           <span class="dept-name">{{ record.deptName }}</span>
         </template>
