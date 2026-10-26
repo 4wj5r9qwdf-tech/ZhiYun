@@ -1,3 +1,4 @@
+import { ensurePerms, can } from '../utils/perms'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useTabsStore } from '../store/tabs'
 
@@ -47,11 +48,25 @@ const router = createRouter({
 })
 
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
+// 路由级权限映射：无权限直接访问 URL 也拦（卡片显隐只是第一层）
+const ROUTE_PERMS: Record<string, string> = {
+  Person: 'system:person:list', DeptManage: 'system:dept:list', GroupManage: 'system:dept:list',
+  PostManage: 'system:post:list', RoleManage: 'system:role:list', BuildingManage: 'system:building:list',
+  Company: 'system:company:list',
+}
 const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
     return { name: 'Login' }
+  }
+  // 所有需登录页面统一预拉权限（首页/工作台等无 perm 映射的入口也要就绪，否则卡片全隐身）
+  if (token && needAuth.includes(to.name as string)) {
+    await ensurePerms()
+  }
+  const need = ROUTE_PERMS[to.name as string]
+  if (need && token && !can(need)) {
+    return { name: 'Workbench' }
   }
   // 浏览器标签标题：织云 ERP - <页面标题>
   const t = to.meta?.title as string | undefined

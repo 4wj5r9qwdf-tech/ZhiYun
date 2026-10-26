@@ -376,7 +376,9 @@ async function openEdit(row: any) {
 // a-form 校验规则
 // ===== 岗位/角色 勾选弹窗（替代多选下拉：支持模糊搜索；id 全 String 防 bigint 精度丢失） =====
 const pickDlg = reactive({ open: false, kind: 'post' as 'post' | 'role', kw: '', tmp: [] as string[] })
-const pickList = computed(() => (pickDlg.kind === 'post' ? posts.value : roles.value) as any[])
+const pickList = computed(() => (pickDlg.kind === 'post'
+  ? posts.value
+  : (roles.value as any[]).filter(r => String(r.roleKey) !== 'superadmin')) as any[])
 const pickFiltered = computed(() => {
   const kw = pickDlg.kw.trim()
   if (!kw) return pickList.value

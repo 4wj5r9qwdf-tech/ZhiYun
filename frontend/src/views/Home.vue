@@ -9,7 +9,7 @@ import { useRouter, useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import * as AntIcons from '@ant-design/icons-vue'
 import TopBar from '../components/TopBar.vue'
-import { MODULES, type ModuleDef } from '../config/modules'
+import { visibleModules, type ModuleDef } from '../config/modules'
 import { useTabsStore } from '../store/tabs'
 
 const router = useRouter()
@@ -17,7 +17,7 @@ const route = useRoute()
 const tabsStore = useTabsStore()
 
 // 左侧模块导航（目录统一维护在 config/modules.ts）
-const modules = MODULES
+const modules = visibleModules()
 
 // 动态解析 antd 图标组件（icon 存的是组件名字符串）
 const Icon = (name: string) => (AntIcons as any)[name]

@@ -38,6 +38,22 @@ public class ProfileController {
     }
 
     /**
+     * 当前用户权限码集合（前端据此过滤功能卡片/模块/路由可见性）。
+     * 超管返回通配 "*"（全部可见）；普通用户返回其启用角色的菜单权限码并集。
+     */
+    @GetMapping("/permissions")
+    public R<java.util.Set<String>> permissions() {
+        Long userId = LoginHelper.getUserId();
+        if (userId == null) {
+            return R.fail("未登录");
+        }
+        if (LoginHelper.isSuperAdmin(userId)) {
+            return R.ok(java.util.Set.of("*"));
+        }
+        return R.ok(new java.util.LinkedHashSet<>(cn.dev33.satoken.stp.StpUtil.getPermissionList()));
+    }
+
+    /**
      * 通知列表（铃铛下拉，读 sys_message 表）。
      */
     @GetMapping("/messages")
