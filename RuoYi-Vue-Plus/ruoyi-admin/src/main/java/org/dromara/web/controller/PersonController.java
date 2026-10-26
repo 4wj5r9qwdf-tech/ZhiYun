@@ -331,13 +331,13 @@ public class PersonController {
             "  has_commercial=EXCLUDED.has_commercial, commercial_type=EXCLUDED.commercial_type, " +
             "  social_check_date=EXCLUDED.social_check_date, is_dorm=EXCLUDED.is_dorm, update_time=now()",
             userId, ext.get("maritalStatus"), ext.get("certType"), ext.get("certNo"), ext.get("nation"),
-            ext.get("education"), ext.get("birthDate"), ext.get("graduateSchool"), ext.get("nativePlace"),
-            ext.get("address"), ext.get("certExpireDate"), ext.get("hireDate"), groupName, groupId,
-            ext.get("empType"), ext.get("leaveDate"), ext.get("cardNo"),
+            ext.get("education"), dateOrNull(ext.get("birthDate")), ext.get("graduateSchool"), ext.get("nativePlace"),
+            ext.get("address"), dateOrNull(ext.get("certExpireDate")), dateOrNull(ext.get("hireDate")), groupName, groupId,
+            ext.get("empType"), dateOrNull(ext.get("leaveDate")), ext.get("cardNo"),
             str(ext.getOrDefault("empStatus", "试用")), ext.get("bankCardNo"), ext.get("signEntity"),
-            ext.get("contractYears"), ext.get("contractStart"), ext.get("contractEnd"),
+            ext.get("contractYears"), dateOrNull(ext.get("contractStart")), dateOrNull(ext.get("contractEnd")),
             ext.getOrDefault("hasSocial", "0"), ext.get("socialAmount"), ext.get("socialSubsidy"),
-            ext.getOrDefault("hasCommercial", "0"), ext.get("commercialType"), ext.get("socialCheckDate"),
+            ext.getOrDefault("hasCommercial", "0"), ext.get("commercialType"), dateOrNull(ext.get("socialCheckDate")),
             ext.getOrDefault("isDorm", "0"));
     }
 
@@ -365,4 +365,10 @@ public class PersonController {
     }
 
     private String str(Object o) { return o == null ? null : o.toString(); }
+
+    /** 日期字段：空串/null 一律转 null（PG date 不接受 ''），非空转字符串。 */
+    private String dateOrNull(Object o) {
+        String s = str(o);
+        return (s == null || s.isBlank()) ? null : s;
+    }
 }

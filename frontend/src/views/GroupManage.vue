@@ -98,7 +98,9 @@ const rows = computed(() => {
       if (n.deptCategory === '小组') {
         if (!kw || String(n.deptName || '').includes(kw)) {
           const parent = findParent(n)
-          out.push({ ...n, parentName: parent?.deptName || '', workshopName: buildingLabel(parent?.buildingId) })
+          // 去掉 children：小组是末级，平铺展示（否则 a-table 误渲染树形展开 +）
+          const { children: _c, ...rest } = n
+          out.push({ ...rest, parentName: parent?.deptName || '', workshopName: buildingLabel(parent?.buildingId) })
         }
       }
       walk(n.children || [])
