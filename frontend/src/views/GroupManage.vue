@@ -1,204 +1,196 @@
 <script setup lang="ts">
 /**
- * 小组管理（组织/人员模块）—— ant-design-vue：
- * - 小组 = 部门树末级节点（dept_category='小组'），挂靠在 车间 或 车间>区域 下
- * - GET /system/dept/list 拿整棵部门树，前端递归过滤出所有"小组"节点
- * - 通过树遍历（优先）、ancestors 兜底，反查每个小组的 所属车间 / 所属区域（展示用）
- * - a-table 小组列表：小组名称/所属车间/所属区域/排序/状态/操作(编辑、删除)
- * - a-modal + a-form 新增/编辑：parentId 优先挂区域，未选区域挂车间；ancestors 由后端维护
- * - 删除 Modal.confirm 二次确认；后端校验小组下是否有人占用，失败透传 msg
+ * 小组管理（人员模块）—— ant-design-vue：独立小组列表页
+ * - 小组 = sys_dept 里 dept_category='小组' 的行（区别于普通部门；普通部门 deptCategory 存 "1 级"/"2 级" 等）
+ * - GET /system/dept/list 返回平铺数组，前端按 parentId 组树（层级按 ancestors 深度算，车间 = depth 2 节点）
+ * - 列表列：小组名 / 所属部门(直接父) / 所属车间(ancestors 链 depth=2 反查) / 负责人 / 排序 / 状态 / 操作
+ * - 表单：所属部门（所有非小组部门任意层级）→ 自动带出该部门链路上的车间，可手动改；deptCategory 固定 '小组'
+ * - a-table + 列设置(colState) + 列宽拖拽（customHeaderCell 绑原生 th mousedown，对齐人员信息标准布局）
+ * - deptId 一律 String（bigint 字符串，禁 Number() 防丢精度）
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import api from '../api'
 
-// ===== 部门树 & 小组列表 =====
-const tree = ref<any[]>([])        // 原始部门树（/system/dept/list 返回，含 children）
-const loading = ref(false)
-const rows = ref<any[]>([])        // 过滤后的小组行数据
-const filterWorkshop = ref<number | undefined>()   // 工具栏：按车间筛选（可选）
+const router = useRouter()
 
-const flatten = (list: any[]): any[] => {
-  const out: any[] = []
-  const walk = (arr: any[]) => arr.forEach(n => { out.push(n); if (n.children?.length) walk(n.children) })
-  walk(list)
-  return out
-}
-const allNodes = computed(() => flatten(tree.value))
+// ===== 部门数据（平铺 → 组树）=====
+const tree = ref<any[]>([])          // 嵌套树（buildTree 生成，含 children）
+const flat = ref<any[]>([])          // 平铺原始数组（组树前）
+const loading = ref(false)
+const keyword = ref('')              // 筛选：小组名关键词
+
+// id 索引：deptId(String) -> 节点
 const byId = computed(() => {
   const m: Record<string, any> = {}
-  allNodes.value.forEach(n => { m[String(n.deptId)] = n })
+  const walk = (nodes: any[]) => { for (const n of nodes) { m[String(n.deptId)] = n; walk(n.children || []) } }
+  walk(tree.value)
   return m
 })
 
-// 车间选项（工具栏筛选 + 表单下拉都用它）
-const workshops = computed(() => tree.value.filter(n => n.dept_category === '车间'))
-
-// 递归收集所有 dept_category === '小组' 的节点
-function collectGroups(list: any[], out: any[]) {
-  list.forEach(n => {
-    if (n.dept_category === '小组') out.push(n)
-    if (n.children?.length) collectGroups(n.children, out)
-  })
+// 层级 = ancestors 深度（"0,父id,祖父id" 段数；顶层=1级）
+function deptLevel(n: any): number {
+  const anc = String(n?.ancestors ?? '0')
+  return anc.split(',').filter(x => x !== '').length || 1
 }
 
-// 由祖先 id 串反查 所属车间 / 所属区域（优先树遍历，ancestors 兜底）
-function resolveAncestors(group: any): { workshop?: any; area?: any } {
-  const chain: any[] = []
-  const dfs = (list: any[]): boolean => {
-    for (const n of list) {
-      chain.push(n)
-      if (Number(n.deptId) === Number(group.deptId)) return true
-      if (n.children?.length && dfs(n.children)) return true
-      chain.pop()
-    }
-    return false
+// 平铺 → 嵌套树（参考 DeptManage.vue buildTree；deptId/parentId 均 String）
+function buildTree(list: any[]): any[] {
+  const map: Record<string, any> = {}
+  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  const roots: any[] = []
+  for (const n of list) {
+    const node = map[String(n.deptId)]
+    const pid = n.parentId
+    if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
+    else roots.push(node)
   }
-  dfs(tree.value)
-  // chain = [厂区?, 车间?, 区域?, 小组]
-  let workshop = chain.filter(n => n.dept_category === '车间').pop()
-  let area = chain.filter(n => n.dept_category === '区域').pop()
-  if (!workshop || !area) {
-    const ids = String(group.ancestors || '').split(',').filter(Boolean)
-    if (!workshop) {
-      const w = ids.map(id => byId.value[id]).find((n: any) => n && n.dept_category === '车间')
-      if (w) workshop = w
-    }
-    if (!area) {
-      const a = ids.map(id => byId.value[id]).find((n: any) => n && n.dept_category === '区域')
-      if (a) area = a
+  return roots
+}
+
+// 由 ancestors 链反查某层节点：车间 = depth 2（ancestors "0,厂id" + 自己 → level 2）
+function findLevel2(anc: any): any {
+  const segs = String(anc || '').split(',').filter(Boolean)
+  if (segs.length < 2) return null
+  return byId.value[segs[1]] || null
+}
+// 直接父节点（parentId 对应的部门）
+function findParent(n: any): any {
+  const pid = n?.parentId
+  if (!pid || pid === 0 || pid === '0') return null
+  return byId.value[String(pid)] || null
+}
+
+// ===== 小组列表行（过滤 + 展示字段派生）=====
+// 小组 = deptCategory === '小组'（新数据只用这个字段判断，不再看车间/区域）
+const rows = computed(() => {
+  const kw = keyword.value.trim()
+  const out: any[] = []
+  const walk = (nodes: any[]) => {
+    for (const n of nodes) {
+      if (n.deptCategory === '小组') {
+        if (!kw || String(n.deptName || '').includes(kw)) {
+          const parent = findParent(n)
+          const workshop = findLevel2(n.ancestors)
+          out.push({ ...n, parentName: parent?.deptName || '', workshopName: workshop?.deptName || '' })
+        }
+      }
+      walk(n.children || [])
     }
   }
-  return { workshop, area }
-}
+  walk(tree.value)
+  return out
+})
 
-// 生成表格行：小组 + 展示用 所属车间/所属区域
-function buildRows() {
-  const list: any[] = []
-  collectGroups(tree.value, list)
-  rows.value = list.map(g => {
-    const { workshop, area } = resolveAncestors(g)
-    return {
-      ...g,
-      workshopName: workshop?.deptName || '',
-      workshopId: workshop ? Number(workshop.deptId) : undefined,
-      areaName: area?.deptName || '',
-      areaId: area ? Number(area.deptId) : undefined,
-    }
-  })
-}
-
-// 按车间筛选：小组所在链路上有该车间即可
-function rowMatchFilter(r: any): boolean {
-  if (!filterWorkshop.value) return true
-  if (r.workshopId === Number(filterWorkshop.value)) return true
-  return String(r.ancestors || '').split(',').filter(Boolean).includes(String(filterWorkshop.value))
-}
-
-const filteredRows = computed(() => rows.value.filter(rowMatchFilter))
+function resetFilters() { keyword.value = '' }
 
 async function loadAll() {
   loading.value = true
   try {
     const res: any = await api.get('/system/dept/list')
     if (res.code === 200) {
-      tree.value = res.data || []
-      buildRows()
+      flat.value = res.data || []
+      tree.value = buildTree(flat.value)
     } else {
       tree.value = []
-      rows.value = []
-      message.error(res.msg || '加载部门树失败')
+      message.error(res.msg || '加载部门失败')
     }
   } catch (e: any) {
     tree.value = []
-    rows.value = []
-    message.error(e?.response?.data?.msg || '加载部门树失败')
+    message.error(e?.response?.data?.msg || '加载部门失败')
   } finally { loading.value = false }
 }
 
-function onFilterChange() { /* v-model 绑定，表格走 computed */ }
-
-// ===== 新增/编辑弹窗 =====
+// ===== 表单：新增/编辑小组 =====
 const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
 const formRef = ref()
-const editingId = ref<number | null>(null)
 
 const emptyForm = () => ({
+  deptId: '' as string,
+  parentId: undefined as string | undefined,   // 所属部门（普通部门）
+  workshopId: undefined as string | undefined, // 所属车间（展示用，parentId 链路上 depth=2 节点）
   deptName: '',
-  workshopId: undefined as number | undefined,
-  areaId: undefined as number | undefined,
+  leader: '',
   orderNum: 0,
-  status: true,   // true=正常('0'), false=停用('1')
+  status: '0',                                  // '0' 启用 / '1' 停用
 })
 const form = ref(emptyForm())
 
-// 所选车间下的区域（区域可选；车间下无区域时可直接挂车间）
-const areaOptions = computed(() => {
-  const wid = form.value.workshopId
-  if (!wid) return []
-  const w = byId.value[String(wid)]
-  return (w?.children || []).filter((n: any) => n.dept_category === '区域')
+// 所属部门下拉：所有非小组部门（含任意层级，树形展示路径清晰）
+const deptTreeOptions = computed(() => {
+  const walk = (nodes: any[]): any[] => nodes
+    .filter(n => n.deptCategory !== '小组')
+    .map(n => ({ ...n, children: walk(n.children || []) }))
+  return walk(tree.value)
 })
 
-function onWorkshopChange() {
-  // 换车间后清空已选区域，避免挂到错误车间下
-  form.value.areaId = undefined
+// 车间下拉：组织树 depth=2 节点（车间按新层级定义）
+const workshopOptions = computed(() => tree.value.filter(n => deptLevel(n) === 2))
+
+// 由所选部门反查它链路上的车间（parentId → 祖先链 depth=2）
+function workshopOfDept(deptId?: string): string | undefined {
+  if (!deptId) return undefined
+  const node = byId.value[String(deptId)]
+  if (!node) return undefined
+  const w = findLevel2(node.ancestors)
+  return w ? String(w.deptId) : undefined
+}
+
+function onDeptChange(v: any) {
+  // 换部门后自动带出该部门链路上的车间；取不到则清空（允许用户手动改/留空）
+  form.value.workshopId = workshopOfDept(v)
 }
 
 const rules: any = {
   deptName: [{ required: true, message: '请输入小组名称', trigger: 'blur' }],
-  workshopId: [{ required: true, message: '请选择所属车间', trigger: 'change' }],
+  parentId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
 }
 
 function openAdd() {
   isEdit.value = false
-  editingId.value = null
   form.value = emptyForm()
   showDlg.value = true
 }
 
 function openEdit(row: any) {
   isEdit.value = true
-  editingId.value = Number(row.deptId)
+  const w = findLevel2(row.ancestors)   // 当前小组链路上的车间（depth=2）
   form.value = {
+    deptId: String(row.deptId),
+    parentId: row.parentId ? String(row.parentId) : undefined,
+    workshopId: w ? String(w.deptId) : undefined,
     deptName: row.deptName || '',
-    workshopId: row.workshopId,
-    areaId: row.areaId,
-    orderNum: row.orderNum ?? 0,
-    status: String(row.status) === '0',
+    leader: row.leader || '',
+    orderNum: Number(row.orderNum ?? 0),   // orderNum 非 bigint，可安全转 Number
+    status: String(row.status) === '0' ? '0' : '1',
   }
   showDlg.value = true
 }
 
-// 状态列展示：'0' 正常 / '1' 停用
-function statusText(s: any) { return String(s) === '0' ? '正常' : '停用' }
+// 状态展示：'0' 启用 / '1' 停用
+function statusText(s: any) { return String(s) === '0' ? '启用' : '停用' }
 function statusColor(s: any) { return String(s) === '0' ? 'green' : 'red' }
 
 async function save() {
   try { await formRef.value?.validate() } catch { return }
-  if (!form.value.workshopId) { message.warning('请选择所属车间'); return }
+  if (!form.value.parentId) { message.warning('请选择所属部门'); return }
   saving.value = true
   try {
-    // parentId 优先挂所选区域的 deptId，未选区域则挂所选车间的 deptId（后端 parentId 只接受一个）
-    const parentId = form.value.areaId != null ? form.value.areaId : form.value.workshopId
     const payload: any = {
-      parentId,
+      deptId: isEdit.value ? form.value.deptId : undefined,
+      parentId: form.value.parentId,
       deptName: form.value.deptName,
-      deptCategory: '小组',
+      deptCategory: '小组',                        // 固定传 '小组'，后端据此识别
+      leader: form.value.leader || '',
       orderNum: form.value.orderNum ?? 0,
-      status: form.value.status ? '0' : '1',
+      status: form.value.status || '0',
     }
-    let res: any
-    if (isEdit.value) {
-      payload.deptId = editingId.value
-      res = await api.put('/system/dept', payload)
-    } else {
-      res = await api.post('/system/dept', payload)
-    }
+    const res: any = isEdit.value ? await api.put('/system/dept', payload) : await api.post('/system/dept', payload)
     if (res.code === 200) {
       message.success('保存成功')
       showDlg.value = false
@@ -224,63 +216,169 @@ function removeGroup(row: any) {
   })
 }
 
-const tableColumns = [
-  { title: '小组名称', dataIndex: 'deptName', key: 'deptName' },
-  { title: '所属车间', dataIndex: 'workshopName', key: 'workshopName' },
-  { title: '所属区域', dataIndex: 'areaName', key: 'areaName' },
+// ===== 列设置（显隐 + 顺序 + 列宽）localStorage key: group_list:${userId} =====
+const ALL_COLUMNS = [
+  { title: '小组名', dataIndex: 'deptName', key: 'deptName' },
+  { title: '所属部门', dataIndex: 'parentName', key: 'parentName', width: 140 },
+  { title: '所属车间', dataIndex: 'workshopName', key: 'workshopName', width: 140 },
+  { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
   { title: '排序', dataIndex: 'orderNum', key: 'orderNum', width: 80 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '操作', key: 'ops', width: 130 },
+  { title: '状态', key: 'status', width: 90 },
 ]
+type ColState = { key: string; visible: boolean; width?: number }
+const colState = ref<ColState[]>([])
+const colSetOpen = ref(false)
+const colStoreKey = computed(() => `group_list:${localStorage.getItem('userId') || 'anon'}`)
+
+function loadColState() {
+  try {
+    const raw = localStorage.getItem(colStoreKey.value)
+    if (raw) {
+      const saved: ColState[] = JSON.parse(raw)
+      const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
+      const ordered: ColState[] = []
+      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
+      colState.value = ordered
+      return
+    }
+  } catch { /* ignore */ }
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+}
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
+function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
+function moveCol(index: number, dir: -1 | 1) {
+  const arr = colState.value
+  const j = index + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[index], arr[j]] = [arr[j], arr[index]]
+  saveColState()
+}
+
+// 列宽拖拽：改 colState 里对应列的 width 并持久化
+function onColResize(key: string, w: number) {
+  const s = colState.value.find(c => c.key === key)
+  if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
+}
+
+// 拖拽后短暂抑制 click（否则 mousedown→mouseup 后的 click 会触发 antd 排序，表格重排导致边框跳变）
+let suppressHeaderClickUntil = 0
+
+// 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
+function onHeaderMouseDown(key: string, e: MouseEvent) {
+  if (key === 'ops') return
+  const th = e.currentTarget as HTMLTableCellElement
+  const rect = th.getBoundingClientRect()
+  if (e.clientX < rect.right - 14) return
+  const startX = e.clientX
+  const startW = rect.width
+  const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    suppressHeaderClickUntil = Date.now() + 300
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+  e.preventDefault()
+  e.stopPropagation()
+}
+// 表头 click：刚拖拽过则吞掉，避免触发排序
+function onHeaderClick(e: MouseEvent) {
+  if (Date.now() < suppressHeaderClickUntil) { e.preventDefault(); e.stopPropagation() }
+}
+
+// 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
+// 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
+const columns = computed(() => {
+  const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
+  const list = colState.value
+    .filter(c => c.visible)
+    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
+    .filter(Boolean)
+  return [...list, ops]
+})
 
 function showTotalText(t: number) { return `共 ${t} 条` }
 
-onMounted(loadAll)
+watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
+
+onMounted(() => { loadAll(); loadColState() })
 </script>
 
 <template>
-  <div>
+  <div class="group-page">
+    <!-- 标题行：返回 + 标题（无操作按钮，对齐 DeptManage 标准） -->
     <div class="page-header">
       <div class="head-left">
+        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
         <span class="head-title">小组管理</span>
-        <span class="head-desc">小组挂在车间/区域下，是部门树的末级节点（dept_category='小组'）</span>
-      </div>
-      <div class="head-actions">
-        <a-button type="primary" @click="openAdd"><plus-outlined /> 新增小组</a-button>
       </div>
     </div>
 
-    <!-- 工具栏：车间筛选 + 刷新 + 条数 -->
+    <!-- 筛选栏：搜索小组名 + 查询/重置 + 靠右新增 -->
     <div class="filter-bar">
-      <a-select
-        v-model:value="filterWorkshop"
-        placeholder="按车间筛选"
-        allow-clear
-        style="width: 180px"
-        @change="onFilterChange"
-      >
-        <a-select-option v-for="w in workshops" :key="Number(w.deptId)" :value="Number(w.deptId)">
-          {{ w.deptName }}
-        </a-select-option>
-      </a-select>
-      <a-button @click="loadAll"><reload-outlined /> 刷新</a-button>
-      <span class="total">共 {{ filteredRows.length }} 个小组</span>
+      <a-input v-model:value="keyword" placeholder="搜索小组名" allow-clear style="width:200px">
+        <template #prefix><SearchOutlined style="color:#86909C" /></template>
+      </a-input>
+      <a-button @click="loadAll"><ReloadOutlined />查询</a-button>
+      <a-button @click="resetFilters">重置</a-button>
+      <span class="filter-spacer"></span>
+      <a-button type="primary" @click="openAdd"><PlusOutlined />新增小组</a-button>
+    </div>
+
+    <!-- 表格工具行：共N条 + ⚙列设置 -->
+    <div class="table-bar">
+      <span class="total">共 {{ rows.length }} 个小组</span>
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+        <a-button>⚙ 列设置</a-button>
+        <template #overlay>
+          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
+              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+              <span class="col-move">
+                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
+              </span>
+            </div>
+            <a-divider style="margin: 6px 0" />
+            <div class="col-set-foot">
+              <a size="small" @click="showAllCols">恢复默认</a>
+              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+            </div>
+          </a-card>
+        </template>
+      </a-dropdown>
     </div>
 
     <!-- 小组列表 -->
     <a-table
-      :columns="tableColumns"
-      :data-source="filteredRows"
+      :columns="columns"
+      :data-source="rows"
       :loading="loading"
       :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: showTotalText, showQuickJumper: true }"
-      :scroll="{ x: 'max-content', y: 'calc(100vh - 300px)' }"
+      :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+      table-layout="fixed"
       row-key="deptId"
       size="middle"
       class="group-table"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'areaName'">
-          {{ record.areaName || '-' }}
+        <template v-if="column.key === 'deptName'">
+          <span class="group-name">{{ record.deptName }}</span>
+        </template>
+        <template v-else-if="column.key === 'parentName'">
+          {{ record.parentName || '—' }}
+        </template>
+        <template v-else-if="column.key === 'workshopName'">
+          {{ record.workshopName || '—' }}
+        </template>
+        <template v-else-if="column.key === 'leader'">
+          {{ record.leader || '—' }}
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
@@ -309,38 +407,44 @@ onMounted(loadAll)
         </a-form-item>
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="所属车间" name="workshopId">
-              <a-select v-model:value="form.workshopId" placeholder="请选择车间" @change="onWorkshopChange">
-                <a-select-option v-for="w in workshops" :key="Number(w.deptId)" :value="Number(w.deptId)">
+            <a-form-item label="所属部门" name="parentId">
+              <a-tree-select
+                v-model:value="form.parentId"
+                :tree-data="deptTreeOptions"
+                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
+                allow-clear
+                tree-default-expand-all
+                placeholder="请选择所属部门（任意层级）"
+                @change="onDeptChange"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="所属车间（可选，自动带出，可手改）" name="workshopId">
+              <a-select
+                v-model:value="form.workshopId"
+                allow-clear
+                placeholder="选了部门后自动带出，取不到可留空"
+              >
+                <a-select-option v-for="w in workshopOptions" :key="String(w.deptId)" :value="String(w.deptId)">
                   {{ w.deptName }}
                 </a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="所属区域（可选）" name="areaId">
-              <a-select
-                v-model:value="form.areaId"
-                placeholder="车间下无区域可直接挂车间"
-                allow-clear
-                :disabled="!form.workshopId || areaOptions.length === 0"
-              >
-                <a-select-option v-for="a in areaOptions" :key="Number(a.deptId)" :value="Number(a.deptId)">
-                  {{ a.deptName }}
-                </a-select-option>
-              </a-select>
+            <a-form-item label="负责人">
+              <a-input v-model:value="form.leader" :maxlength="20" placeholder="请输入负责人（可空）" />
             </a-form-item>
           </a-col>
-        </a-row>
-        <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="排序">
-              <a-input-number v-model:value="form.orderNum" :min="0" style="width: 100%" placeholder="数字越小越靠前" />
+              <a-input-number v-model:value="form.orderNum" :min="0" style="width:100%" placeholder="数字越小越靠前" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="状态">
-              <a-switch v-model:checked="form.status" checked-children="正常" un-checked-children="停用" />
+              <a-switch v-model:checked="form.status" checked-value="0" un-checked-value="1" checked-children="启用" un-checked-children="停用" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -351,14 +455,25 @@ onMounted(loadAll)
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
-.head-left { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.head-left { display: flex; align-items: center; gap: 6px; }
+.back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
+.back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
-.head-desc { font-size: 12px; color: #86909C; }
-.head-actions { display: flex; gap: 8px; align-items: center; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
-.filter-bar .total { margin-left: auto; font-size: 13px; color: #4E5969; }
+.filter-spacer { flex: 1 1 auto; min-width: 8px; }
 
+/* 表格工具行（条数 + 列设置） */
+.table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.table-bar .total { font-size: 13px; color: #4E5969; }
+.col-set-panel { width: 200px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-item { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+.col-move { display: inline-flex; }
+.col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
+.col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
+.col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
+
+/* 表格样式：白底圆角、表头底色 #FAFBFD、行悬停 #F5F8FF、列间浅竖线 #F0F2F5、font-size 13px */
 .group-table { width: 100%; background: #fff; border-radius: 10px; }
 .group-table :deep(.ant-table) { font-size: 13px; }
 .group-table :deep(.ant-table-thead > tr > th),
@@ -368,6 +483,16 @@ onMounted(loadAll)
 .group-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
 .group-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.group-name { font-weight: 500; color: #1D2129; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
+.muted { color: #C9CDD4; }
+</style>
+
+<!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
+<style>
+.ant-table-thead > tr > th { position: relative; }
+.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
+.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
+.ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
 </style>
