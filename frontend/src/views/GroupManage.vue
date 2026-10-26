@@ -103,7 +103,7 @@ const rows = computed(() => {
           const pathName = anc.map(id => byId.value[String(id)]?.deptName).filter(Boolean).join(' > ')
           // 去掉 children：小组是末级，平铺展示（否则 a-table 误渲染树形展开 +）
           const { children: _c, ...rest } = n
-          out.push({ ...rest, parentName: parent?.deptName || '', pathName, workshopName: buildingLabel(parent?.buildingId) })
+          out.push({ ...rest, parentName: parent?.deptName || '', pathName, workshopName: buildingLabel(workshopOfDept(n.parentId)) })
         }
       }
       walk(n.children || [])
@@ -168,12 +168,18 @@ const deptTreeOptions = computed(() => {
 // 所属车间下拉 = 建筑（厂房）选项；值为 buildingId
 const workshopOptions = computed(() => buildings.value.map(b => ({ id: String(b.plantId ?? b.plant_id), name: String(b.plantName ?? b.plant_name ?? '') })))
 
-// 由所选部门反查它的所在建筑（厂房）→ 车间默认带出
+// 由所选节点反查所在建筑（厂房）→ 车间默认带出。
+// 小组节点本身无 buildingId，沿祖先链向上找最近有 buildingId 的节点（如所属部门）。
 function workshopOfDept(deptId?: string): string | undefined {
   if (!deptId) return undefined
-  const node = byId.value[String(deptId)]
-  if (!node || !node.buildingId) return undefined
-  return String(node.buildingId)
+  let node = byId.value[String(deptId)]
+  for (let i = 0; i < 10 && node; i++) {
+    if (node.buildingId) return String(node.buildingId)
+    const pid = node.parentId
+    if (!pid || pid === 0 || pid === '0') break
+    node = byId.value[String(pid)]
+  }
+  return undefined
 }
 
 function onDeptChange(v: any) {
@@ -183,7 +189,7 @@ function onDeptChange(v: any) {
 
 const rules: any = {
   deptName: [{ required: true, message: '请输入小组名称', trigger: 'blur' }],
-  parentId: [{ required: true, message: '请选择所属部门', trigger: 'change' }],
+  parentId: [{ required: true, message: '请选择挂靠上级', trigger: 'change' }],
 }
 
 function openAdd() {
@@ -194,11 +200,10 @@ function openAdd() {
 
 function openEdit(row: any) {
   isEdit.value = true
-  const parent = findParent(row)   // 所属部门
   form.value = {
     deptId: String(row.deptId),
     parentId: row.parentId ? String(row.parentId) : undefined,
-    workshopId: parent?.buildingId ? String(parent.buildingId) : undefined,
+    workshopId: workshopOfDept(row.parentId),
     deptName: row.deptName || '',
     leader: row.leader || '',
     orderNum: Number(row.orderNum ?? 0),   // orderNum 非 bigint，可安全转 Number
@@ -213,7 +218,7 @@ function statusColor(s: any) { return String(s) === '0' ? 'green' : 'red' }
 
 async function save() {
   try { await formRef.value?.validate() } catch { return }
-  if (!form.value.parentId) { message.warning('请选择所属部门'); return }
+  if (!form.value.parentId) { message.warning('请选择挂靠上级'); return }
   saving.value = true
   try {
     const payload: any = {
@@ -255,7 +260,7 @@ function removeGroup(row: any) {
 const ALL_COLUMNS = [
   { title: '小组名', dataIndex: 'deptName', key: 'deptName' },
   { title: '层级路径', dataIndex: 'pathName', key: 'pathName', width: 220 },
-  { title: '所属部门', dataIndex: 'parentName', key: 'parentName', width: 140 },
+  { title: '挂靠上级', dataIndex: 'parentName', key: 'parentName', width: 140 },
   { title: '所属车间', dataIndex: 'workshopName', key: 'workshopName', width: 140 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
   { title: '排序', dataIndex: 'orderNum', key: 'orderNum', width: 80 },
@@ -446,16 +451,23 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
         </a-form-item>
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="所属部门" name="parentId">
+            <a-form-item label="挂靠上级（部门或小组）" name="parentId">
               <a-tree-select
                 v-model:value="form.parentId"
                 :tree-data="deptTreeOptions"
                 :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
                 allow-clear
                 tree-default-expand-all
-                placeholder="请选择所属部门（任意层级）"
+                placeholder="请选择挂靠的上级（部门或已建小组）"
                 @change="onDeptChange"
-              />
+              >
+                <template #title="{ deptName, deptCategory }">
+                  <span class="tree-node">
+                    {{ deptName }}
+                    <span class="type-tag" :class="deptCategory === '小组' ? 'is-group' : 'is-dept'">{{ deptCategory === '小组' ? '小组' : '部门' }}</span>
+                  </span>
+                </template>
+              </a-tree-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -528,6 +540,10 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 
 .group-name { font-weight: 500; color: #1D2129; }
 .path-cell { color: #86909C; font-size: 12px; }
+.tree-node { display: inline-flex; align-items: center; gap: 6px; }
+.type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; }
+.type-tag.is-dept { background: #E8F3FF; color: #1E5EFF; }
+.type-tag.is-group { background: #E8FFEA; color: #00B42A; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .muted { color: #C9CDD4; }
