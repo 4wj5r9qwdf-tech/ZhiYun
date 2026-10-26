@@ -4,6 +4,7 @@
  * 被 Workbench / Home 复用。搜索命中"功能/人员/单据"跳转。
  * 业务逻辑与接口调用保持不变，仅 UI 控件换成 ant-design-vue。
  */
+import { resetPerms } from '../utils/perms'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
@@ -137,6 +138,7 @@ function onUserMenuClick({ key }: { key: string | number }) {
 }
 
 function logout() {
+  resetPerms()   // 换账号前清内存权限，防残留上一账号的可见性
   localStorage.removeItem('token')
   localStorage.removeItem('userId')
   router.push({ name: 'Login' })

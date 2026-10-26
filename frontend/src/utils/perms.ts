@@ -21,6 +21,12 @@ export async function ensurePerms(): Promise<void> {
   }
 }
 
+/** 退出登录/换账号前重置（内存权限状态随会话走，不清会残留上一账号的可见性）。 */
+export function resetPerms() {
+  perms.loaded = false
+  perms.set = new Set<string>()
+}
+
 /** 是否具备某权限；perm 未定义 = 人人可见。 */
 export function can(perm?: string): boolean {
   if (!perm) return true
