@@ -190,6 +190,7 @@ function onGroupChange(val: any) {
 }
 
 // ===== 弹窗 =====
+const activeTab = ref('base')   // 表单 Tab 分页（基本信息/任职信息/联系方式/合同薪酬/社保保险）
 const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
@@ -340,9 +341,12 @@ function flattenDept(list: any[]): any[] {
   return out
 }
 
-function openAdd() { isEdit.value = false; form.value = emptyForm(); showDlg.value = true }
+function openAdd() {
+  activeTab.value = 'base'
+  isEdit.value = false; form.value = emptyForm(); showDlg.value = true }
 
 async function openEdit(row: any) {
+  activeTab.value = 'base'
   isEdit.value = true
   const res: any = await api.get(`/system/person/${row.user_id}`)
   if (res.code !== 200) { message.error('加载详情失败'); return }
@@ -421,7 +425,14 @@ const rules: any = {
 async function save() {
   try {
     await formRef.value?.validate()
-  } catch { return }
+  } catch (e: any) {
+    // 校验失败：自动切到出错字段所在的 Tab
+    const first = e?.errorFields?.[0]?.name
+    const key = Array.isArray(first) ? first.join('.') : String(first || '')
+    if (key.startsWith('ext.hireDate') || key.startsWith('ext.empStatus') || key.startsWith('ext.groupId')) activeTab.value = 'duty'
+    else activeTab.value = 'base'
+    return
+  }
   saving.value = true
   try {
     const payload: any = { ...form.value }
@@ -603,7 +614,8 @@ function resetFilter() {
     >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <!-- 基本信息 -->
-        <div class="fsec">基本信息</div>
+        <a-tabs v-model:activeKey="activeTab" class="person-tabs">
+        <a-tab-pane key="base" tab="基本信息">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="工号(6位)" name="jobNo"><a-input v-model:value="form.jobNo" :disabled="isEdit" :maxlength="6" placeholder="登录用户名" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="姓名" name="name"><a-input v-model:value="form.name" placeholder="请输入" /></a-form-item></a-col>
@@ -621,9 +633,9 @@ function resetFilter() {
           <a-col :span="16"><a-form-item label="详细地址"><a-input v-model:value="form.ext.address" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="24"><a-form-item label="备注"><a-input v-model:value="form.remark" placeholder="请输入" /></a-form-item></a-col>
         </a-row>
+        </a-tab-pane>
 
-        <!-- 任职信息 -->
-        <div class="fsec">任职信息</div>
+        <a-tab-pane key="duty" tab="任职信息">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="入职日期" :name="['ext','hireDate']"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="所属部门"><a-tree-select v-model:value="form.deptId" :tree-data="deptOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" tree-default-expand-all allow-clear placeholder="请选择部门" /></a-form-item></a-col>
@@ -651,16 +663,16 @@ function resetFilter() {
             </a-form-item>
           </a-col>
         </a-row>
+        </a-tab-pane>
 
-        <!-- 联系方式 -->
-        <div class="fsec">联系方式</div>
+        <a-tab-pane key="contact" tab="联系方式">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="手机号(登录)"><a-input v-model:value="form.phoneNumber" :maxlength="11" placeholder="11位，第二登录标识" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="邮箱"><a-input v-model:value="form.email" placeholder="请输入" /></a-form-item></a-col>
         </a-row>
+        </a-tab-pane>
 
-        <!-- 合同薪酬 -->
-        <div class="fsec">合同薪酬</div>
+        <a-tab-pane key="contract" tab="合同薪酬">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="银行卡号"><a-input v-model:value="form.ext.bankCardNo" placeholder="敏感，脱敏" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="签约主体"><a-input v-model:value="form.ext.signEntity" placeholder="合同签约公司" /></a-form-item></a-col>
@@ -668,9 +680,9 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="合同签订日期"><a-input v-model:value="form.ext.contractStart" type="date" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="合同截止日期"><a-input v-model:value="form.ext.contractEnd" type="date" /></a-form-item></a-col>
         </a-row>
+        </a-tab-pane>
 
-        <!-- 社保保险登记 -->
-        <div class="fsec">社保保险登记</div>
+        <a-tab-pane key="social" tab="社保保险登记">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="是否缴纳社保"><a-select v-model:value="form.ext.hasSocial"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="社保缴纳金额(元/月)"><a-input-number v-model:value="form.ext.socialAmount" :min="0" style="width:100%" /></a-form-item></a-col>
@@ -680,6 +692,8 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="社保核对日期"><a-input v-model:value="form.ext.socialCheckDate" type="date" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="是否住宿(只登记)"><a-select v-model:value="form.ext.isDorm"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
         </a-row>
+        </a-tab-pane>
+        </a-tabs>
       </a-form>
     </a-modal>
 
@@ -740,6 +754,10 @@ function resetFilter() {
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
+.person-tabs :deep(.ant-tabs-nav) { margin-bottom: 0; }
+.person-tabs :deep(.ant-tabs-content-holder) { padding-top: 16px; }
+.person-tabs :deep(.ant-tabs-tab) { font-size: 14px; padding: 10px 2px; }
+
 .pick-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 32px; padding: 3px 8px; border: 1px solid #E5E8EF; border-radius: 6px; background: #fff; }
 .pick-box .pick-empty { color: #C9CDD4; background: #F7F8FA; border-style: dashed; }
 .pick-box .pick-btn { color: #1E5EFF; white-space: nowrap; cursor: pointer; }
@@ -749,8 +767,6 @@ function resetFilter() {
 
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
-.fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
-.fsec:first-child { margin-top: 0; }
 </style>
 
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
