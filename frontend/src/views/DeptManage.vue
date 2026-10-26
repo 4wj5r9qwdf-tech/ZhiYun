@@ -277,6 +277,15 @@ const parentTree = computed(() => {
   return walk(tree.value)
 })
 
+// 管辖范围树选择：只排除自己（保留自己的下级，如生产部可管 1车间生产科）
+const manageTree = computed(() => {
+  const selfId = isEdit.value ? form.value.deptId : null
+  const walk = (nodes: any[]): any[] => nodes
+    .filter(n => String(n.deptId) !== String(selfId))
+    .map(n => ({ ...n, children: walk(n.children || []) }))
+  return walk(tree.value)
+})
+
 const rules: any = {
   deptName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
 }
@@ -379,6 +388,24 @@ async function loadManages(deptId: string) {
   } catch { managedIds.value = [] }
 }
 
+// 新增下级后：把新部门自动纳入直接上级的管辖范围（父的管辖列表追加新部门id）
+async function autoManageNewChild(parentId: string, childName: string) {
+  try {
+    await loadTree()   // 刷新，拿到新部门的 deptId
+    const parent = findNode(tree.value, String(parentId))
+    if (!parent) return
+    const child = (parent.children || []).find((n: any) => n.deptName === childName)
+    if (!child) return
+    const cur: any = await api.get(`/system/dept/${parentId}/manages`)
+    const ids: string[] = cur.code === 200 ? (cur.data || []).map((x: any) => String(x)) : []
+    const cid = String(child.deptId)
+    if (!ids.includes(cid)) {
+      ids.push(cid)
+      await api.put(`/system/dept/${parentId}/manages`, ids)
+    }
+  } catch { /* 自动纳入失败不影响保存 */ }
+}
+
 async function save() {
   try {
     await formRef.value?.validate()
@@ -402,6 +429,8 @@ async function save() {
     if (res.code === 200) {
       // 编辑时同步保存管辖范围（新增部门先保存再编辑设置管辖）
       if (isEdit.value) await api.put(`/system/dept/${payload.deptId}/manages`, managedIds.value)
+      // 新增下级时，自动把新部门纳入直接上级的管辖范围
+      if (!isEdit.value && payload.parentId) await autoManageNewChild(payload.parentId, payload.deptName)
       message.success('保存成功'); showDlg.value = false; loadTree(); loadManageCounts()
     }
     else message.error(res.msg || '保存失败')
@@ -639,7 +668,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
             <a-form-item label="管辖范围（本部门管理哪些部门，可不填；如生产部管三个车间）">
               <a-tree-select
                 v-model:value="managedIds"
-                :tree-data="parentTree"
+                :tree-data="manageTree"
                 :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
                 multiple
                 allow-clear
