@@ -57,6 +57,7 @@ public class PersonController {
         if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
+        applyDataScope(where, args);
         Long total = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_user u LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " + where, Long.class, args.toArray());
         String order = safeOrderBy(orderBy);
@@ -88,6 +89,7 @@ public class PersonController {
         StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
+        applyDataScope(where, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
             selectSql() + where.toString() + " ORDER BY u.user_id DESC", args.toArray());
         for (Map<String, Object> r : rows) {
@@ -124,6 +126,94 @@ public class PersonController {
             "FROM sys_user u " +
             "LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " +
             "LEFT JOIN sys_dept d ON u.dept_id=d.dept_id ";
+    }
+
+    /**
+     * 数据范围过滤（角色 dataScope，与 sys_role/sys_role_dept 联动）：
+     * admin 豁免；任一启用角色=全部数据(1)则放行；多角色取并集——
+     * 自定义部门(2)=所选部门+其下级；本部门及以下(3)=本人部门+下级；本部门(4)=仅本人部门；仅本人(5)=本人。
+     * 无启用角色 → 1=0（看不到任何人员）。
+     */
+    private void applyDataScope(StringBuilder where, java.util.List<Object> args) {
+        Long userId = LoginHelper.getUserId();
+        if (userId == null || LoginHelper.isSuperAdmin(userId)) {
+            return;
+        }
+        java.util.List<Long> roleIds = jdbcTemplate.queryForList(
+            "SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, userId);
+        if (roleIds.isEmpty()) {
+            where.append(" AND 1=0");
+            return;
+        }
+        StringBuilder ph = new StringBuilder();
+        for (int i = 0; i < roleIds.size(); i++) { if (i > 0) ph.append(','); ph.append('?'); }
+        java.util.List<String> scopes = jdbcTemplate.queryForList(
+            "SELECT DISTINCT data_scope FROM sys_role WHERE status='0' AND role_id IN (" + ph + ")",
+            String.class, roleIds.toArray());
+        if (scopes.contains("1")) {
+            return;
+        }
+        java.util.Set<Long> deptIds = new java.util.LinkedHashSet<>();
+        boolean selfOnly = false;
+        for (Long roleId : roleIds) {
+            String scope = jdbcTemplate.query(
+                "SELECT data_scope FROM sys_role WHERE role_id=?", rs -> rs.next() ? rs.getString(1) : null, roleId);
+            if (scope == null) continue;
+            switch (scope) {
+                case "2" -> jdbcTemplate.queryForList(
+                    "SELECT dept_id FROM sys_role_dept WHERE role_id=?", Long.class, roleId).forEach(deptIds::add);
+                case "3" -> {
+                    Long myDept = jdbcTemplate.queryForObject(
+                        "SELECT dept_id FROM sys_user WHERE user_id=?", Long.class, userId);
+                    if (myDept != null) deptIds.add(myDept);
+                }
+                case "4" -> {
+                    Long myDept = jdbcTemplate.queryForObject(
+                        "SELECT dept_id FROM sys_user WHERE user_id=?", Long.class, userId);
+                    if (myDept != null) deptIds.add(myDept);
+                }
+                case "5" -> selfOnly = true;
+                default -> { }
+            }
+        }
+        // 部门档展开"所选 + 其全部下级"
+        java.util.Set<Long> expanded = expandDeptWithChildren(deptIds);
+        StringBuilder cond = new StringBuilder();
+        if (!expanded.isEmpty()) {
+            cond.append("u.dept_id IN (");
+            for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
+            cond.append(')');
+            args.addAll(expanded);
+        }
+        if (selfOnly) {
+            if (cond.length() > 0) cond.append(" OR ");
+            cond.append("u.user_id=?");
+            args.add(userId);
+        }
+        if (cond.length() == 0) {
+            where.append(" AND 1=0");
+        } else {
+            where.append(" AND (").append(cond).append(')');
+        }
+    }
+
+    /** 部门集合展开：所选部门 + 祖先链包含任一所选部门的所有下级。 */
+    private java.util.Set<Long> expandDeptWithChildren(java.util.Set<Long> roots) {
+        java.util.Set<Long> out = new java.util.LinkedHashSet<>(roots);
+        if (roots.isEmpty()) {
+            return out;
+        }
+        List<Map<String, Object>> all = jdbcTemplate.queryForList("SELECT dept_id, ancestors FROM sys_dept");
+        for (Map<String, Object> d : all) {
+            String anc = String.valueOf(d.get("ancestors") == null ? "" : d.get("ancestors"));
+            for (Long r : roots) {
+                if (anc.contains(String.valueOf(r))) {
+                    out.add(((Number) d.get("dept_id")).longValue());
+                    break;
+                }
+            }
+        }
+        return out;
     }
 
     /** 组装筛选条件（列表/导出共用）。 */

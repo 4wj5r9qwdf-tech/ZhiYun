@@ -137,6 +137,7 @@ const saving = ref(false)
 const formRef = ref()
 
 const emptyForm = () => ({
+  deptIds: [] as string[],   // 数据范围=自定义部门时勾选
   roleId: '' as string,
   roleName: '',
   roleKey: '',
@@ -167,12 +168,14 @@ async function openEdit(row: any) {
   } catch { d = null }
   if (!d) d = row
   form.value = {
+    deptIds: [],
     roleId: String(d.roleId),
     roleName: d.roleName || '', roleKey: d.roleKey || '',
     dataScope: String(d.dataScope || '1'), roleSort: Number(d.roleSort ?? 0),
     status: String(d.status || '0'), remark: d.remark || '',
   }
   showDlg.value = true
+  if (form.value.dataScope === '2') loadRoleDepts(form.value.roleId)
 }
 
 async function save() {
@@ -183,6 +186,7 @@ async function save() {
       roleId: isEdit.value ? form.value.roleId : undefined,
       roleName: form.value.roleName, roleKey: form.value.roleKey,
       dataScope: form.value.dataScope, roleSort: form.value.roleSort ?? 0,
+      deptIds: form.value.dataScope === '2' ? form.value.deptIds : undefined,
       status: form.value.status, remark: form.value.remark,
     }
     const res: any = isEdit.value ? await api.put('/system/role', payload) : await api.post('/system/role', payload)
@@ -240,6 +244,66 @@ async function savePerm() {
     else message.error(res.msg || '分配失败')
   } catch (e: any) { message.error(e?.response?.data?.msg || '分配失败') }
   finally { permSaving.value = false }
+}
+
+
+// ===== 自定义部门（数据范围=2）勾选弹窗 =====
+const deptDlg = ref({ open: false, saving: false })
+const deptTreeData = ref<any[]>([])      // 全部部门树（排除小组）
+const deptChecked = ref<string[]>([])
+
+function buildDeptTree(list: any[]): any[] {
+  const map: Record<string, any> = {}
+  for (const n of list) if (n.deptCategory !== '小组') map[String(n.deptId)] = { ...n, children: [] }
+  const roots: any[] = []
+  for (const n of list) {
+    if (n.deptCategory === '小组') continue
+    const node = map[String(n.deptId)]
+    const pid = n.parentId
+    if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+async function openDeptPick() {
+  deptChecked.value = [...form.value.deptIds]
+  if (!deptTreeData.value.length) {
+    try {
+      const res: any = await api.get('/system/dept/list')
+      if (res.code === 200) deptTreeData.value = buildDeptTree(res.data || [])
+    } catch (e: any) { message.error(e?.response?.data?.msg || '加载部门失败') }
+  }
+  // 数据就绪后再开弹窗：antd tree 的 default-expand-all 只在挂载时生效，异步晚到不会补展开
+  deptDlg.value.open = true
+}
+
+// 编辑回显：角色已选部门
+async function loadRoleDepts(roleId: string) {
+  try {
+    const res: any = await api.get(`/system/role/deptTree/${roleId}`)
+    if (res.code === 200) deptChecked.value = (res.data.checkedKeys || []).map(String)
+  } catch { /* ignore */ }
+}
+
+function confirmDeptPick() {
+  form.value.deptIds = [...deptChecked.value]
+  deptDlg.value.open = false
+}
+
+
+// antd tree 的 check 回调可能是数组或 {checkedKeys,...} 对象，统一取数组
+function extractKeys(v: any): string[] {
+  if (Array.isArray(v)) return v.map(String)
+  if (v && Array.isArray(v.checkedKeys)) return v.checkedKeys.map(String)
+  if (v && Array.isArray(v.checked)) return v.checked.map(String)
+  return []
+}
+function onDeptCheck(keys: any) { deptChecked.value = extractKeys(keys) }
+function onPermCheck(keys: any, e: any) {
+  permChecked.value = extractKeys(keys)
+  const half = e?.halfCheckedKeys || e?.halfChecked
+  permHalf.value = Array.isArray(half) ? half.map(String) : []
 }
 
 onMounted(() => { loadList(); loadColState() })
@@ -339,13 +403,18 @@ onMounted(() => { loadList(); loadColState() })
           <a-input v-model:value="form.roleKey" placeholder="英文标识，如 production / qc" :maxlength="100" />
         </a-form-item>
         <a-form-item label="数据范围">
-          <a-select v-model:value="form.dataScope">
+          <a-select v-model:value="form.dataScope" @change="form.dataScope === '2' ? openDeptPick() : undefined">
             <a-select-option value="1">全部数据</a-select-option>
             <a-select-option value="2">自定义部门</a-select-option>
             <a-select-option value="3">本部门及以下</a-select-option>
             <a-select-option value="4">本部门</a-select-option>
             <a-select-option value="5">仅本人</a-select-option>
           </a-select>
+          <div v-if="form.dataScope === '2'" class="scope-depts">
+            <a class="pick-btn" @click="openDeptPick">选择部门</a>
+            <span v-if="form.deptIds.length" class="scope-tip">已选 {{ form.deptIds.length }} 个部门（含其下级）</span>
+            <span v-else class="scope-tip">未选择</span>
+          </div>
         </a-form-item>
         <a-form-item label="排序">
           <a-input-number v-model:value="form.roleSort" :min="0" style="width:100%" placeholder="数字越小越靠前" />
@@ -357,6 +426,31 @@ onMounted(() => { loadList(); loadColState() })
           <a-textarea v-model:value="form.remark" :rows="2" :maxlength="200" placeholder="选填" />
         </a-form-item>
       </a-form>
+    </a-modal>
+
+    <!-- 自定义部门勾选弹窗 -->
+    <a-modal
+      v-model:open="deptDlg.open"
+      :mask-closable="false"
+      :keyboard="false"
+      title="选择数据范围部门（勾选即含其全部下级）"
+      width="460px"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmDeptPick"
+    >
+      <div class="perm-tree">
+        <a-tree
+          v-if="deptTreeData.length"
+          checkable
+          default-expand-all
+          :tree-data="deptTreeData"
+          :field-names="{ key: 'deptId', title: 'deptName', children: 'children' }"
+          :checked-keys="deptChecked"
+          @check="onDeptCheck"
+          :selectable="false"
+        />
+      </div>
     </a-modal>
 
     <!-- 分配权限（菜单树打钩，含按钮级权限码） -->
@@ -378,7 +472,8 @@ onMounted(() => { loadList(); loadColState() })
           default-expand-all
           :tree-data="permTree"
           :field-names="{ key: 'id', title: 'label', children: 'children' }"
-          v-model:-checked-keys="permChecked"
+          :checked-keys="permChecked"
+          @check="onPermCheck"
           :half-checked-keys="permHalf"
           :selectable="false"
         />
@@ -419,6 +514,10 @@ onMounted(() => { loadList(); loadColState() })
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
+
+.scope-depts { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.scope-depts .pick-btn { color: #1E5EFF; cursor: pointer; }
+.scope-tip { font-size: 12px; color: #86909C; }
 
 .perm-tip { font-size: 12px; color: #86909C; margin-bottom: 10px; line-height: 1.6; }
 .perm-tree { max-height: 420px; overflow-y: auto; border: 1px solid #F0F2F5; border-radius: 6px; padding: 8px 4px; }
