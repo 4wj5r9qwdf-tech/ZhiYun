@@ -15,6 +15,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统' } },
         { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案', tab: true } },
+        { path: 'role', name: 'RoleManage', component: () => import('../views/RoleManage.vue'), meta: { title: '角色管理', tab: true } },
       ],
     },
     // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
@@ -46,7 +47,7 @@ const router = createRouter({
 })
 
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
 router.beforeEach((to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {

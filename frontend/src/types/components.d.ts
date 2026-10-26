@@ -17,6 +17,7 @@ declare module 'vue' {
     ABadge: typeof import('ant-design-vue/lib')['Badge']
     AButton: typeof import('ant-design-vue/lib')['Button']
     ACard: typeof import('ant-design-vue/lib')['Card']
+    ACascader: typeof import('ant-design-vue/lib')['Cascader']
     ACheckbox: typeof import('ant-design-vue/lib')['Checkbox']
     ACol: typeof import('ant-design-vue/lib')['Col']
     AConfigProvider: typeof import('ant-design-vue/lib')['ConfigProvider']

@@ -30,6 +30,7 @@ export interface FunctionDef { key: string; title: string; desc: string; icon: s
 export const MODULE_FUNCTIONS: FunctionDef[] = [
   // 系统模块
   { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: 'BankOutlined', route: 'Company', module: 'system' },
+  { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' },
   // 人员模块
   { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' },
   { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' },
