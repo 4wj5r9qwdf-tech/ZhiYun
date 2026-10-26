@@ -370,8 +370,11 @@ const rules: any = {
   jobNo: [{ required: true, message: '请输入工号', trigger: 'blur' },
           { len: 6, message: '工号必须6位', trigger: 'blur' }],
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
-  'ext.hireDate': [{ required: true, message: '请选择入职日期', trigger: 'change' }],
-  'ext.empStatus': [{ required: true, message: '请选择在职状态', trigger: 'change' }],
+  // 嵌套字段：rules 需嵌套对象、form-item name 需数组（antd-vue 不按点拆 name 字符串）
+  ext: {
+    hireDate: [{ required: true, message: '请选择入职日期', trigger: 'change' }],
+    empStatus: [{ required: true, message: '请选择在职状态', trigger: 'change' }],
+  },
 }
 
 async function save() {
@@ -577,11 +580,11 @@ function resetFilter() {
         <!-- 任职信息 -->
         <div class="fsec">任职信息</div>
         <a-row :gutter="12">
-          <a-col :span="8"><a-form-item label="入职日期" name="ext.hireDate"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="入职日期" :name="['ext','hireDate']"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="所属车间(部门)"><a-select v-model:value="form.deptId" allow-clear placeholder="请选择"><a-select-option v-for="d in workshops" :key="Number(d.deptId)" :value="Number(d.deptId)">{{ d.deptName }}</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="所属小组"><a-cascader v-model:value="form.ext.groupPath" :options="groupOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" change-on-select allow-clear placeholder="车间 / 区域 / 小组" @change="onGroupChange" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工性质"><a-select v-model:value="form.ext.empType"><a-select-option value="正式">正式</a-select-option><a-select-option value="临时">临时</a-select-option><a-select-option value="劳务">劳务</a-select-option></a-select></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="在职状态" name="ext.empStatus"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="在职状态" :name="['ext','empStatus']"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工卡"><a-input v-model:value="form.ext.cardNo" placeholder="工牌号" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="离职日期"><a-input v-model:value="form.ext.leaveDate" type="date" /></a-form-item></a-col>
           <a-col :span="12">
