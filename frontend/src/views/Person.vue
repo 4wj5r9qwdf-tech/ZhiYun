@@ -190,7 +190,7 @@ function onGroupChange(val: any) {
 }
 
 // ===== 弹窗 =====
-const activeTab = ref('base')   // 表单 Tab 分页（基本信息/任职信息/联系方式/合同薪酬/社保保险）
+const activeTab = ref('base')   // 表单 Tab 分页（基本信息[含手机号/邮箱]/任职信息/合同薪酬/社保保险）
 const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
@@ -605,8 +605,8 @@ function resetFilter() {
     <a-modal
       v-model:open="showDlg"
       :title="isEdit ? '编辑人员' : '新增人员'"
-      width="960px"
-      :body-style="{ maxHeight: '68vh', overflowY: 'auto' }"
+      width="1100px"
+      :body-style="{ maxHeight: '68vh', overflowY: 'auto', overflowX: 'hidden' }"
       :confirm-loading="saving"
       ok-text="保存"
       cancel-text="取消"
@@ -631,6 +631,8 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="籍贯"><a-input v-model:value="form.ext.nativePlace" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="证件到期日"><a-input v-model:value="form.ext.certExpireDate" type="date" /></a-form-item></a-col>
           <a-col :span="16"><a-form-item label="详细地址"><a-input v-model:value="form.ext.address" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="手机号(登录)"><a-input v-model:value="form.phoneNumber" :maxlength="11" placeholder="11位，第二登录标识" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="邮箱"><a-input v-model:value="form.email" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="24"><a-form-item label="备注"><a-input v-model:value="form.remark" placeholder="请输入" /></a-form-item></a-col>
         </a-row>
         </a-tab-pane>
@@ -662,13 +664,6 @@ function resetFilter() {
               </div>
             </a-form-item>
           </a-col>
-        </a-row>
-        </a-tab-pane>
-
-        <a-tab-pane key="contact" tab="联系方式">
-        <a-row :gutter="12">
-          <a-col :span="8"><a-form-item label="手机号(登录)"><a-input v-model:value="form.phoneNumber" :maxlength="11" placeholder="11位，第二登录标识" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="邮箱"><a-input v-model:value="form.email" placeholder="请输入" /></a-form-item></a-col>
         </a-row>
         </a-tab-pane>
 
