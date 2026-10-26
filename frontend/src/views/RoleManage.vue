@@ -236,9 +236,11 @@ async function openPerm(row: any) {
 async function savePerm() {
   permSaving.value = true
   try {
+    // 勾了按钮必须隐含所属页面（半选父节点一起提交），否则"给了查询却进不了页面/列表403"
+    const ids = new Set<string>([...permChecked.value, ...permHalf.value])
     const res: any = await api.put('/system/role/permission', {
       roleId: permDlg.value.roleId,
-      menuIds: permChecked.value,
+      menuIds: [...ids],
     })
     if (res.code === 200) { message.success('权限已分配'); permDlg.value.open = false }
     else message.error(res.msg || '分配失败')
