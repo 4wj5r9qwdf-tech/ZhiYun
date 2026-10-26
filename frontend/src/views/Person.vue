@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined } from '@ant-design/icons-vue'
+import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -27,8 +27,52 @@ const pageSize = ref(20)
 
 // 筛选
 const keyword = ref('')
+// ===== 左侧组织树（点节点筛该节点及下级人员，双线：部门/小组归属都算） =====
+const orgTree = ref<any[]>([])
+const selectedDeptId = ref<string | null>(null)
+const treeCollapsed = ref(false)
+const orgCounts = ref<Record<string, number>>({})
+
+function buildOrgTree(list: any[]): any[] {
+  const map: Record<string, any> = {}
+  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  const roots: any[] = []
+  for (const n of list) {
+    const node = map[String(n.deptId)]
+    const pid = n.parentId
+    if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+
+async function loadOrgCounts() {
+  try {
+    const res: any = await api.get('/system/person/org-counts')
+    if (res.code === 200) orgCounts.value = res.data || {}
+  } catch { /* ignore */ }
+}
+
+function onTreeSelect(keys: any[]) {
+  const id = keys?.length ? String(keys[0]) : null
+  selectedDeptId.value = id
+  deptId.value = id ?? undefined
+  pageNum.value = 1
+  loadList()
+}
+
+function clearTreeSelect() {
+  selectedDeptId.value = null
+  deptId.value = undefined
+  pageNum.value = 1
+  loadList()
+}
+
 const empStatus = ref<string | undefined>()
 const deptId = ref<string | undefined>()
+
+// 筛选栏"部门"下拉变化 → 树高亮同步
+watch(deptId, (v) => { selectedDeptId.value = v ? String(v) : null })
 const gender = ref<string | undefined>()
 const postsFilter = ref('')
 const rolesFilter = ref('')
@@ -218,7 +262,7 @@ const form = ref(emptyForm())
 onMounted(() => {
   const q = route.query.keyword
   if (typeof q === 'string' && q) keyword.value = q
-  loadList(); loadOptions()
+  loadList(); loadOptions(); loadOrgCounts()
 })
 
 // 已在人员页时，从搜索再次跳入（query 变化）也重新定位
@@ -237,7 +281,7 @@ async function loadList() {
       params: {
         pageNum: pageNum.value, pageSize: pageSize.value,
         keyword: keyword.value, empStatus: empStatus.value ?? '',
-        deptId: deptId.value ?? undefined, gender: gender.value ?? '',
+        deptId: deptId.value ?? undefined, subtree: deptId.value ? '1' : undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
         delFlag: showDeleted.value ? '1' : '0',
         includeSystem: includeSystem.value ? '1' : '0',
@@ -328,7 +372,11 @@ async function loadOptions() {
       api.get('/system/post/list', { params: { pageNum: 1, pageSize: 100 } }),
       api.get('/system/role/list', { params: { pageNum: 1, pageSize: 100 } }),
     ])
-    if (d.code === 200) { deptTree.value = d.data || []; depts.value = flattenDept(d.data || []) }
+    if (d.code === 200) {
+      deptTree.value = d.data || []
+      depts.value = flattenDept(d.data || [])
+      orgTree.value = buildOrgTree(d.data || [])
+    }
     if (p.code === 200) posts.value = p.data.rows || []
     if (r.code === 200) roles.value = r.data.rows || []
   } catch { /* ignore */ }
@@ -512,6 +560,41 @@ function resetFilter() {
     </div>
 
     <!-- 筛选 + 操作（同一行：筛选控件在左，新增/导入/导出靠右） -->
+    <div class="dept-body">
+      <!-- 左：组织树 -->
+      <div class="dept-tree-panel" :class="{ collapsed: treeCollapsed }">
+        <div class="tree-head">
+          <span class="tree-title">组织架构</span>
+          <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+        </div>
+        <div class="tree-body">
+          <a-tree
+            v-if="orgTree.length"
+            :tree-data="orgTree"
+            :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
+            block-node
+            default-expand-all
+            :selected-keys="selectedDeptId ? [selectedDeptId] : []"
+            @select="onTreeSelect"
+          >
+            <template #title="{ deptName, deptId }">
+              <span class="tree-node">
+                {{ deptName }}
+                <span v-if="orgCounts[String(deptId)]" class="tree-count">{{ orgCounts[String(deptId)] }}</span>
+              </span>
+            </template>
+          </a-tree>
+          <a-empty v-else description="暂无组织数据" />
+        </div>
+      </div>
+
+      <!-- 收起/展开手柄 -->
+      <div class="tree-toggle" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
+        <MenuUnfoldOutlined v-if="treeCollapsed" />
+        <MenuFoldOutlined v-else />
+      </div>
+
+      <div class="dept-main">
     <div class="filter-bar">
       <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
       <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
@@ -602,6 +685,8 @@ function resetFilter() {
         </template>
       </template>
     </a-table>
+    </div>
+    </div>
 
     <!-- 新增/编辑（a-modal + a-form 校验/分组） -->
     <a-modal
@@ -728,6 +813,20 @@ function resetFilter() {
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
+
+/* 左侧组织树（对齐部门管理） */
+.dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
+.dept-tree-panel.collapsed { width: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
+.tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
+.tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
+.tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
+.tree-body { flex: 1; overflow: auto; padding: 8px; }
+.tree-node { display: inline-flex; align-items: center; gap: 6px; }
+.tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
+.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: center; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
+.dept-main { flex: 1; min-width: 0; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
 .filter-spacer { flex: 1 1 auto; min-width: 8px; }
