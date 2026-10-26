@@ -444,6 +444,8 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 
     <!-- 新增/编辑小组 -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑小组' : '新增小组'"
       width="560px"

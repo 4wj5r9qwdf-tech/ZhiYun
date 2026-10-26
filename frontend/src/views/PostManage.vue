@@ -376,6 +376,8 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
 
     <!-- 新增/编辑 -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑岗位' : '新增岗位'"
       width="520px"

@@ -295,6 +295,8 @@ onMounted(loadList)
 
     <!-- 新增/编辑 -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑建筑' : '新增建筑'"
       width="640px"

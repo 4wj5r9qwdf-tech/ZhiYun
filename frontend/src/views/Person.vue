@@ -603,6 +603,8 @@ function resetFilter() {
 
     <!-- 新增/编辑（a-modal + a-form 校验/分组） -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑人员' : '新增人员'"
       width="1100px"
@@ -694,6 +696,8 @@ function resetFilter() {
 
     <!-- 岗位/角色勾选弹窗（模糊搜索 + 打钩） -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="pickDlg.open"
       :title="pickDlg.kind === 'post' ? '选择岗位' : '选择角色'"
       width="420px"

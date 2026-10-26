@@ -326,6 +326,8 @@ onMounted(() => { loadList(); loadColState() })
 
     <!-- 新增/编辑弹窗 -->
     <a-modal
+      :mask-closable="false"
+      :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑' : '新增'"
       width="520px"
