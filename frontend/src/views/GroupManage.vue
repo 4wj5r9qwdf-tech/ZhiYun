@@ -146,11 +146,18 @@ const emptyForm = () => ({
 })
 const form = ref(emptyForm())
 
-// 所属部门下拉：所有非小组部门（含任意层级，树形展示路径清晰）
+// 所属部门下拉：任意部门/小组都可当父（小组可挂小组 → 支持 二级小组，如 缝纫1组 挂 缝纫组）；
+// 编辑时排除自己及自己的子孙（防成环）
 const deptTreeOptions = computed(() => {
-  const walk = (nodes: any[]): any[] => nodes
-    .filter(n => n.deptCategory !== '小组')
-    .map(n => ({ ...n, children: walk(n.children || []) }))
+  const selfId = isEdit.value ? String(form.value.deptId) : null
+  const walk = (nodes: any[]): any[] => {
+    const out: any[] = []
+    for (const n of nodes) {
+      if (String(n.deptId) === selfId) continue   // 排除自己（含其子树）
+      out.push({ ...n, children: walk(n.children || []) })
+    }
+    return out
+  }
   return walk(tree.value)
 })
 
