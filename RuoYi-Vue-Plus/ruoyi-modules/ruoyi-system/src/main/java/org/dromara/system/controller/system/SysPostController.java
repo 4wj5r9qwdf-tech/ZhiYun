@@ -8,10 +8,12 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.constant.SystemConstants;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.excel.utils.ExcelBuilder;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.mybatis.core.page.PageQuery;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.system.domain.bo.SysDeptBo;
@@ -49,7 +51,12 @@ public class SysPostController extends BaseController {
      */
     @SaCheckPermission("system:post:list")
     @GetMapping("/list")
-    public R<PageResult<SysPostVo>> list(SysPostBo post, PageQuery pageQuery) {
+    public R<PageResult<SysPostVo>> list(SysPostBo post, PageQuery pageQuery,
+                                        @RequestParam(required = false) String keyword) {
+        // keyword：岗位名称 OR 编码 模糊搜索（前端搜索框直传，避免只搜单字段搜不到）
+        if (StringUtils.isNotBlank(keyword)) {
+            post.getParams().put("keyword", keyword.trim());
+        }
         return R.ok(postService.selectPagePostList(post, pageQuery));
     }
 

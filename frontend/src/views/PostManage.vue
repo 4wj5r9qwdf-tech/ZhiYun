@@ -41,20 +41,14 @@ async function loadRootDept() {
   } catch { /* ignore */ }
 }
 
-// 搜索过滤：当前页数据按名称/编码模糊匹配
-const filteredRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return rows.value
-  return rows.value.filter(r =>
-    (r.postName || '').toLowerCase().includes(kw) || (r.postCode || '').toLowerCase().includes(kw),
-  )
-})
+// 搜索走后端（keyword=名称 OR 编码模糊，全库匹配而非仅当前页）
+const filteredRows = computed(() => rows.value)
 
 async function loadList() {
   loading.value = true
   try {
     const res: any = await api.get('/system/post/list', {
-      params: { pageNum: pageNum.value, pageSize: pageSize.value },
+      params: { pageNum: pageNum.value, pageSize: pageSize.value, keyword: keyword.value.trim() },
     })
     if (res.code === 200) {
       rows.value = res.data.rows || []
@@ -73,7 +67,7 @@ function onPageChange(p: number, ps: number) {
 
 function showTotalText(t: number) { return `共 ${t} 条` }
 
-function onSearch() { selectedRowKeys.value = []; loadList() }
+function onSearch() { selectedRowKeys.value = []; pageNum.value = 1; loadList() }
 function resetFilters() { keyword.value = ''; selectedRowKeys.value = []; loadList() }
 
 // ===== 列设置（colState：显隐+顺序+宽度，localStorage 按用户） =====
