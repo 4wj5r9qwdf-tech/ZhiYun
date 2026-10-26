@@ -8,7 +8,7 @@
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
  * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
@@ -202,8 +202,8 @@ const emptyForm = () => ({
   jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', deptId: undefined as number | undefined,
   status: '0', remark: '',
   password: '',
-  postIds: [] as number[],
-  roleIds: [] as number[],
+  postIds: [] as string[],
+  roleIds: [] as string[],
   ext: {
     maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
@@ -353,7 +353,7 @@ async function openEdit(row: any) {
     userId: d.user_id, jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
     email: d.email || '', phoneNumber: d.phone_number || '', deptId: d.dept_id ? Number(d.dept_id) : undefined,
     status: d.status || '0', remark: d.remark || '', password: '',
-    postIds: (d.postIds || []).map(Number), roleIds: (d.roleIds || []).map(Number),
+    postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
     ext: {
       maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
       nation: d.nation || '', education: d.education || '', birthDate: d.birth_date || '',
@@ -372,6 +372,43 @@ async function openEdit(row: any) {
 }
 
 // a-form 校验规则
+// ===== 岗位/角色 勾选弹窗（替代多选下拉：支持模糊搜索；id 全 String 防 bigint 精度丢失） =====
+const pickDlg = reactive({ open: false, kind: 'post' as 'post' | 'role', kw: '', tmp: [] as string[] })
+const pickList = computed(() => (pickDlg.kind === 'post' ? posts.value : roles.value) as any[])
+const pickFiltered = computed(() => {
+  const kw = pickDlg.kw.trim()
+  if (!kw) return pickList.value
+  return pickList.value.filter((o: any) => {
+    const name = String(pickDlg.kind === 'post' ? o.postName : o.roleName)
+    const code = String(pickDlg.kind === 'post' ? (o.postCode || '') : (o.roleKey || ''))
+    return name.includes(kw) || code.toLowerCase().includes(kw.toLowerCase())
+  })
+})
+const pickIdOf = (o: any) => String(pickDlg.kind === 'post' ? o.postId : o.roleId)
+const pickNameOf = (o: any) => String(pickDlg.kind === 'post' ? o.postName : o.roleName)
+function openPick(kind: 'post' | 'role') {
+  pickDlg.kind = kind
+  pickDlg.kw = ''
+  pickDlg.tmp = [...(kind === 'post' ? form.value.postIds : form.value.roleIds)]
+  pickDlg.open = true
+}
+function togglePick(id: string) {
+  const i = pickDlg.tmp.indexOf(id)
+  if (i >= 0) pickDlg.tmp.splice(i, 1)
+  else pickDlg.tmp.push(id)
+}
+function confirmPick() {
+  if (pickDlg.kind === 'post') form.value.postIds = [...pickDlg.tmp]
+  else form.value.roleIds = [...pickDlg.tmp]
+  pickDlg.open = false
+}
+function postNameById(id: string) { const p = posts.value.find((x: any) => String(x.postId) === id); return p ? p.postName : id }
+function roleNameById(id: string) { const r = roles.value.find((x: any) => String(x.roleId) === id); return r ? r.roleName : id }
+function removePick(kind: 'post' | 'role', id: string) {
+  if (kind === 'post') form.value.postIds = form.value.postIds.filter(x => x !== id)
+  else form.value.roleIds = form.value.roleIds.filter(x => x !== id)
+}
+
 const rules: any = {
   jobNo: [{ required: true, message: '请输入工号', trigger: 'blur' },
           { len: 6, message: '工号必须6位', trigger: 'blur' }],
@@ -560,6 +597,7 @@ function resetFilter() {
       v-model:open="showDlg"
       :title="isEdit ? '编辑人员' : '新增人员'"
       width="960px"
+      :body-style="{ maxHeight: '68vh', overflowY: 'auto' }"
       :confirm-loading="saving"
       ok-text="保存"
       cancel-text="取消"
@@ -598,16 +636,20 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="离职日期"><a-input v-model:value="form.ext.leaveDate" type="date" /></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="岗位（可多选）">
-              <a-select v-model:value="form.postIds" mode="multiple" placeholder="选择岗位">
-                <a-select-option v-for="p in posts" :key="Number(p.postId)" :value="Number(p.postId)">{{ p.postName }}</a-select-option>
-              </a-select>
+              <div class="pick-box">
+                <a-tag v-for="pid in form.postIds" :key="pid" closable @close="removePick('post', pid)">{{ postNameById(pid) }}</a-tag>
+                <a-tag v-if="!form.postIds.length" class="pick-empty">未选择</a-tag>
+                <a class="pick-btn" @click="openPick('post')">选择岗位</a>
+              </div>
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="角色（可多选）">
-              <a-select v-model:value="form.roleIds" mode="multiple" placeholder="选择角色">
-                <a-select-option v-for="r in roles" :key="Number(r.roleId)" :value="Number(r.roleId)">{{ r.roleName }}</a-select-option>
-              </a-select>
+              <div class="pick-box">
+                <a-tag v-for="rid in form.roleIds" :key="rid" closable @close="removePick('role', rid)">{{ roleNameById(rid) }}</a-tag>
+                <a-tag v-if="!form.roleIds.length" class="pick-empty">未选择</a-tag>
+                <a class="pick-btn" @click="openPick('role')">选择角色</a>
+              </div>
             </a-form-item>
           </a-col>
         </a-row>
@@ -641,6 +683,28 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="是否住宿(只登记)"><a-select v-model:value="form.ext.isDorm"><a-select-option value="0">否</a-select-option><a-select-option value="1">是</a-select-option></a-select></a-form-item></a-col>
         </a-row>
       </a-form>
+    </a-modal>
+
+    <!-- 岗位/角色勾选弹窗（模糊搜索 + 打钩） -->
+    <a-modal
+      v-model:open="pickDlg.open"
+      :title="pickDlg.kind === 'post' ? '选择岗位' : '选择角色'"
+      width="420px"
+      ok-text="确定"
+      cancel-text="取消"
+      @ok="confirmPick"
+    >
+      <a-input v-model:value="pickDlg.kw" placeholder="搜索名称/编码" allow-clear style="margin-bottom: 8px" />
+      <div class="pick-list">
+        <a-checkbox
+          v-for="o in pickFiltered"
+          :key="pickIdOf(o)"
+          :checked="pickDlg.tmp.includes(pickIdOf(o))"
+          class="pick-item"
+          @change="togglePick(pickIdOf(o))"
+        >{{ pickNameOf(o) }}</a-checkbox>
+        <div v-if="!pickFiltered.length" class="pick-empty-tip">无匹配项</div>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -678,6 +742,13 @@ function resetFilter() {
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
+.pick-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 32px; padding: 3px 8px; border: 1px solid #E5E8EF; border-radius: 6px; background: #fff; }
+.pick-box .pick-empty { color: #C9CDD4; background: #F7F8FA; border-style: dashed; }
+.pick-box .pick-btn { color: #1E5EFF; white-space: nowrap; cursor: pointer; }
+.pick-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
+.pick-item { margin-right: 0; }
+.pick-empty-tip { color: #86909C; text-align: center; padding: 12px 0; }
+
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .fsec { font-size: 14px; font-weight: 600; color: #1D2129; margin: 16px 0 12px; padding-left: 8px; border-left: 3px solid #1E5EFF; }
