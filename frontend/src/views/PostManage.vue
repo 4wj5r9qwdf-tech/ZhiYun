@@ -1,16 +1,21 @@
 <script setup lang="ts">
 /**
- * 岗位管理（系统模块）—— ant-design-vue：
- * - a-table：分页/多选批量删除/操作列
+ * 岗位管理（人员模块）—— 对齐列表页标准 B.5.1.1（基准 Person.vue）：
+ * - 标题行：← 返回（PersonIndex）+ 标题，无操作按钮
+ * - 筛选栏：搜索框（回车查询）+ 查询(primary)/重置 + filter-spacer + 靠右【删除选中】【新增岗位】
+ * - 表格工具行：共 N 条 + ⚙列设置（colState 显隐+顺序+列宽，localStorage 按用户）
+ * - a-table：table-layout fixed + 列宽拖拽（原生 th + customHeaderCell）+ scroll y
  * - a-form + a-modal：新增/编辑（编码、名称、排序、状态、备注）
- * - a-switch：状态 0 启用 / 1 停用
  * - 后端：RuoYi 自带 /system/post 接口（list/{id}/POST/PUT/DELETE/{postIds}）
  */
 import { ref, onMounted, computed } from 'vue'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { useRouter } from 'vue-router'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
+
+const router = useRouter()
 
 // ===== 列表 =====
 const rows = ref<any[]>([])
@@ -35,17 +40,7 @@ async function loadRootDept() {
   } catch { /* ignore */ }
 }
 
-// ===== 表格列 =====
-const columns = [
-  { title: '岗位编码', dataIndex: 'postCode', key: 'postCode', width: 120 },
-  { title: '岗位名称', dataIndex: 'postName', key: 'postName', width: 140 },
-  { title: '排序', dataIndex: 'postSort', key: 'postSort', width: 80 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
-  { title: '操作', key: 'ops', width: 120, fixed: 'right' as const },
-]
-
-// 搜索过滤：当前页数据按名称/编码模糊匹配（页数少时简单直接；需要服务端过滤可换 params）
+// 搜索过滤：当前页数据按名称/编码模糊匹配
 const filteredRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return rows.value
@@ -77,9 +72,86 @@ function onPageChange(p: number, ps: number) {
 
 function showTotalText(t: number) { return `共 ${t} 条` }
 
-function refresh() {
-  selectedRowKeys.value = []
-  loadList()
+function onSearch() { selectedRowKeys.value = []; loadList() }
+function resetFilters() { keyword.value = ''; selectedRowKeys.value = []; loadList() }
+
+// ===== 列设置（colState：显隐+顺序+宽度，localStorage 按用户） =====
+const ALL_COLUMNS = [
+  { title: '岗位编码', dataIndex: 'postCode', key: 'postCode' },
+  { title: '岗位名称', dataIndex: 'postName', key: 'postName' },
+  { title: '排序', dataIndex: 'postSort', key: 'postSort' },
+  { title: '状态', dataIndex: 'status', key: 'status' },
+  { title: '备注', dataIndex: 'remark', key: 'remark' },
+]
+type ColState = { key: string; visible: boolean; width?: number }
+const colState = ref<ColState[]>([])
+const colSetOpen = ref(false)
+const colStoreKey = computed(() => `post_list:${localStorage.getItem('userId') || 'anon'}`)
+function loadColState() {
+  try {
+    const raw = localStorage.getItem(colStoreKey.value)
+    if (raw) {
+      const saved: ColState[] = JSON.parse(raw)
+      const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
+      const ordered: ColState[] = []
+      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
+      colState.value = ordered
+      return
+    }
+  } catch { /* ignore */ }
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+}
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
+function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
+function moveCol(index: number, dir: -1 | 1) {
+  const arr = colState.value
+  const j = index + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[index], arr[j]] = [arr[j], arr[index]]
+  saveColState()
+}
+
+// 按 colState 顺序+显隐生成列（操作列固定最后；customHeaderCell 绑拖拽）
+const columns = computed(() => {
+  const ops = { title: '操作', key: 'ops', width: 120, fixed: 'right' as const }
+  const list = colState.value
+    .filter(c => c.visible)
+    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
+    .filter(Boolean)
+  return [...list, ops]
+})
+
+// ===== 列宽拖拽（原生表头 + customHeaderCell） =====
+let suppressHeaderClickUntil = 0
+function onColResize(key: string, w: number) {
+  const s = colState.value.find(c => c.key === key)
+  if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
+}
+function onHeaderMouseDown(key: string, e: MouseEvent) {
+  if (key === 'ops') return
+  const th = e.currentTarget as HTMLTableCellElement
+  const rect = th.getBoundingClientRect()
+  if (e.clientX < rect.right - 14) return
+  const startX = e.clientX
+  const startW = rect.width
+  const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    suppressHeaderClickUntil = Date.now() + 300
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'col-resize'
+  e.preventDefault()
+  e.stopPropagation()
+}
+function onHeaderClick(e: MouseEvent) {
+  if (Date.now() < suppressHeaderClickUntil) { e.preventDefault(); e.stopPropagation() }
 }
 
 // ===== 新增/编辑 =====
@@ -198,21 +270,55 @@ const rowSelection = computed(() => ({
   onChange: (keys: any[]) => { selectedRowKeys.value = keys },
 }))
 
-onMounted(() => { loadList(); loadRootDept() })
+onMounted(() => { loadList(); loadRootDept(); loadColState() })
 </script>
 
 <template>
   <div>
+    <!-- 标题行：仅返回 + 标题 -->
     <div class="page-header">
-      <span class="head-title">岗位管理</span>
-      <div class="head-actions">
-        <a-button :disabled="!selectedRowKeys.length" danger @click="removeBatch">
-          删除选中{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}
-        </a-button>
-        <a-input v-model:value="keyword" placeholder="搜索岗位名称/编码" allow-clear style="width:180px" @press-enter="refresh" />
-        <a-button @click="refresh"><reload-outlined /> 刷新</a-button>
-        <a-button type="primary" @click="openAdd"><plus-outlined /> 新增岗位</a-button>
+      <div class="head-left">
+        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
+        <span class="head-title">岗位管理</span>
       </div>
+    </div>
+
+    <!-- 筛选栏：搜索 + 查询/重置 + 靠右操作 -->
+    <div class="filter-bar">
+      <a-input v-model:value="keyword" placeholder="搜索岗位名称/编码" allow-clear style="width:200px" @press-enter="onSearch">
+        <template #prefix><SearchOutlined style="color:#86909C" /></template>
+      </a-input>
+      <a-button type="primary" @click="onSearch">查询</a-button>
+      <a-button @click="resetFilters">重置</a-button>
+      <span class="filter-spacer"></span>
+      <a-button :disabled="!selectedRowKeys.length" danger @click="removeBatch">
+        删除选中{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}
+      </a-button>
+      <a-button type="primary" @click="openAdd"><PlusOutlined />新增岗位</a-button>
+    </div>
+
+    <!-- 表格工具行：条数 + 列设置 -->
+    <div class="table-bar">
+      <span class="total">共 {{ filteredRows.length }} 条</span>
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+        <a-button>⚙ 列设置</a-button>
+        <template #overlay>
+          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
+              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+              <span class="col-move">
+                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
+              </span>
+            </div>
+            <a-divider style="margin: 6px 0" />
+            <div class="col-set-foot">
+              <a size="small" @click="showAllCols">恢复默认</a>
+              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+            </div>
+          </a-card>
+        </template>
+      </a-dropdown>
     </div>
 
     <a-table
@@ -228,7 +334,8 @@ onMounted(() => { loadList(); loadRootDept() })
         showTotal: showTotalText,
         onChange: onPageChange,
       }"
-      :scroll="{ x: 'max-content' }"
+      table-layout="fixed"
+      :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       :row-selection="rowSelection"
       row-key="postId"
       size="middle"
@@ -284,8 +391,22 @@ onMounted(() => { loadList(); loadRootDept() })
 
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.head-left { display: flex; align-items: center; gap: 6px; }
+.back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
+.back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
-.head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.filter-spacer { flex: 1 1 auto; min-width: 8px; }
+
+.table-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.table-bar .total { font-size: 13px; color: #4E5969; }
+.col-set-panel { width: 200px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-item { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
+.col-move { display: inline-flex; }
+.col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }
+.col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
+.col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
 
 .post-table { width: 100%; background: #fff; border-radius: 10px; }
 .post-table :deep(.ant-table) { font-size: 13px; }
@@ -298,4 +419,12 @@ onMounted(() => { loadList(); loadRootDept() })
 
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
+</style>
+
+<!-- 非 scoped：列宽拖拽手柄（原生表头 th::after 画右缘线） -->
+<style>
+.ant-table-thead > tr > th { position: relative; }
+.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
+.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
+.ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
 </style>
