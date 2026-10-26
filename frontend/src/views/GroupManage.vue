@@ -22,6 +22,8 @@ const tree = ref<any[]>([])          // 嵌套树（buildTree 生成，含 child
 const flat = ref<any[]>([])          // 平铺原始数组（组树前）
 const loading = ref(false)
 const keyword = ref('')              // 筛选：小组名关键词
+const pageNum = ref(1)               // 受控分页（序号列页内编号用）
+const pageSize = ref(20)
 
 // id 索引：deptId(String) -> 节点
 const byId = computed(() => {
@@ -113,7 +115,7 @@ const rows = computed(() => {
   return out
 })
 
-function resetFilters() { keyword.value = '' }
+function resetFilters() { keyword.value = ''; pageNum.value = 1 }
 
 async function loadAll() {
   loading.value = true
@@ -309,7 +311,7 @@ let suppressHeaderClickUntil = 0
 
 // 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops') return
+  if (key === 'ops' || key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return
@@ -336,12 +338,13 @@ function onHeaderClick(e: MouseEvent) {
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
 // 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
 const columns = computed(() => {
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }
   const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
-  return [...list, ops]
+  return [idx, ...list, ops]
 })
 
 function showTotalText(t: number) { return `共 ${t} 条` }
@@ -401,14 +404,17 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
       :columns="columns"
       :data-source="rows"
       :loading="loading"
-      :pagination="{ pageSize: 20, showSizeChanger: true, showTotal: showTotalText, showQuickJumper: true }"
+      :pagination="{ current: pageNum, pageSize, showSizeChanger: true, showTotal: showTotalText, showQuickJumper: true, onChange: (p, ps) => { pageNum = p; pageSize = ps } }"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
       row-key="deptId"
       size="middle"
       class="group-table"
     >
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'index'">
+          {{ (pageNum - 1) * pageSize + index + 1 }}
+        </template>
         <template v-if="column.key === 'deptName'">
           <span class="group-name">{{ record.deptName }}</span>
         </template>

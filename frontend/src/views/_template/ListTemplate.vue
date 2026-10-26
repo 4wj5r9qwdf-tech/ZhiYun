@@ -98,12 +98,13 @@ function moveCol(index: number, dir: -1 | 1) {
 
 // 按 colState 顺序+显隐生成列（操作列固定最后；customHeaderCell 绑拖拽）
 const columns = computed(() => {
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }  // 序号列：固定最左、不可隐藏、不进 colState
   const ops = { title: '操作', key: 'ops', width: 120, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
-  return [...list, ops]
+  return [idx, ...list, ops]
 })
 
 // ===== 列宽拖拽（原生表头 + customHeaderCell，标准件勿改） =====
@@ -113,7 +114,7 @@ function onColResize(key: string, w: number) {
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops') return
+  if (key === 'ops' || key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return
@@ -305,7 +306,11 @@ onMounted(() => { loadList(); loadColState() })
       size="middle"
       class="xxx-table"   <!-- TODO 表格 class（同步改下方样式四处） -->
     >
-      <template #bodyCell="{ column, record }">
+      <template #bodyCell="{ column, record, index }">
+        <!-- 序号列（标准件：固定最左、页内从 1 连续编号） -->
+        <template v-if="column.key === 'index'">
+          {{ (pageNum - 1) * pageSize + index + 1 }}
+        </template>
         <!-- TODO 列渲染：状态 tag / 操作列等 -->
         <template v-if="column.key === 'status'">
           <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
