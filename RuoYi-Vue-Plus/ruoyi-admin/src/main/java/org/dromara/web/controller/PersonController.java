@@ -131,7 +131,8 @@ public class PersonController {
     /**
      * 数据范围过滤（角色 dataScope，与 sys_role/sys_role_dept 联动）：
      * admin 豁免；任一启用角色=全部数据(1)则放行；多角色取并集——
-     * 自定义部门(2)=所选部门+其下级；本部门及以下(3)=本人部门+下级；本部门(4)=仅本人部门；仅本人(5)=本人。
+     * 自定义部门(2)=所选部门+其下级；本部门及以下(3)=本人部门+下级；本部门(4)=仅本人部门；仅本人(5)=本人；
+     * 本小组及下级(6)=本人所属小组(sys_person_ext.group_id)+下级小组——小组同为 sys_dept 节点，复用 ancestors 展开。
      * 无启用角色 → 1=0（看不到任何人员）。
      */
     private void applyDataScope(StringBuilder where, java.util.List<Object> args) {
@@ -154,6 +155,7 @@ public class PersonController {
             return;
         }
         java.util.Set<Long> deptIds = new java.util.LinkedHashSet<>();
+        java.util.Set<Long> groupIds = new java.util.LinkedHashSet<>();
         boolean selfOnly = false;
         for (Long roleId : roleIds) {
             String scope = jdbcTemplate.query(
@@ -173,6 +175,12 @@ public class PersonController {
                     if (myDept != null) deptIds.add(myDept);
                 }
                 case "5" -> selfOnly = true;
+                case "6" -> {
+                    Long myGroup = jdbcTemplate.query(
+                        "SELECT group_id FROM sys_person_ext WHERE user_id=? AND group_id IS NOT NULL",
+                        rs -> rs.next() ? rs.getLong(1) : null, userId);
+                    if (myGroup != null) groupIds.add(myGroup);
+                }
                 default -> { }
             }
         }
@@ -184,6 +192,15 @@ public class PersonController {
             for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
             cond.append(')');
             args.addAll(expanded);
+        }
+        // 小组档：本小组 + 下级小组（小组也是 sys_dept 节点，ancestors 同款展开）
+        java.util.Set<Long> expandedGroups = expandDeptWithChildren(groupIds);
+        if (!expandedGroups.isEmpty()) {
+            if (cond.length() > 0) cond.append(" OR ");
+            cond.append("e.group_id IN (");
+            for (int i = 0; i < expandedGroups.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
+            cond.append(')');
+            args.addAll(expandedGroups);
         }
         if (selfOnly) {
             if (cond.length() > 0) cond.append(" OR ");
