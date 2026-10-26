@@ -338,7 +338,9 @@ function onHeaderClick(e: MouseEvent) {
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
 // 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
 const columns = computed(() => {
-  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const }
+  // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
+  const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
+    customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
   const ops = { title: '操作', key: 'ops', width: 130, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
@@ -558,6 +560,7 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
 <style>
 .ant-table-thead > tr > th { position: relative; }
+.ant-table-thead > tr > th.zy-th-noresize::after { display: none; }
 .ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
 .ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
 .ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
