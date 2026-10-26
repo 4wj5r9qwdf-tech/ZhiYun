@@ -11,7 +11,7 @@
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { pinyin } from 'pinyin-pro'
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -374,9 +374,8 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
           <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a @click="openEdit(record)">编辑</a>
-          <a-divider type="vertical" />
-          <a class="danger-link" @click="removeOne(record)">删除</a>
+          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
+          <a class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
         </template>
       </template>
     </a-table>
@@ -445,6 +444,7 @@ onMounted(() => { loadList(); loadRootDept(); loadColState() })
 .post-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
 .post-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 </style>
