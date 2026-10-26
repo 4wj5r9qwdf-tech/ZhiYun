@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -98,9 +98,12 @@ const rows = computed(() => {
       if (n.deptCategory === '小组') {
         if (!kw || String(n.deptName || '').includes(kw)) {
           const parent = findParent(n)
+          // 层级路径：祖先链(不含自己)名依次 > 连接，如 "1车间生产科 > 缝纫组"
+          const anc = String(n.ancestors || '0').split(',').filter(x => x && x !== '0')
+          const pathName = anc.map(id => byId.value[String(id)]?.deptName).filter(Boolean).join(' > ')
           // 去掉 children：小组是末级，平铺展示（否则 a-table 误渲染树形展开 +）
           const { children: _c, ...rest } = n
-          out.push({ ...rest, parentName: parent?.deptName || '', workshopName: buildingLabel(parent?.buildingId) })
+          out.push({ ...rest, parentName: parent?.deptName || '', pathName, workshopName: buildingLabel(parent?.buildingId) })
         }
       }
       walk(n.children || [])
@@ -251,6 +254,7 @@ function removeGroup(row: any) {
 // ===== 列设置（显隐 + 顺序 + 列宽）localStorage key: group_list:${userId} =====
 const ALL_COLUMNS = [
   { title: '小组名', dataIndex: 'deptName', key: 'deptName' },
+  { title: '层级路径', dataIndex: 'pathName', key: 'pathName', width: 220 },
   { title: '所属部门', dataIndex: 'parentName', key: 'parentName', width: 140 },
   { title: '所属车间', dataIndex: 'workshopName', key: 'workshopName', width: 140 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
@@ -357,7 +361,7 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
       <a-input v-model:value="keyword" placeholder="搜索小组名" allow-clear style="width:200px">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
-      <a-button @click="loadAll"><ReloadOutlined />查询</a-button>
+      <a-button type="primary" @click="loadAll">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
       <a-button type="primary" @click="openAdd"><PlusOutlined />新增小组</a-button>
@@ -402,6 +406,9 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'deptName'">
           <span class="group-name">{{ record.deptName }}</span>
+        </template>
+        <template v-else-if="column.key === 'pathName'">
+          <span class="path-cell">{{ record.pathName || '—' }}</span>
         </template>
         <template v-else-if="column.key === 'parentName'">
           {{ record.parentName || '—' }}
@@ -520,6 +527,7 @@ onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 .group-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .group-name { font-weight: 500; color: #1D2129; }
+.path-cell { color: #86909C; font-size: 12px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 .muted { color: #C9CDD4; }
