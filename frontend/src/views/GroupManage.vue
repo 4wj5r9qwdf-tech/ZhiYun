@@ -49,6 +49,24 @@ async function loadBuildings() {
   } catch { /* ignore */ }
 }
 
+// 人员（负责人下拉）：leader 存 user_id
+const persons = ref<any[]>([])
+const personNameMap = computed(() => {
+  const m: Record<string, string> = {}
+  for (const p of persons.value) m[String(p.user_id)] = String(p.nick_name || p.user_name || '')
+  return m
+})
+function personLabel(id: any) {
+  if (id === null || id === undefined || id === '') return ''
+  return personNameMap.value[String(id)] || String(id)
+}
+async function loadPersons() {
+  try {
+    const res: any = await api.get('/system/person/list', { params: { pageNum: 1, pageSize: 500 } })
+    if (res.code === 200) persons.value = res.data?.rows || []
+  } catch { /* ignore */ }
+}
+
 // 平铺 → 嵌套树（参考 DeptManage.vue buildTree；deptId/parentId 均 String）
 function buildTree(list: any[]): any[] {
   const map: Record<string, any> = {}
@@ -191,7 +209,7 @@ async function save() {
       parentId: form.value.parentId,
       deptName: form.value.deptName,
       deptCategory: '小组',                        // 固定传 '小组'，后端据此识别
-      leader: form.value.leader || '',
+      leader: form.value.leader || null,   // user_id(Long)；空则传 null 避免 Long 解析 '' 报错
       orderNum: form.value.orderNum ?? 0,
       status: form.value.status || '0',
     }
@@ -312,7 +330,7 @@ function showTotalText(t: number) { return `共 ${t} 条` }
 
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
-onMounted(() => { loadAll(); loadBuildings(); loadColState() })
+onMounted(() => { loadAll(); loadBuildings(); loadPersons(); loadColState() })
 </script>
 
 <template>
@@ -383,7 +401,7 @@ onMounted(() => { loadAll(); loadBuildings(); loadColState() })
           {{ record.workshopName || '—' }}
         </template>
         <template v-else-if="column.key === 'leader'">
-          {{ record.leader || '—' }}
+          {{ personLabel(record.leader) || '—' }}
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
@@ -439,7 +457,11 @@ onMounted(() => { loadAll(); loadBuildings(); loadColState() })
           </a-col>
           <a-col :span="12">
             <a-form-item label="负责人">
-              <a-input v-model:value="form.leader" :maxlength="20" placeholder="请输入负责人（可空）" />
+              <a-select v-model:value="form.leader" allow-clear placeholder="选人员（可空）">
+                <a-select-option v-for="p in persons" :key="String(p.user_id)" :value="String(p.user_id)">
+                  {{ p.nick_name || p.user_name }}
+                </a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">
