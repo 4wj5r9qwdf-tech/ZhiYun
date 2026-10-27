@@ -24,6 +24,9 @@ const keyword = ref('')
 const selectedOrgId = ref<string | null>(null)
 // 树面板收起/展开（默认展开）
 const treeCollapsed = ref(false)
+// 前端分页（组织树接口天然全量返回，列表切片展示）
+const orgPage = ref(1)
+const orgPageSize = ref(20)
 // 筛选：层级 + 状态（前端过滤）
 const filterCategory = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
@@ -37,8 +40,6 @@ const selectedSubtree = computed(() => {
   const node = findNode(tree.value, selectedOrgId.value)
   return node ? [node] : tree.value
 })
-// 过滤后部门总数（含下级）
-const orgCount = computed(() => orgRows.value.length)
 
 // 业务管辖：每个部门管辖了多少被管部门（orgId -> 数），列表展示
 const manageCounts = ref<Record<string, number>>({})
@@ -205,6 +206,10 @@ const orgRows = computed(() => {
   walk(base)
   return out
 })
+// 分页切片
+const pagedRows = computed(() => orgRows.value.slice((orgPage.value - 1) * orgPageSize.value, orgPage.value * orgPageSize.value))
+// 筛选/树选变化时回到第一页
+watch([keyword, filterCategory, filterStatus, selectedOrgId], () => { orgPage.value = 1 })
 
 async function loadTree() {
   loading.value = true
@@ -573,7 +578,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
     <!-- 列表工具行：条数 + 列设置 -->
     <div class="table-bar">
-      <span class="total">共 {{ orgCount }} 个组织</span>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -599,10 +603,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <!-- 树表 -->
     <a-table
       :columns="columns"
-      :data-source="orgRows"
+      :data-source="pagedRows"
       children-column-name="_flat_"
       :loading="loading"
-      :pagination="false"
+      :pagination="{ total: orgRows.length, current: orgPage, pageSize: orgPageSize, showSizeChanger: true, showQuickJumper: true, showTotal: (t: number) => `共 ${t} 个组织`, onChange: (p: number, ps: number) => { orgPage = p; orgPageSize = ps } }"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
       row-key="orgId"
