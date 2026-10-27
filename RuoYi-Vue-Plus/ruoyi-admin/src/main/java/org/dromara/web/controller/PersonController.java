@@ -357,7 +357,7 @@ public class PersonController {
         jdbcTemplate.update(
             "INSERT INTO sys_user (user_id, dept_id, user_name, nick_name, user_type, email, phone_number, gender, password, status, del_flag, create_time, remark) " +
             "VALUES (?,?,?,?,?,?,?,?,?,?,'0',now(),?)",
-            userId, body.get("deptId"), jobNo, str(body.get("name")), "00",
+            userId, deptIdOrNull(body.get("deptId")), jobNo, str(body.get("name")), "00",
             str(body.get("email")), str(body.get("phoneNumber")), str(body.get("gender")),
             BCrypt.hashpw(password), str(body.getOrDefault("status", "0")), str(body.get("remark")));
         saveExt(userId, body);
@@ -378,14 +378,14 @@ public class PersonController {
         if (pwd != null && !pwd.isBlank()) {
             jdbcTemplate.update(
                 "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, password=?, update_time=now() WHERE user_id=?",
-                body.get("deptId"), str(body.get("name")), str(body.get("email")),
+                deptIdOrNull(body.get("deptId")), str(body.get("name")), str(body.get("email")),
                 str(body.get("phoneNumber")), str(body.get("gender")),
                 str(body.getOrDefault("status", "0")), str(body.get("remark")),
                 BCrypt.hashpw(pwd), userId);
         } else {
             jdbcTemplate.update(
                 "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
-                body.get("deptId"), str(body.get("name")), str(body.get("email")),
+                deptIdOrNull(body.get("deptId")), str(body.get("name")), str(body.get("email")),
                 str(body.get("phoneNumber")), str(body.get("gender")),
                 str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
         }
@@ -517,6 +517,12 @@ public class PersonController {
     }
 
     private String str(Object o) { return o == null ? null : o.toString(); }
+
+    /** 部门ID：前端 bigint 以字符串传输（防 JS 精度丢失），落库前转 Long；空→null。 */
+    private Long deptIdOrNull(Object o) {
+        String s = str(o);
+        return (s == null || s.isBlank()) ? null : Long.valueOf(s);
+    }
 
     /** 日期字段：空串/null 一律转 null（PG date 不接受 ''），非空转字符串。 */
     private String dateOrNull(Object o) {
