@@ -548,10 +548,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
   <div class="org-page">
     <!-- 页头行：← 组织架构 + 查询条件（搜索/类型/状态） -->
     <div class="page-header">
-      <div class="head-left">
-        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
-        <span class="head-title">组织架构</span>
-      </div>
+      <a class="back-btn" title="返回" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
       <div class="head-filters">
         <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px" @press-enter="loadTree">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
@@ -805,7 +802,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </template>
 
 <style scoped>
-.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
+.back-btn { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #E5E8EF; border-radius: 50%; background: #fff; color: #4E5969; font-size: 14px; text-decoration: none; transition: color .15s, border-color .15s; }
+.back-btn:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .head-left { display: flex; align-items: center; gap: 6px; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
