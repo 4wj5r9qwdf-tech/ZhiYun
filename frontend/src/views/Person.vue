@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons-vue'
+import { CaretLeftOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -102,6 +102,7 @@ type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)   // 列设置下拉受控开关（操作期间保持打开）
 const colStoreKey = computed(() => `person_list:${localStorage.getItem('userId') || 'anon'}`)
+const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 230)  // 操作列宽可拖拽并持久化
 
 function loadColState() {
   try {
@@ -140,6 +141,7 @@ onMounted(loadColState)
 
 // 列宽拖拽调整：改 colState 里对应列的 width 并持久化
 function onColResize(key: string, w: number) {
+  if (key === 'ops') { opsWidth.value = Math.max(150, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -149,7 +151,7 @@ let suppressHeaderClickUntil = 0
 
 // 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops' || key === 'index') return
+  if (key === 'index') return
   const th = (e.currentTarget as HTMLElement) as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return   // 不在右缘 → 不拦截，交给排序
@@ -179,7 +181,8 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 230, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
+    customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => {
@@ -564,8 +567,8 @@ function resetFilter() {
 
       <!-- 收起/展开手柄 -->
       <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
-        <DoubleRightOutlined v-if="treeCollapsed" />
-        <DoubleLeftOutlined v-else />
+        <CaretRightOutlined v-if="treeCollapsed" />
+        <CaretLeftOutlined v-else />
       </div>
 
       <div class="org-main">
@@ -797,7 +800,7 @@ function resetFilter() {
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
-.tree-toggle { position: absolute; top: 10px; left: 244px; z-index: 6; width: 16px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; font-size: 11px; transition: color .15s, border-color .15s, left .2s; }
+.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 246px; z-index: 6; width: 16px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; font-size: 11px; transition: color .15s, border-color .15s, left .2s; }
 .tree-toggle.at-left { left: 4px; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .org-main { flex: 1; min-width: 0; }
