@@ -10,7 +10,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'

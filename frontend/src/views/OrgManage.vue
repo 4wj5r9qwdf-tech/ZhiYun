@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, DoubleLeftOutlined, DoubleRightOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
