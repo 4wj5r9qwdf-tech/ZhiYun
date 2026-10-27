@@ -27,7 +27,6 @@ const pageSize = ref(20)
 // 筛选
 const keyword = ref('')
 // ===== 左侧组织树（点节点筛该节点及下级人员，双线：部门/小组归属都算） =====
-const orgTree = ref<any[]>([])
 const selectedOrgId = ref<string | null>(null)
 const treeCollapsed = ref(false)
 const orgCounts = ref<Record<string, number>>({})
@@ -571,8 +570,8 @@ function resetFilter() {
         </div>
         <div class="tree-body">
           <a-tree
-            v-if="orgTree.length"
-            :tree-data="orgTree"
+            v-if="orgNodes.length"
+            :tree-data="orgNodes"
             :field-names="{ title: 'orgName', key: 'orgId', children: 'children' }"
             block-node
             default-expand-all
