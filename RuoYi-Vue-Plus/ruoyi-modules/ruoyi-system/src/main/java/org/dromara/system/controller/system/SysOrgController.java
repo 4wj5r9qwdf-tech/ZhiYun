@@ -199,8 +199,8 @@ public class SysOrgController extends BaseController {
      */
     @SaCheckPermission("system:org:query")
     @GetMapping("/manage-counts")
-    public R<java.util.Map<Long, Long>> manageCounts() {
-        return R.ok(orgService.selectManagedCounts());
+    public R<java.util.Map<Long, java.util.List<String>>> manageCounts() {
+        return R.ok(orgService.selectManagedNames());
     }
 
 }

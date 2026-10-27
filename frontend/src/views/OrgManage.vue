@@ -40,17 +40,19 @@ const selectedSubtree = computed(() => {
 })
 
 // 业务管辖：每个部门管辖了多少被管部门（orgId -> 数），列表展示
-const manageCounts = ref<Record<string, number>>({})
 // 表单里被管部门选择（管理范围多选）
 const managedIds = ref<string[]>([])
 
+const manageNames = ref<Record<string, string[]>>({})
 async function loadManageCounts() {
   try {
     const res: any = await api.get('/system/org/manage-counts')
-    if (res.code === 200) manageCounts.value = res.data || {}
+    if (res.code === 200) manageNames.value = res.data || {}
   } catch { /* ignore */ }
 }
-function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
+// 管辖：列表只显计数不占宽，悬停浮出完整名单（管辖多也不撑列）
+function manageList(id: any): string[] { return manageNames.value[String(id)] || [] }
+function manageCount(id: any) { return manageList(id).length }
 
 // 全部列（不含操作列，操作列固定最后）
 const ALL_COLUMNS = [
@@ -658,7 +660,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'manages'">
-          <a-tag v-if="manageCount(record.orgId)" color="geekblue">管 {{ manageCount(record.orgId) }}</a-tag>
+          <a-tooltip v-if="manageCount(record.orgId)">
+            <template #title>{{ manageList(record.orgId).join('、') }}</template>
+            <a-tag color="geekblue" class="manages-tag">管 {{ manageCount(record.orgId) }}</a-tag>
+          </a-tooltip>
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'leader'">

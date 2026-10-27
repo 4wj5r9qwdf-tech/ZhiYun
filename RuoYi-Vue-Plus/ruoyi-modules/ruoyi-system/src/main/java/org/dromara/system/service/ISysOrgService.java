@@ -97,6 +97,9 @@ public interface ISysOrgService {
      */
     Map<Long, Long> selectManagedCounts();
 
+    /** 每个管辖方管了哪些被管组织（名称列表） */
+    Map<Long, java.util.List<String>> selectManagedNames();
+
     /**
      * 根据ID查询所有子部门数（正常状态）
      *
