@@ -18,9 +18,9 @@ public interface ISysDataScopeService {
     /**
      * 获取部门及以下权限
      *
-     * @param deptId 部门id
+     * @param orgId 部门id
      * @return 部门id组
      */
-    String getDeptAndChild(Long deptId);
+    String getOrgAndChild(Long orgId);
 
 }

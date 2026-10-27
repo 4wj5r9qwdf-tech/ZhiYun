@@ -14,8 +14,8 @@ import org.dromara.common.core.exception.ServiceException;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.core.utils.TreeBuildUtils;
-import org.dromara.system.domain.bo.SysDeptBo;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.domain.bo.SysOrgBo;
+import org.dromara.system.service.ISysOrgService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -27,14 +27,14 @@ import java.util.concurrent.TimeUnit;
  * @author AprilWind
  */
 @RequiredArgsConstructor
-public class DeptExcelConverter implements Converter<Long> {
+public class OrgExcelConverter implements Converter<Long> {
 
-    private static final String CACHE_KEY = "dept:excel";
+    private static final String CACHE_KEY = "org:excel";
 
     /**
      * Caffeine 缓存：key=CACHE_KEY，value=[idToName, nameToId]，5分钟过期
      */
-    private static final Cache<String, DeptMaps> DEPT_CACHE = Caffeine.newBuilder()
+    private static final Cache<String, OrgMaps> ORG_CACHE = Caffeine.newBuilder()
         .expireAfterWrite(30, TimeUnit.SECONDS)
         .build();
 
@@ -43,27 +43,27 @@ public class DeptExcelConverter implements Converter<Long> {
      *
      * @return 部门 ID 与部门路径名称互转映射
      */
-    private DeptMaps getDeptMaps() {
-        ISysDeptService deptService = SpringUtils.getBean(ISysDeptService.class);
-        return DEPT_CACHE.get(CACHE_KEY, k -> {
-            Map<String, Tree<Long>> deptPathToTreeMap = buildDeptPathMap(deptService);
+    private OrgMaps getOrgMaps() {
+        ISysOrgService orgService = SpringUtils.getBean(ISysOrgService.class);
+        return ORG_CACHE.get(CACHE_KEY, k -> {
+            Map<String, Tree<Long>> orgPathToTreeMap = buildOrgPathMap(orgService);
             Map<Long, String> idToName = new HashMap<>();
             Map<String, Long> nameToId = new HashMap<>();
-            deptPathToTreeMap.forEach((name, treeNode) -> {
-                Long deptId = treeNode.getId();
-                idToName.put(deptId, name);
-                nameToId.put(name, deptId);
+            orgPathToTreeMap.forEach((name, treeNode) -> {
+                Long orgId = treeNode.getId();
+                idToName.put(orgId, name);
+                nameToId.put(name, orgId);
             });
-            return new DeptMaps(idToName, nameToId);
+            return new OrgMaps(idToName, nameToId);
         });
     }
 
     /**
      * 构建部门路径 → 树节点映射，供 Converter 和 Options 共用
      */
-    private Map<String, Tree<Long>> buildDeptPathMap(ISysDeptService deptService) {
+    private Map<String, Tree<Long>> buildOrgPathMap(ISysOrgService orgService) {
         return TreeBuildUtils.buildTreeNodeMap(
-            deptService.selectDeptTreeList(new SysDeptBo()),
+            orgService.selectOrgTreeList(new SysOrgBo()),
             "/",
             Tree::getName
         );
@@ -90,15 +90,15 @@ public class DeptExcelConverter implements Converter<Long> {
      */
     @Override
     public Long convertToJavaData(ReadCellData<?> cellData, ExcelContentProperty contentProperty, GlobalConfiguration globalConfiguration) {
-        String deptName = cellData.getStringValue();
-        if (StringUtils.isBlank(deptName)) {
+        String orgName = cellData.getStringValue();
+        if (StringUtils.isBlank(orgName)) {
             return null;
         }
-        Long deptId = getDeptMaps().nameToId().get(deptName);
-        if (deptId == null) {
-            throw new ServiceException("部门不存在：" + deptName);
+        Long orgId = getOrgMaps().nameToId().get(orgName);
+        if (orgId == null) {
+            throw new ServiceException("部门不存在：" + orgName);
         }
-        return deptId;
+        return orgId;
     }
 
     /**
@@ -109,8 +109,8 @@ public class DeptExcelConverter implements Converter<Long> {
         if (value == null) {
             return new WriteCellData<>("");
         }
-        String deptName = getDeptMaps().idToName().getOrDefault(value, "");
-        return new WriteCellData<>(deptName);
+        String orgName = getOrgMaps().idToName().getOrDefault(value, "");
+        return new WriteCellData<>(orgName);
     }
 
     /**
@@ -119,7 +119,7 @@ public class DeptExcelConverter implements Converter<Long> {
      * @param idToName 部门 ID 到部门名称的映射
      * @param nameToId 部门名称到部门 ID 的映射
      */
-    private record DeptMaps(Map<Long, String> idToName, Map<String, Long> nameToId) {
+    private record OrgMaps(Map<Long, String> idToName, Map<String, Long> nameToId) {
     }
 
 }

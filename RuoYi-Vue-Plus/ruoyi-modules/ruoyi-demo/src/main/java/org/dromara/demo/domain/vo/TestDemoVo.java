@@ -41,7 +41,7 @@ public class TestDemoVo implements Serializable {
      */
     @ExcelRequired
     @ExcelProperty(value = "部门id")
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户id

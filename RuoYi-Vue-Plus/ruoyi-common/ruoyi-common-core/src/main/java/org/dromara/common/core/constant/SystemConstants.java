@@ -75,12 +75,12 @@ public interface SystemConstants {
     /**
      * 根部门祖级列表
      */
-    String ROOT_DEPT_ANCESTORS = "0";
+    String ROOT_ORG_ANCESTORS = "0";
 
     /**
      * 默认部门 ID
      */
-    Long DEFAULT_DEPT_ID = 1761000000000000100L;
+    Long DEFAULT_ORG_ID = 1761000000000000100L;
 
     /**
      * 排除敏感属性字段

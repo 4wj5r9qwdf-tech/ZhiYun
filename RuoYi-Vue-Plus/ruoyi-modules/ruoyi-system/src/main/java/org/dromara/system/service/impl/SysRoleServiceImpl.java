@@ -22,13 +22,13 @@ import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.api.RoleService;
 import org.dromara.system.api.model.LoginUser;
 import org.dromara.system.domain.SysRole;
-import org.dromara.system.domain.SysRoleDept;
+import org.dromara.system.domain.SysRoleOrg;
 import org.dromara.system.domain.SysRoleMenu;
 import org.dromara.system.domain.SysUserRole;
 import org.dromara.system.domain.bo.SysRoleBo;
 import org.dromara.system.domain.vo.SysRoleVo;
 import org.dromara.system.event.OnlineUserCleanEvent;
-import org.dromara.system.mapper.SysRoleDeptMapper;
+import org.dromara.system.mapper.SysRoleOrgMapper;
 import org.dromara.system.mapper.SysRoleMapper;
 import org.dromara.system.mapper.SysRoleMenuMapper;
 import org.dromara.system.mapper.SysUserRoleMapper;
@@ -51,7 +51,7 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
     private final SysRoleMapper roleMapper;
     private final SysRoleMenuMapper roleMenuMapper;
     private final SysUserRoleMapper userRoleMapper;
-    private final SysRoleDeptMapper roleDeptMapper;
+    private final SysRoleOrgMapper roleOrgMapper;
 
     /**
      * 分页查询角色列表
@@ -306,7 +306,7 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         bo.setRoleId(role.getRoleId());
         insertRoleMenu(bo);
         // 数据权限节点（data_scope=自定义时的勾选）也随新增落库
-        return insertRoleDept(bo);
+        return insertRoleOrg(bo);
     }
 
     /**
@@ -344,8 +344,8 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         roleMenuMapper.lambda().eq(SysRoleMenu::getRoleId, role.getRoleId()).delete();
         insertRoleMenu(bo);
         // 先清理旧数据权限，再按当前配置重建。
-        roleDeptMapper.lambda().eq(SysRoleDept::getRoleId, role.getRoleId()).delete();
-        return insertRoleDept(bo);
+        roleOrgMapper.lambda().eq(SysRoleOrg::getRoleId, role.getRoleId()).delete();
+        return insertRoleOrg(bo);
     }
 
     /**
@@ -397,22 +397,22 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
      *
      * @param role 角色对象
      */
-    private int insertRoleDept(SysRoleBo role) {
+    private int insertRoleOrg(SysRoleBo role) {
         int rows = 1;
         // 新增角色与部门（数据权限）管理
-        List<SysRoleDept> list = new ArrayList<>();
-        // deptIds 可不传（非自定义档），null 防御
-        Long[] deptIds = role.getDeptIds();
-        if (deptIds != null) {
-            for (Long deptId : deptIds) {
-                SysRoleDept rd = new SysRoleDept();
+        List<SysRoleOrg> list = new ArrayList<>();
+        // orgIds 可不传（非自定义档），null 防御
+        Long[] orgIds = role.getOrgIds();
+        if (orgIds != null) {
+            for (Long orgId : orgIds) {
+                SysRoleOrg rd = new SysRoleOrg();
                 rd.setRoleId(role.getRoleId());
-                rd.setDeptId(deptId);
+                rd.setOrgId(orgId);
                 list.add(rd);
             }
         }
         if (CollUtil.isNotEmpty(list)) {
-            rows = roleDeptMapper.insertBatch(list) ? list.size() : 0;
+            rows = roleOrgMapper.insertBatch(list) ? list.size() : 0;
         }
         return rows;
     }
@@ -430,7 +430,7 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         // 删除角色与菜单关联
         roleMenuMapper.lambda().eq(SysRoleMenu::getRoleId, roleId).delete();
         // 删除角色与部门关联
-        roleDeptMapper.lambda().eq(SysRoleDept::getRoleId, roleId).delete();
+        roleOrgMapper.lambda().eq(SysRoleOrg::getRoleId, roleId).delete();
         return roleMapper.deleteById(roleId);
     }
 
@@ -455,7 +455,7 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
         // 删除角色与菜单关联
         roleMenuMapper.lambda().in(SysRoleMenu::getRoleId, roleIds).delete();
         // 删除角色与部门关联
-        roleDeptMapper.lambda().in(SysRoleDept::getRoleId, roleIds).delete();
+        roleOrgMapper.lambda().in(SysRoleOrg::getRoleId, roleIds).delete();
         return roleMapper.deleteByIds(roleIds);
     }
 

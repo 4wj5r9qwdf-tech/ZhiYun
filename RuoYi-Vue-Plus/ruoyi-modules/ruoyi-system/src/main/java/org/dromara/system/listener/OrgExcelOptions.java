@@ -5,8 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.common.core.utils.TreeBuildUtils;
 import org.dromara.common.excel.core.ExcelOptionsProvider;
-import org.dromara.system.domain.bo.SysDeptBo;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.domain.bo.SysOrgBo;
+import org.dromara.system.service.ISysOrgService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -19,7 +19,7 @@ import java.util.Set;
  */
 @Component
 @RequiredArgsConstructor
-public class DeptExcelOptions implements ExcelOptionsProvider {
+public class OrgExcelOptions implements ExcelOptionsProvider {
 
     /**
      * 获取下拉选项数据
@@ -28,8 +28,8 @@ public class DeptExcelOptions implements ExcelOptionsProvider {
      */
     @Override
     public Set<String> getOptions() {
-        ISysDeptService deptService = SpringUtils.getBean(ISysDeptService.class);
-        List<Tree<Long>> trees = deptService.selectDeptTreeList(new SysDeptBo());
+        ISysOrgService orgService = SpringUtils.getBean(ISysOrgService.class);
+        List<Tree<Long>> trees = orgService.selectOrgTreeList(new SysOrgBo());
         return TreeBuildUtils.buildTreeNodeMap(trees, "/", Tree::getName).keySet();
     }
 

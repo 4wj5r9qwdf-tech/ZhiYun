@@ -145,7 +145,7 @@ public interface GenConstants {
     /**
      * VO对象 不需要返回字段
      */
-    String[] COLUMNNAME_NOT_LIST = {"create_dept", "create_by", "create_time", "del_flag", "update_by",
+    String[] COLUMNNAME_NOT_LIST = {"create_org", "create_by", "create_time", "del_flag", "update_by",
         "update_time", "version"};
 
     /**
@@ -156,7 +156,7 @@ public interface GenConstants {
     /**
      * Entity基类字段
      */
-    String[] BASE_ENTITY = {"createDept", "createBy", "createTime", "updateBy", "updateTime"};
+    String[] BASE_ENTITY = {"createOrg", "createBy", "createTime", "updateBy", "updateTime"};
 
     /**
      * 文本框

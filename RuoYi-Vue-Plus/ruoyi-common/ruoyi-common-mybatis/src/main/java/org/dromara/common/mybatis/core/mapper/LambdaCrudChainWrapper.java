@@ -392,9 +392,9 @@ public class LambdaCrudChainWrapper<T, V> extends AbstractLambdaWrapper<T, Lambd
      * 添加等于子查询条件。
      * <pre>{@code
      * userMapper.lambda()
-     *     .eqSub(SysUser::getDeptId, SysDept.class, sub -> sub
-     *         .select(SysDept::getDeptId)
-     *         .eq(SysDept::getDeptName, deptName))
+     *     .eqSub(SysUser::getOrgId, SysOrg.class, sub -> sub
+     *         .select(SysOrg::getOrgId)
+     *         .eq(SysOrg::getOrgName, orgName))
      *     .voList();
      * }</pre>
      *

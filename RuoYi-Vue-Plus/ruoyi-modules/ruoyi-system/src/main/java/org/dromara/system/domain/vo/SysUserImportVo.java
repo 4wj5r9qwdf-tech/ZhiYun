@@ -6,8 +6,8 @@ import org.apache.fesod.sheet.annotation.ExcelProperty;
 import org.dromara.common.excel.annotation.ExcelDictFormat;
 import org.dromara.common.excel.annotation.ExcelDynamicOptions;
 import org.dromara.common.excel.convert.ExcelDictConvert;
-import org.dromara.system.listener.DeptExcelConverter;
-import org.dromara.system.listener.DeptExcelOptions;
+import org.dromara.system.listener.OrgExcelConverter;
+import org.dromara.system.listener.OrgExcelOptions;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -35,9 +35,9 @@ public class SysUserImportVo implements Serializable {
     /**
      * 部门ID
      */
-    @ExcelProperty(value = "部门名称", converter = DeptExcelConverter.class)
-    @ExcelDynamicOptions(providerClass = DeptExcelOptions.class)
-    private Long deptId;
+    @ExcelProperty(value = "部门名称", converter = OrgExcelConverter.class)
+    @ExcelDynamicOptions(providerClass = OrgExcelOptions.class)
+    private Long orgId;
 
     /**
      * 用户账号

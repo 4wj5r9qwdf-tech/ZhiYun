@@ -294,9 +294,9 @@ public final class LambdaQueryBuilder<T> implements LambdaQueryCondition<T, Lamb
      * 添加等于子查询条件。
      * <pre>{@code
      * QueryBuilder.lambda(SysUser.class)
-     *     .eqSub(SysUser::getDeptId, SysDept.class, sub -> sub
-     *         .select(SysDept::getDeptId)
-     *         .eq(SysDept::getDeptName, deptName))
+     *     .eqSub(SysUser::getOrgId, SysOrg.class, sub -> sub
+     *         .select(SysOrg::getOrgId)
+     *         .eq(SysOrg::getOrgName, orgName))
      *     .build();
      * }</pre>
      *

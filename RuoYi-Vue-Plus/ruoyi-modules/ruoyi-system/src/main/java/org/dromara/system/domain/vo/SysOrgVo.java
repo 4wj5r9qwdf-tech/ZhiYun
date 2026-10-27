@@ -6,7 +6,7 @@ import org.apache.fesod.sheet.annotation.ExcelIgnoreUnannotated;
 import org.apache.fesod.sheet.annotation.ExcelProperty;
 import org.dromara.common.excel.annotation.ExcelDictFormat;
 import org.dromara.common.excel.convert.ExcelDictConvert;
-import org.dromara.system.domain.SysDept;
+import org.dromara.system.domain.SysOrg;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -15,14 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 部门视图对象 sys_dept
+ * 部门视图对象 sys_org
  *
  * @author Michelle.Chung
  */
 @Data
 @ExcelIgnoreUnannotated
-@AutoMapper(target = SysDept.class)
-public class SysDeptVo implements Serializable {
+@AutoMapper(target = SysOrg.class)
+public class SysOrgVo implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -31,7 +31,7 @@ public class SysDeptVo implements Serializable {
      * 部门id
      */
     @ExcelProperty(value = "部门id")
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 父部门id
@@ -52,13 +52,13 @@ public class SysDeptVo implements Serializable {
      * 部门名称
      */
     @ExcelProperty(value = "部门名称")
-    private String deptName;
+    private String orgName;
 
     /**
      * 部门类别编码
      */
     @ExcelProperty(value = "部门类别编码")
-    private String deptCategory;
+    private String orgCategory;
 
     /**
      * 所在建筑(物理资产)=sys_building.plant_id；只车间节点填
@@ -114,6 +114,6 @@ public class SysDeptVo implements Serializable {
     /**
      * 子部门
      */
-    private List<SysDeptVo> children = new ArrayList<>();
+    private List<SysOrgVo> children = new ArrayList<>();
 
 }

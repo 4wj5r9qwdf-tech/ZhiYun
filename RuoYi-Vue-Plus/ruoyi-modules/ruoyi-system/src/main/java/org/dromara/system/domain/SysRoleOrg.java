@@ -6,14 +6,14 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 /**
- * 角色和部门关联 sys_role_dept
+ * 角色和部门关联 sys_role_org
  *
  * @author Lion Li
  */
 
 @Data
-@TableName("sys_role_dept")
-public class SysRoleDept {
+@TableName("sys_role_org")
+public class SysRoleOrg {
 
     /**
      * 角色ID
@@ -24,6 +24,6 @@ public class SysRoleDept {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
 }

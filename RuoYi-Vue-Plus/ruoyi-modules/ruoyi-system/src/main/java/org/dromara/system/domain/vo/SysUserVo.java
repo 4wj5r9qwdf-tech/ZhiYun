@@ -36,7 +36,7 @@ public class SysUserVo implements Serializable {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户账号
@@ -121,8 +121,8 @@ public class SysUserVo implements Serializable {
     /**
      * 部门名
      */
-    @Translation(type = TransConstant.DEPT_ID_TO_NAME, mapper = "deptId")
-    private String deptName;
+    @Translation(type = TransConstant.ORG_ID_TO_NAME, mapper = "orgId")
+    private String orgName;
 
     /**
      * 角色对象

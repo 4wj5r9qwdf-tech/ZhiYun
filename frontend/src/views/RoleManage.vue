@@ -137,7 +137,7 @@ const saving = ref(false)
 const formRef = ref()
 
 const emptyForm = () => ({
-  deptIds: [] as string[],   // 数据范围=自定义部门时勾选
+  orgIds: [] as string[],   // 数据范围=自定义部门时勾选
   roleId: '' as string,
   roleName: '',
   roleKey: '',
@@ -168,14 +168,14 @@ async function openEdit(row: any) {
   } catch { d = null }
   if (!d) d = row
   form.value = {
-    deptIds: [],
+    orgIds: [],
     roleId: String(d.roleId),
     roleName: d.roleName || '', roleKey: d.roleKey || '',
     dataScope: String(d.dataScope || '1'), roleSort: Number(d.roleSort ?? 0),
     status: String(d.status || '0'), remark: d.remark || '',
   }
   showDlg.value = true
-  if (form.value.dataScope === '2') loadRoleDepts(form.value.roleId)
+  if (form.value.dataScope === '2') loadRoleOrgs(form.value.roleId)
 }
 
 async function save() {
@@ -186,7 +186,7 @@ async function save() {
       roleId: isEdit.value ? form.value.roleId : undefined,
       roleName: form.value.roleName, roleKey: form.value.roleKey,
       dataScope: form.value.dataScope, roleSort: form.value.roleSort ?? 0,
-      deptIds: form.value.dataScope === '2' ? form.value.deptIds : undefined,
+      orgIds: form.value.dataScope === '2' ? form.value.orgIds : undefined,
       status: form.value.status, remark: form.value.remark,
     }
     const res: any = isEdit.value ? await api.put('/system/role', payload) : await api.post('/system/role', payload)
@@ -250,16 +250,16 @@ async function savePerm() {
 
 
 // ===== 自定义部门（数据范围=2）勾选弹窗 =====
-const deptDlg = ref({ open: false, saving: false })
-const deptTreeData = ref<any[]>([])      // 全部部门树（排除小组）
-const deptChecked = ref<string[]>([])
+const orgDlg = ref({ open: false, saving: false })
+const orgTreeData = ref<any[]>([])      // 全部部门树（排除小组）
+const orgChecked = ref<string[]>([])
 
-function buildDeptTree(list: any[]): any[] {
+function buildOrgTree(list: any[]): any[] {
   const map: Record<string, any> = {}
-  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  for (const n of list) map[String(n.orgId)] = { ...n, children: [] }
   const roots: any[] = []
   for (const n of list) {
-    const node = map[String(n.deptId)]
+    const node = map[String(n.orgId)]
     const pid = n.parentId
     if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
     else roots.push(node)
@@ -267,29 +267,29 @@ function buildDeptTree(list: any[]): any[] {
   return roots
 }
 
-async function openDeptPick() {
-  deptChecked.value = [...form.value.deptIds]
-  if (!deptTreeData.value.length) {
+async function openOrgPick() {
+  orgChecked.value = [...form.value.orgIds]
+  if (!orgTreeData.value.length) {
     try {
-      const res: any = await api.get('/system/dept/list')
-      if (res.code === 200) deptTreeData.value = buildDeptTree(res.data || [])
+      const res: any = await api.get('/system/org/list')
+      if (res.code === 200) orgTreeData.value = buildOrgTree(res.data || [])
     } catch (e: any) { message.error(e?.response?.data?.msg || '加载部门失败') }
   }
   // 数据就绪后再开弹窗：antd tree 的 default-expand-all 只在挂载时生效，异步晚到不会补展开
-  deptDlg.value.open = true
+  orgDlg.value.open = true
 }
 
 // 编辑回显：角色已选部门
-async function loadRoleDepts(roleId: string) {
+async function loadRoleOrgs(roleId: string) {
   try {
-    const res: any = await api.get(`/system/role/deptTree/${roleId}`)
-    if (res.code === 200) deptChecked.value = (res.data.checkedKeys || []).map(String)
+    const res: any = await api.get(`/system/role/orgTree/${roleId}`)
+    if (res.code === 200) orgChecked.value = (res.data.checkedKeys || []).map(String)
   } catch { /* ignore */ }
 }
 
-function confirmDeptPick() {
-  form.value.deptIds = [...deptChecked.value]
-  deptDlg.value.open = false
+function confirmOrgPick() {
+  form.value.orgIds = [...orgChecked.value]
+  orgDlg.value.open = false
 }
 
 
@@ -300,7 +300,7 @@ function extractKeys(v: any): string[] {
   if (v && Array.isArray(v.checked)) return v.checked.map(String)
   return []
 }
-function onDeptCheck(keys: any) { deptChecked.value = extractKeys(keys) }
+function onOrgCheck(keys: any) { orgChecked.value = extractKeys(keys) }
 function onPermCheck(keys: any, e: any) {
   permChecked.value = extractKeys(keys)
   const half = e?.halfCheckedKeys || e?.halfChecked
@@ -406,16 +406,16 @@ onMounted(() => { loadList(); loadColState() })
           <a-input v-model:value="form.roleKey" placeholder="英文标识，如 production / qc" :maxlength="100" />
         </a-form-item>
         <a-form-item label="数据范围">
-          <a-select v-model:value="form.dataScope" @change="form.dataScope === '2' ? openDeptPick() : undefined">
+          <a-select v-model:value="form.dataScope" @change="form.dataScope === '2' ? openOrgPick() : undefined">
             <a-select-option value="1">全部数据</a-select-option>
             <a-select-option value="2">自定义节点</a-select-option>
             <a-select-option value="3">本部门及以下</a-select-option>
             <a-select-option value="6">本小组及下级</a-select-option>
             <a-select-option value="5">仅本人</a-select-option>
           </a-select>
-          <div v-if="form.dataScope === '2'" class="scope-depts">
-            <a class="pick-btn" @click="openDeptPick">选择节点</a>
-            <span v-if="form.deptIds.length" class="scope-tip">已选 {{ form.deptIds.length }} 个节点（含其下级）</span>
+          <div v-if="form.dataScope === '2'" class="scope-orgs">
+            <a class="pick-btn" @click="openOrgPick">选择节点</a>
+            <span v-if="form.orgIds.length" class="scope-tip">已选 {{ form.orgIds.length }} 个节点（含其下级）</span>
             <span v-else class="scope-tip">未选择</span>
           </div>
         </a-form-item>
@@ -433,24 +433,24 @@ onMounted(() => { loadList(); loadColState() })
 
     <!-- 自定义部门勾选弹窗 -->
     <a-modal
-      v-model:open="deptDlg.open"
+      v-model:open="orgDlg.open"
       :mask-closable="false"
       :keyboard="false"
       title="选择数据范围节点（部门/小组均可勾，均含其全部下级）"
       width="460px"
       ok-text="确定"
       cancel-text="取消"
-      @ok="confirmDeptPick"
+      @ok="confirmOrgPick"
     >
       <div class="perm-tree">
         <a-tree
-          v-if="deptTreeData.length"
+          v-if="orgTreeData.length"
           checkable
           default-expand-all
-          :tree-data="deptTreeData"
-          :field-names="{ key: 'deptId', title: 'deptName', children: 'children' }"
-          :checked-keys="deptChecked"
-          @check="onDeptCheck"
+          :tree-data="orgTreeData"
+          :field-names="{ key: 'orgId', title: 'orgName', children: 'children' }"
+          :checked-keys="orgChecked"
+          @check="onOrgCheck"
           :selectable="false"
         />
       </div>
@@ -519,8 +519,8 @@ onMounted(() => { loadList(); loadColState() })
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 
-.scope-depts { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-.scope-depts .pick-btn { color: #1E5EFF; cursor: pointer; }
+.scope-orgs { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.scope-orgs .pick-btn { color: #1E5EFF; cursor: pointer; }
 .scope-tip { font-size: 12px; color: #86909C; }
 
 .perm-tip { font-size: 12px; color: #86909C; margin-bottom: 10px; line-height: 1.6; }

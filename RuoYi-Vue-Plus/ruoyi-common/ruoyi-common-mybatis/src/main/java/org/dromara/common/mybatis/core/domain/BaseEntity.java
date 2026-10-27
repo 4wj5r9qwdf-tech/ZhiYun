@@ -23,7 +23,7 @@ public class BaseEntity implements Serializable {
      * 创建部门
      */
     @TableField(fill = FieldFill.INSERT)
-    private Long createDept;
+    private Long createOrg;
 
     /**
      * 创建者

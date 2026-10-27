@@ -37,7 +37,7 @@ public class SysUserBo implements Serializable {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户账号

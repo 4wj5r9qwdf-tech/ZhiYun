@@ -18,7 +18,7 @@ import org.dromara.system.domain.SysPost;
 import org.dromara.system.domain.SysUserPost;
 import org.dromara.system.domain.bo.SysPostBo;
 import org.dromara.system.domain.vo.SysPostVo;
-import org.dromara.system.mapper.SysDeptMapper;
+import org.dromara.system.mapper.SysOrgMapper;
 import org.dromara.system.mapper.SysPostMapper;
 import org.dromara.system.mapper.SysUserPostMapper;
 import org.dromara.system.service.ISysPostService;
@@ -39,7 +39,7 @@ import java.util.Map;
 public class SysPostServiceImpl implements ISysPostService, PostService {
 
     private final SysPostMapper postMapper;
-    private final SysDeptMapper deptMapper;
+    private final SysOrgMapper orgMapper;
     private final SysUserPostMapper userPostMapper;
 
     /**
@@ -98,14 +98,14 @@ public class SysPostServiceImpl implements ISysPostService, PostService {
             .eqIfText(SysPost::getStatus, bo.getStatus())
             .betweenParams(SysPost::getCreateTime, params, "beginTime", "endTime")
             .orderByAsc(SysPost::getPostSort);
-        if (ObjectUtil.isNotNull(bo.getDeptId())) {
+        if (ObjectUtil.isNotNull(bo.getOrgId())) {
             //优先单部门搜索
-            wrapper.eq(SysPost::getDeptId, bo.getDeptId());
-        } else if (ObjectUtil.isNotNull(bo.getBelongDeptId())) {
+            wrapper.eq(SysPost::getOrgId, bo.getOrgId());
+        } else if (ObjectUtil.isNotNull(bo.getBelongOrgId())) {
             //部门树搜索
             wrapper.and(x -> {
-                List<Long> deptIds = deptMapper.selectDeptAndChildById(bo.getBelongDeptId());
-                x.in(SysPost::getDeptId, deptIds);
+                List<Long> orgIds = orgMapper.selectOrgAndChildById(bo.getBelongOrgId());
+                x.in(SysPost::getOrgId, orgIds);
             });
         }
         return wrapper;
@@ -169,7 +169,7 @@ public class SysPostServiceImpl implements ISysPostService, PostService {
     public boolean checkPostNameUnique(SysPostBo post) {
         boolean exist = postMapper.lambda()
             .eq(SysPost::getPostName, post.getPostName())
-            .eq(SysPost::getDeptId, post.getDeptId())
+            .eq(SysPost::getOrgId, post.getOrgId())
             .neIfPresent(SysPost::getPostId, post.getPostId())
             .exists();
         return !exist;
@@ -204,12 +204,12 @@ public class SysPostServiceImpl implements ISysPostService, PostService {
     /**
      * 通过部门ID查询岗位使用数量
      *
-     * @param deptId 部门id
+     * @param orgId 部门id
      * @return 结果
      */
     @Override
-    public long countPostByDeptId(Long deptId) {
-        return postMapper.lambda().eq(SysPost::getDeptId, deptId).count();
+    public long countPostByOrgId(Long orgId) {
+        return postMapper.lambda().eq(SysPost::getOrgId, orgId).count();
     }
 
     /**

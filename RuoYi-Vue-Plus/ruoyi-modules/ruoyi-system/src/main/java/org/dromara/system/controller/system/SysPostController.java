@@ -16,10 +16,10 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
-import org.dromara.system.domain.bo.SysDeptBo;
+import org.dromara.system.domain.bo.SysOrgBo;
 import org.dromara.system.domain.bo.SysPostBo;
 import org.dromara.system.domain.vo.SysPostVo;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.service.ISysOrgService;
 import org.dromara.system.service.ISysPostService;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -40,7 +40,7 @@ import java.util.List;
 public class SysPostController extends BaseController {
 
     private final ISysPostService postService;
-    private final ISysDeptService deptService;
+    private final ISysOrgService orgService;
 
     /**
      * 分页查询岗位列表。
@@ -144,16 +144,16 @@ public class SysPostController extends BaseController {
      * 获取岗位选择框列表
      *
      * @param postIds 岗位ID串
-     * @param deptId  部门id
+     * @param orgId  部门id
      * @return 岗位列表
      */
     @SaCheckPermission("system:post:query")
     @GetMapping("/optionselect")
-    public R<List<SysPostVo>> optionselect(@RequestParam(required = false) Long[] postIds, @RequestParam(required = false) Long deptId) {
+    public R<List<SysPostVo>> optionselect(@RequestParam(required = false) Long[] postIds, @RequestParam(required = false) Long orgId) {
         List<SysPostVo> list = new ArrayList<>();
-        if (ObjectUtil.isNotNull(deptId)) {
+        if (ObjectUtil.isNotNull(orgId)) {
             SysPostBo post = new SysPostBo();
-            post.setDeptId(deptId);
+            post.setOrgId(orgId);
             list = postService.selectPostList(post);
         } else if (postIds != null) {
             list = postService.selectPostByIds(List.of(postIds));
@@ -164,13 +164,13 @@ public class SysPostController extends BaseController {
     /**
      * 获取岗位筛选用的部门树。
      *
-     * @param dept 部门查询条件
+     * @param org 部门查询条件
      * @return 部门树列表
      */
     @SaCheckPermission("system:post:list")
-    @GetMapping("/deptTree")
-    public R<List<Tree<Long>>> deptTree(SysDeptBo dept) {
-        return R.ok(deptService.selectDeptTreeList(dept));
+    @GetMapping("/orgTree")
+    public R<List<Tree<Long>>> orgTree(SysOrgBo org) {
+        return R.ok(orgService.selectOrgTreeList(org));
     }
 
 

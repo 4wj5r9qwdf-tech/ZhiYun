@@ -8,15 +8,15 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.system.api.TaskAssigneeService;
 import org.dromara.system.api.domain.TaskAssigneeDTO;
 import org.dromara.system.api.model.TaskAssigneeBody;
-import org.dromara.system.domain.bo.SysDeptBo;
+import org.dromara.system.domain.bo.SysOrgBo;
 import org.dromara.system.domain.bo.SysPostBo;
 import org.dromara.system.domain.bo.SysRoleBo;
 import org.dromara.system.domain.bo.SysUserBo;
-import org.dromara.system.domain.vo.SysDeptVo;
+import org.dromara.system.domain.vo.SysOrgVo;
 import org.dromara.system.domain.vo.SysPostVo;
 import org.dromara.system.domain.vo.SysRoleVo;
 import org.dromara.system.domain.vo.SysUserVo;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.service.ISysOrgService;
 import org.dromara.system.service.ISysPostService;
 import org.dromara.system.service.ISysRoleService;
 import org.dromara.system.service.ISysUserService;
@@ -36,7 +36,7 @@ public class SysTaskAssigneeServiceImpl implements TaskAssigneeService {
 
     // 上级Service注入下级Service 其他Service永远不可能注入当前类 避免循环注入
     private final ISysPostService postService;
-    private final ISysDeptService deptService;
+    private final ISysOrgService orgService;
     private final ISysUserService userService;
     private final ISysRoleService roleService;
 
@@ -79,11 +79,11 @@ public class SysTaskAssigneeServiceImpl implements TaskAssigneeService {
         Map<String, Object> params = bo.getParams();
         params.put("beginTime", taskQuery.getBeginTime());
         params.put("endTime", taskQuery.getEndTime());
-        bo.setBelongDeptId(Convert.toLong(taskQuery.getGroupId()));
+        bo.setBelongOrgId(Convert.toLong(taskQuery.getGroupId()));
         PageResult<SysPostVo> page = postService.selectPagePostList(bo, pageQuery);
         // 使用封装的字段映射方法进行转换
         List<TaskAssigneeDTO.TaskHandler> handlers = TaskAssigneeDTO.convertToHandlerList(page.getRows(),
-            item -> Convert.toStr(item.getPostId()), SysPostVo::getPostCategory, SysPostVo::getPostName, item -> Convert.toStr(item.getDeptId()), SysPostVo::getCreateTime);
+            item -> Convert.toStr(item.getPostId()), SysPostVo::getPostCategory, SysPostVo::getPostName, item -> Convert.toStr(item.getOrgId()), SysPostVo::getCreateTime);
         return new TaskAssigneeDTO(page.getTotal(), handlers);
     }
 
@@ -94,20 +94,20 @@ public class SysTaskAssigneeServiceImpl implements TaskAssigneeService {
      * @return 办理人
      */
     @Override
-    public TaskAssigneeDTO selectDeptsByTaskAssigneeList(TaskAssigneeBody taskQuery) {
+    public TaskAssigneeDTO selectOrgsByTaskAssigneeList(TaskAssigneeBody taskQuery) {
         PageQuery pageQuery = new PageQuery(taskQuery.getPageSize(), taskQuery.getPageNum());
-        SysDeptBo bo = new SysDeptBo();
-        bo.setDeptCategory(taskQuery.getHandlerCode());
-        bo.setDeptName(taskQuery.getHandlerName());
+        SysOrgBo bo = new SysOrgBo();
+        bo.setOrgCategory(taskQuery.getHandlerCode());
+        bo.setOrgName(taskQuery.getHandlerName());
         bo.setStatus(SystemConstants.NORMAL);
         Map<String, Object> params = bo.getParams();
         params.put("beginTime", taskQuery.getBeginTime());
         params.put("endTime", taskQuery.getEndTime());
-        bo.setBelongDeptId(Convert.toLong(taskQuery.getGroupId()));
-        PageResult<SysDeptVo> page = deptService.selectPageDeptList(bo, pageQuery);
+        bo.setBelongOrgId(Convert.toLong(taskQuery.getGroupId()));
+        PageResult<SysOrgVo> page = orgService.selectPageOrgList(bo, pageQuery);
         // 使用封装的字段映射方法进行转换
         List<TaskAssigneeDTO.TaskHandler> handlers = TaskAssigneeDTO.convertToHandlerList(page.getRows(),
-            item -> Convert.toStr(item.getDeptId()), SysDeptVo::getDeptCategory, SysDeptVo::getDeptName, item -> Convert.toStr(item.getParentId()), SysDeptVo::getCreateTime);
+            item -> Convert.toStr(item.getOrgId()), SysOrgVo::getOrgCategory, SysOrgVo::getOrgName, item -> Convert.toStr(item.getParentId()), SysOrgVo::getCreateTime);
         return new TaskAssigneeDTO(page.getTotal(), handlers);
     }
 
@@ -127,11 +127,11 @@ public class SysTaskAssigneeServiceImpl implements TaskAssigneeService {
         Map<String, Object> params = bo.getParams();
         params.put("beginTime", taskQuery.getBeginTime());
         params.put("endTime", taskQuery.getEndTime());
-        bo.setDeptId(Convert.toLong(taskQuery.getGroupId()));
+        bo.setOrgId(Convert.toLong(taskQuery.getGroupId()));
         PageResult<SysUserVo> page = userService.selectPageUserList(bo, pageQuery);
         // 使用封装的字段映射方法进行转换
         List<TaskAssigneeDTO.TaskHandler> handlers = TaskAssigneeDTO.convertToHandlerList(page.getRows(),
-            item -> Convert.toStr(item.getUserId()), SysUserVo::getUserName, SysUserVo::getNickName, item -> Convert.toStr(item.getDeptId()), SysUserVo::getCreateTime);
+            item -> Convert.toStr(item.getUserId()), SysUserVo::getUserName, SysUserVo::getNickName, item -> Convert.toStr(item.getOrgId()), SysUserVo::getCreateTime);
         return new TaskAssigneeDTO(page.getTotal(), handlers);
     }
 

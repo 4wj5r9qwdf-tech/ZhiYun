@@ -11,7 +11,7 @@ import org.dromara.common.core.utils.DateUtils;
 import org.dromara.common.core.utils.StreamUtils;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.system.api.*;
-import org.dromara.system.api.domain.DeptDTO;
+import org.dromara.system.api.domain.OrgDTO;
 import org.dromara.system.api.domain.TaskAssigneeDTO;
 import org.dromara.system.api.domain.UserDTO;
 import org.dromara.system.api.model.TaskAssigneeBody;
@@ -45,7 +45,7 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
 
     private final TaskAssigneeService taskAssigneeService;
     private final UserService userService;
-    private final DeptService deptService;
+    private final OrgService orgService;
     private final RoleService roleService;
     private final PostService postService;
     private final IFlwSpelService spelService;
@@ -75,9 +75,9 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
 
         // 统一查询并构建业务数据
         TaskAssigneeDTO dto = fetchTaskAssigneeData(type, taskQuery);
-        List<DeptDTO> depts = fetchDeptData(type);
+        List<OrgDTO> orgs = fetchOrgData(type);
 
-        return getHandlerSelectVo(buildHandlerData(dto, type), buildDeptTree(depts));
+        return getHandlerSelectVo(buildHandlerData(dto, type), buildOrgTree(orgs));
     }
 
     /**
@@ -127,7 +127,7 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
         return switch (type) {
             case USER -> taskAssigneeService.selectUsersByTaskAssigneeList(taskQuery);
             case ROLE -> taskAssigneeService.selectRolesByTaskAssigneeList(taskQuery);
-            case DEPT -> taskAssigneeService.selectDeptsByTaskAssigneeList(taskQuery);
+            case ORG -> taskAssigneeService.selectOrgsByTaskAssigneeList(taskQuery);
             case POST -> taskAssigneeService.selectPostsByTaskAssigneeList(taskQuery);
             case SPEL -> spelService.selectSpelByTaskAssigneeList(taskQuery);
         };
@@ -139,9 +139,9 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
      * @param type 办理人类型
      * @return 部门列表
      */
-    private List<DeptDTO> fetchDeptData(TaskAssigneeEnum type) {
-        if (type.needsDeptService()) {
-            return deptService.selectDeptsByList();
+    private List<OrgDTO> fetchOrgData(TaskAssigneeEnum type) {
+        if (type.needsOrgService()) {
+            return orgService.selectOrgsByList();
         }
         return new ArrayList<>();
     }
@@ -157,8 +157,8 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
         if (StringUtils.isEmpty(groupName)) {
             return DEFAULT_GROUP_NAME;
         }
-        if (type.needsDeptService()) {
-            return deptService.selectDeptNameByIds(groupName);
+        if (type.needsOrgService()) {
+            return orgService.selectOrgNameByIds(groupName);
         }
         return DEFAULT_GROUP_NAME;
     }
@@ -166,14 +166,14 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
     /**
      * 构建设计器左侧部门树。
      *
-     * @param depts 部门列表
+     * @param orgs 部门列表
      * @return 部门树构建器
      */
-    private TreeFunDto<DeptDTO> buildDeptTree(List<DeptDTO> depts) {
-        return new TreeFunDto<>(depts)
-            .setId(dept -> Convert.toStr(dept.getDeptId()))
-            .setName(DeptDTO::getDeptName)
-            .setParentId(dept -> Convert.toStr(dept.getParentId()));
+    private TreeFunDto<OrgDTO> buildOrgTree(List<OrgDTO> orgs) {
+        return new TreeFunDto<>(orgs)
+            .setId(org -> Convert.toStr(org.getOrgId()))
+            .setName(OrgDTO::getOrgName)
+            .setParentId(org -> Convert.toStr(org.getParentId()));
     }
 
     /**
@@ -250,7 +250,7 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
      * @param ids  与指定分配类型关联的 ID 列表（例如用户ID、角色ID、部门ID等）
      * @return 返回包含用户信息的列表。如果类型为用户（USER），则通过用户ID列表查询；
      * 如果类型为角色（ROLE），则通过角色ID列表查询；
-     * 如果类型为部门（DEPT），则通过部门ID列表查询；
+     * 如果类型为部门（ORG），则通过部门ID列表查询；
      * 如果类型为岗位（POST）或无法识别的类型，则返回空列表
      */
     private List<UserDTO> getUsersByType(TaskAssigneeEnum type, List<String> ids) {
@@ -261,7 +261,7 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
         return switch (type) {
             case USER -> userService.selectListByIds(longIds);
             case ROLE -> userService.selectUsersByRoleIds(longIds);
-            case DEPT -> userService.selectUsersByDeptIds(longIds);
+            case ORG -> userService.selectUsersByOrgIds(longIds);
             case POST -> userService.selectUsersByPostIds(longIds);
             default -> new ArrayList<>();
         };
@@ -283,7 +283,7 @@ public class FlwTaskAssigneeServiceImpl implements IFlwTaskAssigneeService, Hand
         Map<Long, String> rawMap = switch (type) {
             case USER -> userService.selectUserNicksByIds(longIds);
             case ROLE -> roleService.selectRoleNamesByIds(longIds);
-            case DEPT -> deptService.selectDeptNamesByIds(longIds);
+            case ORG -> orgService.selectOrgNamesByIds(longIds);
             case POST -> postService.selectPostNamesByIds(longIds);
             default -> Collections.emptyMap();
         };

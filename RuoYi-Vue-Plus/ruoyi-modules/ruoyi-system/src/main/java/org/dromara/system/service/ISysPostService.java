@@ -98,10 +98,10 @@ public interface ISysPostService {
     /**
      * 通过部门ID查询岗位使用数量
      *
-     * @param deptId 部门id
+     * @param orgId 部门id
      * @return 岗位数量
      */
-    long countPostByDeptId(Long deptId);
+    long countPostByOrgId(Long orgId);
 
     /**
      * 删除岗位信息

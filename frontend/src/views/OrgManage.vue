@@ -2,7 +2,7 @@
 /**
  * 组织架构（人员模块）——原部门管理，万物皆部门后统一管理组织节点（部门/科室/小组）—— ant-design-vue：左树 + 右表分栏
  * - 左侧组织树（点节点→右侧只显示该节点及下级）
- * - 层级 = 树深度，按 ancestors 实时算（一级/二级/三级…），不依赖 dept_category
+ * - 层级 = 树深度，按 ancestors 实时算（一级/二级/三级…），不依赖 org_category
  * - a-table 树形展开表 + 列设置 + 列宽拖拽（对齐人员信息标准布局）
  * - 操作：编辑 / 新增下级 / 删除；位置(楼/层/房间)渐进式；业务管辖关联
  */
@@ -21,7 +21,7 @@ const tree = ref<any[]>([])        // 原始部门树（含 children）
 const loading = ref(false)
 const keyword = ref('')
 // 左树选中节点（点节点→右侧只显示该节点及下级）
-const selectedDeptId = ref<string | null>(null)
+const selectedOrgId = ref<string | null>(null)
 // 树面板收起/展开（默认展开）
 const treeCollapsed = ref(false)
 // 筛选：层级 + 状态（前端过滤）
@@ -33,26 +33,26 @@ function resetFilters() { keyword.value = ''; filterCategory.value = undefined; 
 const leftTree = computed(() => tree.value)
 // 选中节点及其下级（右侧数据源）；未选=全部
 const selectedSubtree = computed(() => {
-  if (!selectedDeptId.value) return tree.value
-  const node = findNode(tree.value, selectedDeptId.value)
+  if (!selectedOrgId.value) return tree.value
+  const node = findNode(tree.value, selectedOrgId.value)
   return node ? [node] : tree.value
 })
 // 过滤后部门总数（含下级）
-const deptCount = computed(() => {
+const orgCount = computed(() => {
   let n = 0
   const walk = (nodes: any[]) => { for (const x of nodes) { n++; walk(x.children || []) } }
-  walk(deptTree.value)
+  walk(orgTree.value)
   return n
 })
 
-// 业务管辖：每个部门管辖了多少被管部门（deptId -> 数），列表展示
+// 业务管辖：每个部门管辖了多少被管部门（orgId -> 数），列表展示
 const manageCounts = ref<Record<string, number>>({})
 // 表单里被管部门选择（管理范围多选）
 const managedIds = ref<string[]>([])
 
 async function loadManageCounts() {
   try {
-    const res: any = await api.get('/system/dept/manage-counts')
+    const res: any = await api.get('/system/org/manage-counts')
     if (res.code === 200) manageCounts.value = res.data || {}
   } catch { /* ignore */ }
 }
@@ -60,8 +60,8 @@ function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
 
 // 全部列（不含操作列，操作列固定最后）
 const ALL_COLUMNS = [
-  { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
-  { title: '类型', key: 'deptCategory', width: 80 },
+  { title: '部门名称', dataIndex: 'orgName', key: 'orgName' },
+  { title: '类型', key: 'orgCategory', width: 80 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
   { title: '位置', key: 'location', width: 160 },
   { title: '管辖', key: 'manages', width: 80 },
@@ -75,7 +75,7 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
-const colStoreKey = computed(() => `dept_list:${localStorage.getItem('userId') || 'anon'}`)
+const colStoreKey = computed(() => `org_list:${localStorage.getItem('userId') || 'anon'}`)
 
 function loadColState() {
   try {
@@ -154,15 +154,15 @@ const columns = computed(() => {
 })
 
 // 右侧数据源：左树选中节点(及下级) + 关键词/层级/状态过滤（保留命中节点及其祖先链）
-const deptTree = computed(() => {
+const orgTree = computed(() => {
   const base = selectedSubtree.value
   const kw = keyword.value.trim()
   const lvl = filterCategory.value   // 层级筛选：值为数字字符串如 '1'/'2'
   const st = filterStatus.value
   if (!kw && !lvl && !st) return base
   const match = (n: any) => {
-    if (kw && !String(n.deptName || '').includes(kw)) return false
-    if (lvl && String(deptLevel(n)) !== lvl) return false
+    if (kw && !String(n.orgName || '').includes(kw)) return false
+    if (lvl && String(orgLevel(n)) !== lvl) return false
     if (st && n.status !== st) return false
     return true
   }
@@ -180,7 +180,7 @@ const deptTree = computed(() => {
 async function loadTree() {
   loading.value = true
   try {
-    const res: any = await api.get('/system/dept/list')
+    const res: any = await api.get('/system/org/list')
     if (res.code === 200) tree.value = buildTree(res.data || [])
     else message.error(res.msg || '加载部门失败')
   } catch (e: any) {
@@ -191,10 +191,10 @@ async function loadTree() {
 // 平铺列表 → 嵌套树（接口返回平铺，前端按 parentId 组树，否则子部门全显示成顶层）
 function buildTree(list: any[]): any[] {
   const map: Record<string, any> = {}
-  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  for (const n of list) map[String(n.orgId)] = { ...n, children: [] }
   const roots: any[] = []
   for (const n of list) {
-    const node = map[String(n.deptId)]
+    const node = map[String(n.orgId)]
     const pid = n.parentId
     if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
     else roots.push(node)
@@ -235,9 +235,9 @@ async function loadBuildings() {
 
 // 状态切换（0 启用 / 1 停用），走编辑接口整行提交
 async function toggleStatus(row: any, checked: any) {
-  const res: any = await api.put('/system/dept', {
-    deptId: row.deptId, parentId: row.parentId, deptName: row.deptName,
-    deptCategory: row.deptCategory, buildingId: row.buildingId ?? null, orderNum: row.orderNum,
+  const res: any = await api.put('/system/org', {
+    orgId: row.orgId, parentId: row.parentId, orgName: row.orgName,
+    orgCategory: row.orgCategory, buildingId: row.buildingId ?? null, orderNum: row.orderNum,
     leader: row.leader, phone: row.phone, email: row.email,
     status: checked ? '0' : '1',
   })
@@ -275,10 +275,10 @@ const saving = ref(false)
 const formRef = ref()
 
 const emptyForm = () => ({
-  deptId: null as string | null,
+  orgId: null as string | null,
   parentId: undefined as string | undefined,
-  deptName: '',
-  deptCategory: '部门',
+  orgName: '',
+  orgCategory: '部门',
   buildingId: undefined as number | undefined,   // 所在建筑（哪栋楼，可选，所有层级都能填）
   floor: undefined as number | undefined,        // 楼层（几层，可选；buildingId 选了才出现）
   location: '',                                   // 位置路径尾段（车间/房间等，可选，自由填）
@@ -292,21 +292,21 @@ const form = ref(emptyForm())
 
 // 上级部门树选择（编辑时排除自己及子孙，防成环）
 const parentTree = computed(() => {
-  const excludeId = isEdit.value ? form.value.deptId : null
+  const excludeId = isEdit.value ? form.value.orgId : null
   const walk = (nodes: any[]): any[] => nodes
-    .filter(n => String(n.deptId) !== String(excludeId))
+    .filter(n => String(n.orgId) !== String(excludeId))
     .map(n => ({ ...n, children: walk(n.children || []) }))
   return walk(tree.value)
 })
 
 // 管辖范围树选择：排除自己，但把自己的子节点提升上来（如生产部不显示，但它的 1车间生产科 可选）
 const manageTree = computed(() => {
-  const selfId = isEdit.value ? String(form.value.deptId) : null
+  const selfId = isEdit.value ? String(form.value.orgId) : null
   const walk = (nodes: any[]): any[] => {
     const out: any[] = []
     for (const n of nodes) {
       const kids = walk(n.children || [])
-      if (String(n.deptId) === selfId) {
+      if (String(n.orgId) === selfId) {
         // 排除自己，但子节点提升到当前层级（保留可选）
         out.push(...kids)
       } else {
@@ -319,21 +319,21 @@ const manageTree = computed(() => {
 })
 
 const rules: any = {
-  deptName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
+  orgName: [{ required: true, message: '请输入部门名称', trigger: 'blur' }],
 }
 
 function findNode(nodes: any[], id: string): any {
   for (const n of nodes) {
-    if (String(n.deptId) === id) return n
+    if (String(n.orgId) === id) return n
     const f = findNode(n.children || [], id)
     if (f) return f
   }
   return null
 }
 
-// ===== 层级 = 树深度（按 ancestors 实时算，不依赖 dept_category）=====
+// ===== 层级 = 树深度（按 ancestors 实时算，不依赖 org_category）=====
 // ancestors 形如 "0" / "0,父id" / "0,父id,祖父id" → 段数 = 层级（顶层=1级）
-function deptLevel(n: any): number {
+function orgLevel(n: any): number {
   const anc = String(n?.ancestors ?? '0')
   return anc.split(',').filter(x => x !== '').length || 1
 }
@@ -342,7 +342,7 @@ function deptLevel(n: any): number {
 // 层级筛选选项：按当前数据实际深度动态生成（一级..N级）
 const levelOptions = computed(() => {
   let max = 0
-  const walk = (nodes: any[]) => { for (const n of nodes) { max = Math.max(max, deptLevel(n)); walk(n.children || []) } }
+  const walk = (nodes: any[]) => { for (const n of nodes) { max = Math.max(max, orgLevel(n)); walk(n.children || []) } }
   walk(tree.value)
   const opts: { value: string; label: string }[] = []
   for (let i = 1; i <= max; i++) opts.push({ value: String(i), label: `${i} 级` })
@@ -361,14 +361,14 @@ function openAddTop() {
 function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
-  form.value.parentId = String(row.deptId)
+  form.value.parentId = String(row.orgId)
   managedIds.value = []
   showDlg.value = true
 }
 
 async function openEdit(row: any) {
   isEdit.value = true
-  const res: any = await api.get(`/system/dept/${row.deptId}`)
+  const res: any = await api.get(`/system/org/${row.orgId}`)
   if (res.code !== 200) { message.error('加载详情失败'); return }
   const d = res.data
   // 回填位置：location 是拼好的路径（楼/层/尾段），反解出 buildingId/floor/尾段
@@ -382,10 +382,10 @@ async function openEdit(row: any) {
   if (segs.length && /^\d+层?$/.test(segs[0])) { floor = Number(segs[0].replace('层', '')); tail = segs.slice(1).join('/') }
   else tail = segs.join('/')
   form.value = {
-    deptId: String(d.deptId),
+    orgId: String(d.orgId),
     parentId: d.parentId === 0 || d.parentId === '0' ? undefined : String(d.parentId),
-    deptName: d.deptName || '',
-    deptCategory: d.deptCategory || '部门',
+    orgName: d.orgName || '',
+    orgCategory: d.orgCategory || '部门',
     buildingId: d.buildingId ? Number(d.buildingId) : undefined,
     floor,
     location: tail,
@@ -396,13 +396,13 @@ async function openEdit(row: any) {
     status: d.status || '0',
   }
   showDlg.value = true
-  loadManages(String(d.deptId))
+  loadManages(String(d.orgId))
 }
 
 // 加载该部门当前管辖的被管部门
-async function loadManages(deptId: string) {
+async function loadManages(orgId: string) {
   try {
-    const res: any = await api.get(`/system/dept/${deptId}/manages`)
+    const res: any = await api.get(`/system/org/${orgId}/manages`)
     if (res.code === 200) managedIds.value = (res.data || []).map((x: any) => String(x))
   } catch { managedIds.value = [] }
 }
@@ -410,17 +410,17 @@ async function loadManages(deptId: string) {
 // 新增下级后：把新部门自动纳入直接上级的管辖范围（父的管辖列表追加新部门id）
 async function autoManageNewChild(parentId: string, childName: string) {
   try {
-    await loadTree()   // 刷新，拿到新部门的 deptId
+    await loadTree()   // 刷新，拿到新部门的 orgId
     const parent = findNode(tree.value, String(parentId))
     if (!parent) return
-    const child = (parent.children || []).find((n: any) => n.deptName === childName)
+    const child = (parent.children || []).find((n: any) => n.orgName === childName)
     if (!child) return
-    const cur: any = await api.get(`/system/dept/${parentId}/manages`)
+    const cur: any = await api.get(`/system/org/${parentId}/manages`)
     const ids: string[] = cur.code === 200 ? (cur.data || []).map((x: any) => String(x)) : []
-    const cid = String(child.deptId)
+    const cid = String(child.orgId)
     if (!ids.includes(cid)) {
       ids.push(cid)
-      await api.put(`/system/dept/${parentId}/manages`, ids)
+      await api.put(`/system/org/${parentId}/manages`, ids)
     }
   } catch { /* 自动纳入失败不影响保存 */ }
 }
@@ -432,10 +432,10 @@ async function save() {
   saving.value = true
   try {
     const payload: any = {
-      deptId: form.value.deptId ?? undefined,
+      orgId: form.value.orgId ?? undefined,
       parentId: form.value.parentId ?? 0,
-      deptName: form.value.deptName,
-      deptCategory: form.value.deptCategory,
+      orgName: form.value.orgName,
+      orgCategory: form.value.orgCategory,
       buildingId: form.value.buildingId ?? null,
       location: composeLocation(),
       orderNum: form.value.orderNum ?? 0,
@@ -444,12 +444,12 @@ async function save() {
       email: form.value.email || '',
       status: form.value.status || '0',
     }
-    const res: any = isEdit.value ? await api.put('/system/dept', payload) : await api.post('/system/dept', payload)
+    const res: any = isEdit.value ? await api.put('/system/org', payload) : await api.post('/system/org', payload)
     if (res.code === 200) {
       // 编辑时同步保存管辖范围（新增部门先保存再编辑设置管辖）
-      if (isEdit.value) await api.put(`/system/dept/${payload.deptId}/manages`, managedIds.value)
+      if (isEdit.value) await api.put(`/system/org/${payload.orgId}/manages`, managedIds.value)
       // 新增下级时，自动把新部门纳入直接上级的管辖范围
-      if (!isEdit.value && payload.parentId) await autoManageNewChild(payload.parentId, payload.deptName)
+      if (!isEdit.value && payload.parentId) await autoManageNewChild(payload.parentId, payload.orgName)
       message.success('保存成功'); showDlg.value = false; loadTree(); loadManageCounts()
     }
     else message.error(res.msg || '保存失败')
@@ -458,13 +458,13 @@ async function save() {
 }
 
 // 删除：后端会校验有无子部门/人员占用，失败时弹后端 msg
-function removeDept(row: any) {
+function removeOrg(row: any) {
   Modal.confirm({
     title: '删除组织',
-    content: `确认删除「${row.deptName}」？若有下级部门或已分配人员，后端将拒绝删除。`,
+    content: `确认删除「${row.orgName}」？若有下级部门或已分配人员，后端将拒绝删除。`,
     okText: '删除', okType: 'danger', cancelText: '取消',
     onOk: async () => {
-      const res: any = await api.delete(`/system/dept/${row.deptId}`)
+      const res: any = await api.delete(`/system/org/${row.orgId}`)
       if (res.code === 200) { message.success('已删除'); loadTree() }
       else message.error(res.msg || '删除失败')
     },
@@ -478,14 +478,14 @@ watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 const expandedRowKeys = ref<string[]>([])
 function onTreeSelect(keys: any[]) {
   const id = keys.length ? String(keys[0]) : null
-  selectedDeptId.value = id
+  selectedOrgId.value = id
   expandedRowKeys.value = id ? [id] : []
 }
 // 取消选中（回到全部）
-function clearTreeSelect() { selectedDeptId.value = null; expandedRowKeys.value = [] }
+function clearTreeSelect() { selectedOrgId.value = null; expandedRowKeys.value = [] }
 // 手动点行首 +/- 展开收起，同步受控 expandedRowKeys
 function onRowExpand(exp: boolean, record: any) {
-  const id = String(record.deptId)
+  const id = String(record.orgId)
   if (exp) { if (!expandedRowKeys.value.includes(id)) expandedRowKeys.value.push(id) }
   else expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
 }
@@ -494,7 +494,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </script>
 
 <template>
-  <div class="dept-page">
+  <div class="org-page">
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
@@ -521,27 +521,27 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     </div>
 
     <!-- 树 + 表格 并排（树可向左收起，收起后表格占满） -->
-    <div class="dept-body">
+    <div class="org-body">
       <!-- 左：组织树 -->
-      <div class="dept-tree-panel" :class="{ collapsed: treeCollapsed }">
+      <div class="org-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
           <span class="tree-title">组织架构</span>
-          <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+          <a v-if="selectedOrgId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
         </div>
         <div class="tree-body">
           <a-tree
             v-if="leftTree.length"
             :tree-data="leftTree"
-            :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
+            :field-names="{ title: 'orgName', key: 'orgId', children: 'children' }"
             block-node
             default-expand-all
-            :selected-keys="selectedDeptId ? [selectedDeptId] : []"
+            :selected-keys="selectedOrgId ? [selectedOrgId] : []"
             @select="onTreeSelect"
           >
-            <template #title="{ deptName, deptCategory }">
+            <template #title="{ orgName, orgCategory }">
               <span class="tree-node">
-                {{ deptName }}
-                <span v-if="deptCategory === '小组'" class="type-tag">小组</span>
+                {{ orgName }}
+                <span v-if="orgCategory === '小组'" class="type-tag">小组</span>
               </span>
             </template>
           </a-tree>
@@ -556,11 +556,11 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       </div>
 
       <!-- 右：表格区 -->
-      <div class="dept-main">
+      <div class="org-main">
 
     <!-- 列表工具行：条数 + 列设置 -->
     <div class="table-bar">
-      <span class="total">共 {{ deptCount }} 个组织</span>
+      <span class="total">共 {{ orgCount }} 个组织</span>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -585,26 +585,26 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <!-- 树表 -->
     <a-table
       :columns="columns"
-      :data-source="deptTree"
+      :data-source="orgTree"
       :loading="loading"
       :pagination="false"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
       :expanded-row-keys="expandedRowKeys"
       @expand="(exp: boolean, record: any) => onRowExpand(exp, record)"
-      row-key="deptId"
+      row-key="orgId"
       size="middle"
-      class="dept-table"
+      class="org-table"
     >
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'index'">
           {{ index + 1 }}   <!-- 树形无分页，按显示行连续编号 -->
         </template>
-        <template v-if="column.key === 'deptName'">
-          <span class="dept-name">{{ record.deptName }}</span>
+        <template v-if="column.key === 'orgName'">
+          <span class="org-name">{{ record.orgName }}</span>
         </template>
-        <template v-else-if="column.key === 'deptCategory'">
-          <a-tag :color="typeColorOf(record.deptCategory)">{{ record.deptCategory || '部门' }}</a-tag>
+        <template v-else-if="column.key === 'orgCategory'">
+          <a-tag :color="typeColorOf(record.orgCategory)">{{ record.orgCategory || '部门' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'buildingId'">
           {{ buildingLabel(record.buildingId) || '—' }}
@@ -614,7 +614,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'manages'">
-          <a-tag v-if="manageCount(record.deptId)" color="geekblue">管 {{ manageCount(record.deptId) }}</a-tag>
+          <a-tag v-if="manageCount(record.orgId)" color="geekblue">管 {{ manageCount(record.orgId) }}</a-tag>
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'leader'">
@@ -634,12 +634,12 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
         <template v-else-if="column.key === 'ops'">
           <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
           <a class="ops-link" @click="openAddChild(record)"><PlusOutlined />新增下级</a>
-          <a class="ops-link danger-link" @click="removeDept(record)"><DeleteOutlined />删除</a>
+          <a class="ops-link danger-link" @click="removeOrg(record)"><DeleteOutlined />删除</a>
         </template>
       </template>
     </a-table>
-    </div><!-- /dept-main -->
-    </div><!-- /dept-body -->
+    </div><!-- /org-main -->
+    </div><!-- /org-body -->
 
     <!-- 新增/编辑（a-modal + a-form） -->
     <a-modal
@@ -656,13 +656,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="组织名称" name="deptName">
-              <a-input v-model:value="form.deptName" :maxlength="30" placeholder="请输入" />
+            <a-form-item label="组织名称" name="orgName">
+              <a-input v-model:value="form.orgName" :maxlength="30" placeholder="请输入" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="档案类型">
-              <a-select v-model:value="form.deptCategory">
+              <a-select v-model:value="form.orgCategory">
                 <a-select-option value="厂区">厂区</a-select-option>
                 <a-select-option value="部门">部门</a-select-option>
                 <a-select-option value="车间">车间</a-select-option>
@@ -678,7 +678,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
               <a-tree-select
                 v-model:value="form.parentId"
                 :tree-data="parentTree"
-                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
+                :field-names="{ label: 'orgName', value: 'orgId', children: 'children' }"
                 allow-clear
                 tree-default-expand-all
                 placeholder="不选 = 顶层"
@@ -711,7 +711,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
               <a-tree-select
                 v-model:value="managedIds"
                 :tree-data="manageTree"
-                :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }"
+                :field-names="{ label: 'orgName', value: 'orgId', children: 'children' }"
                 multiple
                 allow-clear
                 tree-checkable
@@ -761,9 +761,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
 /* 左树 + 右表 分栏 */
 /* 树 + 表格 并排（标题行/筛选栏下方） */
-.dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
-.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
-.dept-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
+.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
+.org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
 .tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
@@ -773,7 +773,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 /* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
 .tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
-.dept-main { flex: 1; min-width: 0; }
+.org-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
@@ -792,16 +792,16 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .col-move .ant-btn:hover:not(:disabled) { color: #1E5EFF; }
 .col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
 
-.dept-table { width: 100%; background: #fff; border-radius: 10px; }
-.dept-table :deep(.ant-table) { font-size: 13px; }
-.dept-table :deep(.ant-table-thead > tr > th),
-.dept-table :deep(.ant-table-tbody > tr > td) { border-right: 1px solid #F0F2F5; }
-.dept-table :deep(.ant-table-thead > tr > th:last-child),
-.dept-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
-.dept-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
-.dept-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
+.org-table { width: 100%; background: #fff; border-radius: 10px; }
+.org-table :deep(.ant-table) { font-size: 13px; }
+.org-table :deep(.ant-table-thead > tr > th),
+.org-table :deep(.ant-table-tbody > tr > td) { border-right: 1px solid #F0F2F5; }
+.org-table :deep(.ant-table-thead > tr > th:last-child),
+.org-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
+.org-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
+.org-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
-.dept-name { font-weight: 500; color: #1D2129; }
+.org-name { font-weight: 500; color: #1D2129; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }

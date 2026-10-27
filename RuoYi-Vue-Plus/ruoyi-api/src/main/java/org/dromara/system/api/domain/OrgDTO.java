@@ -13,7 +13,7 @@ import java.io.Serializable;
  */
 @Data
 @NoArgsConstructor
-public class DeptDTO implements Serializable {
+public class OrgDTO implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -21,7 +21,7 @@ public class DeptDTO implements Serializable {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 父部门ID
@@ -31,6 +31,6 @@ public class DeptDTO implements Serializable {
     /**
      * 部门名称
      */
-    private String deptName;
+    private String orgName;
 
 }

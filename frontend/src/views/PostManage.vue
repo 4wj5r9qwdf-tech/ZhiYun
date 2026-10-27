@@ -29,14 +29,14 @@ const keyword = ref('')   // 按岗位名称/编码搜索（前端过滤）
 // 选中行（批量删除）
 const selectedRowKeys = ref<number[]>([])
 
-// 岗位归属部门（RuoYi 要求 deptId）：岗位为全厂通用，默认挂到顶层"厂区"节点
-const rootDeptId = ref<number | undefined>()
-async function loadRootDept() {
+// 岗位归属部门（RuoYi 要求 orgId）：岗位为全厂通用，默认挂到顶层"厂区"节点
+const rootOrgId = ref<number | undefined>()
+async function loadRootOrg() {
   try {
-    const res: any = await api.get('/system/dept/list')
+    const res: any = await api.get('/system/org/list')
     if (res.code === 200) {
-      const top = (res.data || []).find((n: any) => n.deptCategory === '厂区') || (res.data || [])[0]
-      if (top) rootDeptId.value = Number(top.deptId)
+      const top = (res.data || []).find((n: any) => n.orgCategory === '厂区') || (res.data || [])[0]
+      if (top) rootOrgId.value = Number(top.orgId)
     }
   } catch { /* ignore */ }
 }
@@ -231,7 +231,7 @@ async function save() {
     const payload: any = {
       postCode: form.value.postCode, postName: form.value.postName,
       postSort: form.value.postSort ?? 0, status: form.value.status, remark: form.value.remark,
-      deptId: rootDeptId.value ?? undefined,   // 岗位归属部门（全厂通用→厂区根节点）
+      orgId: rootOrgId.value ?? undefined,   // 岗位归属部门（全厂通用→厂区根节点）
     }
     if (isEdit.value) payload.postId = form.value.postId
     const res: any = isEdit.value
@@ -289,7 +289,7 @@ const rowSelection = computed(() => ({
   onChange: (keys: any[]) => { selectedRowKeys.value = keys },
 }))
 
-onMounted(() => { loadList(); loadRootDept(); loadColState() })
+onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 </script>
 
 <template>

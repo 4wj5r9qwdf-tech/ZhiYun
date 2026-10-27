@@ -62,7 +62,7 @@ public class SysLoginService {
     private final ISysPermissionService permissionService;
     private final ISysSocialService sysSocialService;
     private final ISysRoleService roleService;
-    private final ISysDeptService deptService;
+    private final ISysOrgService orgService;
     private final ISysPostService postService;
     private final SysUserMapper userMapper;
 
@@ -156,14 +156,14 @@ public class SysLoginService {
         LoginUser loginUser = new LoginUser();
         Long userId = user.getUserId();
         loginUser.setUserId(userId);
-        loginUser.setDeptId(user.getDeptId());
+        loginUser.setOrgId(user.getOrgId());
         loginUser.setUsername(user.getUserName());
         loginUser.setNickname(user.getNickName());
         loginUser.setUserType(user.getUserType());
-        if (ObjectUtil.isNotNull(user.getDeptId())) {
-            Opt<SysDeptVo> deptOpt = Opt.of(user.getDeptId()).map(deptService::selectDeptById);
-            loginUser.setDeptName(deptOpt.map(SysDeptVo::getDeptName).orElse(StringUtils.EMPTY));
-            loginUser.setDeptCategory(deptOpt.map(SysDeptVo::getDeptCategory).orElse(StringUtils.EMPTY));
+        if (ObjectUtil.isNotNull(user.getOrgId())) {
+            Opt<SysOrgVo> orgOpt = Opt.of(user.getOrgId()).map(orgService::selectOrgById);
+            loginUser.setOrgName(orgOpt.map(SysOrgVo::getOrgName).orElse(StringUtils.EMPTY));
+            loginUser.setOrgCategory(orgOpt.map(SysOrgVo::getOrgCategory).orElse(StringUtils.EMPTY));
         }
         ThreadUtils.virtualInvokeAll(() -> {
             loginUser.setMenuPermission(permissionService.getMenuPermission(userId));

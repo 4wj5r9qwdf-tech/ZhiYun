@@ -86,13 +86,13 @@ public class SysOperLogVo implements Serializable {
      * 操作部门ID
      */
     @ExcelProperty(value = "操作部门ID")
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 部门名称
      */
     @ExcelProperty(value = "部门名称")
-    private String deptName;
+    private String orgName;
 
     /**
      * 客户端

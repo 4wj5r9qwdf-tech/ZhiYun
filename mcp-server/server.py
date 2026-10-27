@@ -51,73 +51,73 @@ def _call(method: str, path: str, employee_token: str, *, params: dict | None = 
 # ---------- 只读 ----------
 
 @mcp.tool()
-def group_list(employee_token: str, dept_category: str = "小组",
-               parent_id: str | None = None, dept_name: str | None = None,
+def group_list(employee_token: str, org_category: str = "小组",
+               parent_id: str | None = None, org_name: str | None = None,
                status: str | None = None) -> dict[str, Any]:
-    """查组织树节点列表（平铺）。默认只查小组（dept_category='小组'）。
+    """查组织树节点列表（平铺）。默认只查小组（org_category='小组'）。
 
     Args:
         employee_token: 发起员工本人的 Sa-Token（登录 /auth/login 返回的 access_token）。
-        dept_category: 类别模糊匹配；查小组保持默认"小组"，传空串查全部部门。
+        org_category: 类别模糊匹配；查小组保持默认"小组"，传空串查全部部门。
         parent_id: 按直接上级 ID 过滤（字符串 bigint，禁止转 number）。
-        dept_name: 名称模糊匹配。
+        org_name: 名称模糊匹配。
         status: '0'=启用 '1'=停用。
 
     Returns:
-        {ok, code, msg, data: [ {deptId, parentId, deptName, deptCategory, ancestors, ...} ]}
-        401=token 过期；403=该员工无 system:dept:list 权限。
+        {ok, code, msg, data: [ {orgId, parentId, orgName, orgCategory, ancestors, ...} ]}
+        401=token 过期；403=该员工无 system:org:list 权限。
     """
     params: dict[str, Any] = {}
-    if dept_category:
-        params["deptCategory"] = dept_category
+    if org_category:
+        params["orgCategory"] = org_category
     if parent_id:
         params["parentId"] = parent_id
-    if dept_name:
-        params["deptName"] = dept_name
+    if org_name:
+        params["orgName"] = org_name
     if status:
         params["status"] = status
-    return _call("GET", "/system/dept/list", employee_token, params=params)
+    return _call("GET", "/system/org/list", employee_token, params=params)
 
 
 @mcp.tool()
-def group_get(employee_token: str, dept_id: str) -> dict[str, Any]:
+def group_get(employee_token: str, org_id: str) -> dict[str, Any]:
     """查单个部门/小组详情（含 ancestors 层级链）。
 
     Args:
         employee_token: 发起员工本人的 Sa-Token。
-        dept_id: 部门/小组 ID（字符串 bigint，禁止转 number）。
+        org_id: 部门/小组 ID（字符串 bigint，禁止转 number）。
 
     Returns:
-        {ok, code, msg, data: {deptId, parentId, ancestors, deptName, deptCategory, ...}}
+        {ok, code, msg, data: {orgId, parentId, ancestors, orgName, orgCategory, ...}}
     """
-    return _call("GET", f"/system/dept/{dept_id}", employee_token)
+    return _call("GET", f"/system/org/{org_id}", employee_token)
 
 
 # ---------- 写 ----------
 
 @mcp.tool()
-def group_create(employee_token: str, dept_name: str, parent_id: str,
-                 order_num: int = 0, dept_category: str = "小组",
+def group_create(employee_token: str, org_name: str, parent_id: str,
+                 order_num: int = 0, org_category: str = "小组",
                  status: str = "0", leader: str | None = None,
                  phone: str | None = None, email: str | None = None) -> dict[str, Any]:
-    """新建部门/小组。dept_category 默认"小组"=建小组；parent_id 可为部门或已建小组（支持二级小组）。
+    """新建部门/小组。org_category 默认"小组"=建小组；parent_id 可为部门或已建小组（支持二级小组）。
 
     Args:
         employee_token: 发起员工本人的 Sa-Token。
-        dept_name: 名称，≤30 字符，同级不可重名。
+        org_name: 名称，≤30 字符，同级不可重名。
         parent_id: 挂靠上级 ID（字符串）；"0"=顶层。可填小组 ID 实现二级小组。
         order_num: 排序，数字越小越靠前。
-        dept_category: 保持"小组"；建普通部门时按"N 级"传。
+        org_category: 保持"小组"；建普通部门时按"N 级"传。
         status: '0'=启用 '1'=停用。
         leader: 负责人 user_id（字符串），不是姓名文本。
 
     Returns:
-        {ok, code, msg, data: null}。成功后用 group_list(dept_name=...) 回读取新 deptId
+        {ok, code, msg, data: null}。成功后用 group_list(org_name=...) 回读取新 orgId
         （接口不回包新 ID）。重名/重复提交返回 ok=false + 具体 msg。
     """
     body: dict[str, Any] = {
-        "deptName": dept_name, "parentId": parent_id, "orderNum": order_num,
-        "deptCategory": dept_category, "status": status,
+        "orgName": org_name, "parentId": parent_id, "orderNum": order_num,
+        "orgCategory": org_category, "status": status,
     }
     if leader:
         body["leader"] = leader
@@ -125,19 +125,19 @@ def group_create(employee_token: str, dept_name: str, parent_id: str,
         body["phone"] = phone
     if email:
         body["email"] = email
-    return _call("POST", "/system/dept", employee_token, json_body=body)
+    return _call("POST", "/system/org", employee_token, json_body=body)
 
 
 @mcp.tool()
-def group_update(employee_token: str, dept_id: str, dept_name: str | None = None,
+def group_update(employee_token: str, org_id: str, org_name: str | None = None,
                  parent_id: str | None = None, order_num: int | None = None,
                  status: str | None = None, leader: str | None = None) -> dict[str, Any]:
     """修改部门/小组（只更新传入的字段；改 parent_id 会级联重算该节点及下级的 ancestors）。
 
     Args:
         employee_token: 发起员工本人的 Sa-Token。
-        dept_id: 要修改的节点 ID（字符串，必填）。
-        dept_name: 新名称（同级重名会被拒）。
+        org_id: 要修改的节点 ID（字符串，必填）。
+        org_name: 新名称（同级重名会被拒）。
         parent_id: 新挂靠上级（不能填自己；填自己会返回业务错误）。
         order_num: 新排序。
         status: '0'=启用 '1'=停用（停用要求无启用子节点且节点下无人）。
@@ -146,26 +146,26 @@ def group_update(employee_token: str, dept_id: str, dept_name: str | None = None
     Returns:
         {ok, code, msg, data: null}
     """
-    body: dict[str, Any] = {"deptId": dept_id}
-    for key, val in (("deptName", dept_name), ("parentId", parent_id),
+    body: dict[str, Any] = {"orgId": org_id}
+    for key, val in (("orgName", org_name), ("parentId", parent_id),
                      ("orderNum", order_num), ("status", status), ("leader", leader)):
         if val is not None:
             body[key] = val
-    return _call("PUT", "/system/dept", employee_token, json_body=body)
+    return _call("PUT", "/system/org", employee_token, json_body=body)
 
 
 @mcp.tool()
-def group_delete(employee_token: str, dept_id: str) -> dict[str, Any]:
+def group_delete(employee_token: str, org_id: str) -> dict[str, Any]:
     """删除部门/小组（软删）。5 道前置校验：默认部门/有下级/有人员/有岗位/被管辖引用，任一不过返回 ok=false。
 
     Args:
         employee_token: 发起员工本人的 Sa-Token。
-        dept_id: 要删除的节点 ID（字符串）。二级小组需先删其子组。
+        org_id: 要删除的节点 ID（字符串）。二级小组需先删其子组。
 
     Returns:
         {ok, code, msg, data: null}；失败 msg 即校验原因（如"存在下级部门,不允许删除"）。
     """
-    return _call("DELETE", f"/system/dept/{dept_id}", employee_token)
+    return _call("DELETE", f"/system/org/{org_id}", employee_token)
 
 
 if __name__ == "__main__":
