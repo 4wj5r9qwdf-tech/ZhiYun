@@ -9,14 +9,12 @@
  * - 后端：RuoYi 自带 /system/post 接口（list/{id}/POST/PUT/DELETE/{postIds}）
  */
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { pinyin } from 'pinyin-pro'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
-const router = useRouter()
 
 // ===== 列表 =====
 const rows = ref<any[]>([])
@@ -365,31 +363,24 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 
 <template>
   <div>
-    <!-- 标题行：仅返回 + 标题 -->
+    <!-- 页头行：查询条件左置（对齐组织架构定版布局，无标题无返回） -->
     <div class="page-header">
-      <div class="head-left">
-        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
-        <span class="head-title">岗位管理</span>
+      <div class="head-filters">
+        <a-input v-model:value="keyword" placeholder="搜索岗位名称/编码" allow-clear style="width:200px" @press-enter="onSearch">
+          <template #prefix><SearchOutlined style="color:#86909C" /></template>
+        </a-input>
       </div>
     </div>
 
-    <!-- 筛选栏：搜索 + 查询/重置 + 靠右操作 -->
+    <!-- 按钮行：新增岗位（最左）→ 查询 → 重置 …… 删除选中/列设置（最右） -->
     <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索岗位名称/编码" allow-clear style="width:200px" @press-enter="onSearch">
-        <template #prefix><SearchOutlined style="color:#86909C" /></template>
-      </a-input>
+      <a-button type="primary" @click="openAdd"><PlusOutlined />新增岗位</a-button>
       <a-button type="primary" @click="onSearch">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
       <a-button :disabled="!selectedRowKeys.length" danger @click="removeBatch">
         删除选中{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}
       </a-button>
-      <a-button type="primary" @click="openAdd"><PlusOutlined />新增岗位</a-button>
-    </div>
-
-    <!-- 表格工具行：条数 + 列设置 -->
-    <div class="table-bar">
-      <span class="total">共 {{ filteredRows.length }} 条</span>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -493,6 +484,7 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 
+.head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
 .filter-spacer { flex: 1 1 auto; min-width: 8px; }
 

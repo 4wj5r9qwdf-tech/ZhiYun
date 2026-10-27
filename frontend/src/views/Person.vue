@@ -9,12 +9,11 @@
  * - 后端 orderBy 白名单：job_no/name/org/group/emp_status/card_no/hire_date
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
-const router = useRouter()
 const route = useRoute()
 
 // ===== 列表 =====
@@ -591,42 +590,59 @@ function resetFilter() {
 
 <template>
   <div>
+    <!-- 页头行：查询条件左置（对齐组织架构定版布局，无标题无返回） -->
     <div class="page-header">
-      <div class="head-left">
-        <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
-        <span class="head-title">人员信息</span>
+      <div class="head-filters">
+        <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
+        <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+          <a-select-option value="试用">试用</a-select-option>
+          <a-select-option value="在职">在职</a-select-option>
+          <a-select-option value="离职">离职</a-select-option>
+          <a-select-option value="长假">长假</a-select-option>
+        </a-select>
+        <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
+          <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
+        </a-select>
+        <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
+          <a-select-option value="1">男</a-select-option>
+          <a-select-option value="2">女</a-select-option>
+        </a-select>
+        <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
+        <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
+        <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
+        <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
       </div>
     </div>
 
-    <!-- 筛选 + 操作（同一行：筛选控件在左，新增/导入/导出靠右） -->
+    <!-- 按钮行：新增人员（最左）→ 查询 → 重置 …… 导出/导入/列设置（最右） -->
   <div class="filter-bar">
-    <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
-    <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
-      <a-select-option value="试用">试用</a-select-option>
-      <a-select-option value="在职">在职</a-select-option>
-      <a-select-option value="离职">离职</a-select-option>
-      <a-select-option value="长假">长假</a-select-option>
-    </a-select>
-    <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
-      <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
-    </a-select>
-    <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
-      <a-select-option value="1">男</a-select-option>
-      <a-select-option value="2">女</a-select-option>
-    </a-select>
-    <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
-    <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
+    <a-button type="primary" @click="openAdd">+ 新增人员</a-button>
     <a-button type="primary" @click="loadList">查询</a-button>
     <a-button @click="resetFilter">重置</a-button>
-    <a-divider type="vertical" />
-    <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
-    <a-divider type="vertical" />
-    <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
     <div class="filter-spacer"></div>
     <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
     <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
     <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
-    <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
+    <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+      <a-button size="middle">⚙ 列设置</a-button>
+      <template #overlay>
+        <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+          <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
+            <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+            <span class="col-move">
+              <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+              <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
+            </span>
+          </div>
+          <a-divider style="margin: 6px 0" />
+          <div class="col-set-foot">
+            <a size="small" @click="showAllCols">恢复默认</a>
+            <a size="small" @click="autoFitCols">自适应列宽</a>
+            <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+          </div>
+        </a-card>
+      </template>
+    </a-dropdown>
   </div>
 
     <div class="org-body" :class="{ 't-collapsed': treeCollapsed }">
@@ -664,30 +680,6 @@ function resetFilter() {
 
       <div class="org-main">
 
-    <!-- 列表工具行：条数 + 列设置（受控下拉，操作期间不自动收起） -->
-    <div class="table-bar">
-      <span class="total">共 {{ total }} 条</span>
-      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
-        <a-button size="middle">⚙ 列设置</a-button>
-        <template #overlay>
-          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
-            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
-              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
-              <span class="col-move">
-                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
-                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
-              </span>
-            </div>
-            <a-divider style="margin: 6px 0" />
-            <div class="col-set-foot">
-              <a size="small" @click="showAllCols">恢复默认</a>
-              <a size="small" @click="autoFitCols">自适应列宽</a>
-              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
-            </div>
-          </a-card>
-        </template>
-      </a-dropdown>
-    </div>
 
     <!-- 列表（a-table：撑满 + 列间竖线 + 列设置） -->
     <a-table
@@ -875,6 +867,7 @@ function resetFilter() {
 .tree-toggle.at-left:hover::before { border-left-color: #1E5EFF; border-right-color: transparent; }
 .org-main { flex: 1; min-width: 0; }
 
+.head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
 .filter-spacer { flex: 1 1 auto; min-width: 8px; }
 
