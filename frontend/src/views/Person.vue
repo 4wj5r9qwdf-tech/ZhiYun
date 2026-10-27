@@ -406,20 +406,23 @@ async function openEdit(row: any) {
     postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
     ext: {
       maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
-      nation: d.nation || '', education: d.education || '', birthDate: d.birth_date || '',
+      nation: d.nation || '', education: d.education || '', birthDate: dateOnly(d.birth_date),
       graduateSchool: d.graduate_school || '', nativePlace: d.native_place || '', address: d.address || '',
-      certExpireDate: d.cert_expire_date || '',
-      hireDate: d.hire_date || '', groupName: d.group_name || '', groupId: d.group_id ? String(d.group_id) : undefined, empType: d.emp_type || '正式',
-      leaveDate: d.leave_date || '', cardNo: d.card_no || '', empStatus: d.emp_status || '试用',
+      certExpireDate: dateOnly(d.cert_expire_date),
+      hireDate: dateOnly(d.hire_date), groupName: d.group_name || '', groupId: d.group_id ? String(d.group_id) : undefined, empType: d.emp_type || '正式',
+      leaveDate: dateOnly(d.leave_date), cardNo: d.card_no || '', empStatus: d.emp_status || '试用',
       bankCardNo: d.bank_card_no || '', signEntity: d.sign_entity || '',
-      contractYears: d.contract_years ?? undefined, contractStart: d.contract_start || '', contractEnd: d.contract_end || '',
+      contractYears: d.contract_years ?? undefined, contractStart: dateOnly(d.contract_start), contractEnd: dateOnly(d.contract_end),
       hasSocial: d.has_social || '0', socialAmount: d.social_amount ?? undefined, socialSubsidy: d.social_subsidy ?? undefined,
-      hasCommercial: d.has_commercial || '0', commercialType: d.commercial_type || '', socialCheckDate: d.social_check_date || '',
+      hasCommercial: d.has_commercial || '0', commercialType: d.commercial_type || '', socialCheckDate: dateOnly(d.social_check_date),
       isDorm: d.is_dorm || '0',
     },
   }
   showDlg.value = true
 }
+
+// 日期回显统一截取 yyyy-MM-dd（后端返回 ISO 带时间带时区，input[type=date] 不认）
+const dateOnly = (v: any) => String(v || '').slice(0, 10)
 
 // a-form 校验规则
 // ===== 岗位/角色 勾选弹窗（替代多选下拉：支持模糊搜索；id 全 String 防 bigint 精度丢失） =====
@@ -486,6 +489,10 @@ async function save() {
   saving.value = true
   try {
     const payload: any = { ...form.value }
+    // 日期字段统一 yyyy-MM-dd（防任何脏格式入库）
+    for (const k of ['birthDate', 'certExpireDate', 'hireDate', 'leaveDate', 'contractStart', 'contractEnd', 'socialCheckDate']) {
+      ;(payload.ext as any)[k] = dateOnly((payload.ext as any)[k])
+    }
     if (isEdit.value) delete payload.jobNo
     if (!payload.password) delete payload.password
     // 数字字段 undefined → null（后端 numeric 列空值收 null）
