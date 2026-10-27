@@ -10,6 +10,8 @@
   左树面板：树+类型tag+人数角标+点击筛选该节点及下级+窄竖条折叠手柄(CSS三角, 展开贴面板内右缘/收起贴页左缘)
   行选择框：rowSelection(勾选跨页保持/批量操作按需显隐)
   列排序：sortable → 后端 orderBy 白名单(或前端sorter, 见注)
+  列筛选（报表场景）：主查询圈范围 → 列内切片（如产量报表筛某员工）→ 合计按最终结果集重算；
+          主查询变化/重新查询自动清空列筛选（主查询优先）；后端分页项目须把 filters 上送接口+合计接口同参
   演示数据：纯前端内存生成, 不入库不内置——刷新即重置
 -->
 <script setup lang="ts">
@@ -71,6 +73,10 @@ function typeColorOf(t: string) { return t === '小组' ? 'green' : t === '科�
 const keyword = ref('')
 const fType = ref<string | undefined>()
 const fStatus = ref<string | undefined>()
+// 列筛选状态（受控）：叠加在主查询结果之上的切片；主查询变化/重新查询时清空（主查询优先）
+const colFilters = ref<Record<string, any[]>>({})
+watch([keyword, fType, fStatus, selectedOrgId], () => { colFilters.value = {} })
+
 const pageNum = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
@@ -90,8 +96,20 @@ const filteredRows = computed(() => {
     && (!fType.value || r.type === fType.value)
     && (!fStatus.value || r.status === fStatus.value))
 })
-const pagedRows = computed(() => filteredRows.value.slice((pageNum.value - 1) * pageSize.value, pageNum.value * pageSize.value))
-const total = computed(() => filteredRows.value.length)
+// 列筛选切片（叠加在主查询结果上；合计基于最终结果集）
+const colFilteredRows = computed(() => filteredRows.value.filter(r => {
+  for (const [key, vals] of Object.entries(colFilters.value)) {
+    if (vals && vals.length && !vals.includes(String((r as any)[key]))) return false
+  }
+  return true
+}))
+const pagedRows = computed(() => colFilteredRows.value.slice((pageNum.value - 1) * pageSize.value, pageNum.value * pageSize.value))
+const total = computed(() => colFilteredRows.value.length)
+// 合计：按最终结果集（主查询 ∩ 列筛选）重算——报工数量/金额类合计跟筛选走
+const summary = computed(() => ({
+  count: colFilteredRows.value.length,
+  amount: colFilteredRows.value.reduce((s2, r) => s2 + (r.amount || 0), 0),
+}))
 
 // ===== 行选择框（批量操作按需显隐；跨页保持勾选） =====
 const selectedRowKeys = ref<string[]>([])
@@ -116,7 +134,10 @@ const ALL_COLUMNS = [
   { title: '类型', key: 'type', width: 90 },
   { title: '状态', key: 'status', width: 100 },
   { title: '金额', key: 'amount', width: 110, sorter: true },
-  { title: '负责人', key: 'owner', width: 110 },
+  // 列筛选（报表场景标准件）：主查询圈范围 → 列内切片（如产量报表里筛某员工）；
+  // 本演示为前端全量内存数据直接过滤；后端分页项目请把 filters 值作为查询参数上送接口，
+  // 合计接口带同样参数（保证跨页筛选正确 + 合计=最终结果集）
+  { title: '负责人', key: 'owner', width: 110, filters: [] as { text: string; value: string }[], filterMultiple: true },
   { title: '备注', key: 'remark', width: 160 },
 ]
 type ColState = { key: string; visible: boolean; width?: number }
@@ -191,7 +212,14 @@ async function autoFitCols() {
 }
 
 // 列排序：antd sorter（本地演示）；后端分页项目请用 sortable→orderBy 白名单（见 Person.vue）
-function onTableChange(_pagination: any, _filters: any, sorter: any) {
+function onTableChange(_pagination: any, filters: any, sorter: any) {
+  // 列筛选（受控）：antd filters 回传 → colFilters；主查询变化会清空（见 watch）
+  const next: Record<string, any[]> = {}
+  for (const [k, v] of Object.entries(filters || {})) {
+    const arr = (v as any[]) || []
+    if (arr.length) next[k] = arr.map(String)
+  }
+  colFilters.value = next
   const key = sorter?.columnKey
   const order = sorter?.order
   if (!key || !order) { loadList(); return }
@@ -248,6 +276,10 @@ function onHeaderClick(e: MouseEvent) {
   if (Date.now() < suppressHeaderClickUntil) { e.preventDefault(); e.stopPropagation() }
 }
 
+// 负责人列筛选项：从当前数据取 distinct（报表项目改为接口返回枚举或固定字典）
+const ownerFilters = computed(() => [...new Set(demoRows.value.map(r => r.owner))].map(v => ({ text: v, value: v })))
+watch(ownerFilters, v => { const c = ALL_COLUMNS.find(a => a.key === 'owner'); if (c) (c as any).filters = v }, { immediate: true })
+
 const columns = computed(() => {
   const idx = {
     title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
@@ -263,6 +295,7 @@ const columns = computed(() => {
       ...ALL_COLUMNS.find(a => a.key === c.key)!,
       width: c.width,
       ...(ALL_COLUMNS.find(a => a.key === c.key)!.sorter ? { sorter: true } : {}),
+      ...(colFilters.value[c.key] ? { filteredValue: colFilters.value[c.key] } : {}),
       customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }),
     }))
   const sel = { key: 'selection', width: 48, fixed: 'left' as const, customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
@@ -449,6 +482,17 @@ onMounted(() => { loadColState(); loadList() })
               </div>
             </template>
           </template>
+          <template #summary>
+            <a-table-summary fixed>
+              <a-table-summary-row>
+                <a-table-summary-cell :index="0" :col-span="3" class="summary-cell">合计（筛选结果）</a-table-summary-cell>
+                <a-table-summary-cell :index="3" class="summary-cell">{{ summary.count }} 条</a-table-summary-cell>
+                <a-table-summary-cell :index="4" />
+                <a-table-summary-cell :index="5" class="summary-cell">￥{{ summary.amount.toLocaleString() }}</a-table-summary-cell>
+                <a-table-summary-cell :index="6" :col-span="3" />
+              </a-table-summary-row>
+            </a-table-summary>
+          </template>
         </a-table>
       </div>
     </div>
@@ -558,6 +602,7 @@ onMounted(() => { loadColState(); loadList() })
 /* 操作列按钮组（紧凑，自适应列宽按其内容实测） */
 .ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-btns .ant-btn-sm { padding-inline: 5px; }
+.summary-cell { font-weight: 600; background: #F7F8FA; }
 
 /* 列设置面板 */
 .col-set-panel { width: 220px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
