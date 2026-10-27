@@ -102,8 +102,14 @@ function loadColState() {
 function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
 function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
 function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
-// 自适应列宽：清空各列固定宽，交给表格按内容分配（再拖拽即重新固定）
-function autoFitCols() { for (const c of colState.value) { (c as any).width = undefined } saveColState() }
+function autoFitCols() {
+  // 按列名长度给足最小宽度：空数据列也要放得下表头文字，不能被挤成竖排
+  for (const c of colState.value) {
+    const t = ALL_COLUMNS.find(a => a.key === c.key)?.title || c.key
+    ;(c as any).width = Math.max(90, String(t).length * 16 + 48)
+  }
+  saveColState()
+}
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {
   const arr = colState.value
