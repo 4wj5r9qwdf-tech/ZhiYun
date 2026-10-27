@@ -338,6 +338,8 @@ const levelOptions = computed(() => {
 
 // 上级部门变化 → 层级自动跟随
 function onParentChange() {
+  // 小组身份保持：编辑小组改上级时不能被冲成"N 级"（小组只能从小组管理页变更）
+  if (form.value.deptCategory === '小组') return
   form.value.deptCategory = levelLabelOf(deriveLevel(form.value.parentId))
 }
 function levelLabelOf(level: number): string { return `${level} 级` }
@@ -531,7 +533,14 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
             default-expand-all
             :selected-keys="selectedDeptId ? [selectedDeptId] : []"
             @select="onTreeSelect"
-          />
+          >
+            <template #title="{ deptName, deptCategory }">
+              <span class="tree-node">
+                {{ deptName }}
+                <span v-if="deptCategory === '小组'" class="type-tag">小组</span>
+              </span>
+            </template>
+          </a-tree>
           <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层部门" />
         </div>
       </div>
@@ -591,7 +600,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span class="dept-name">{{ record.deptName }}</span>
         </template>
         <template v-else-if="column.key === 'deptCategory'">
-          <a-tag :color="levelColorOf(record)">{{ levelLabel(record) }}</a-tag>
+          <a-tag v-if="record.deptCategory === '小组'" color="green">小组</a-tag>
+          <a-tag v-else :color="levelColorOf(record)">{{ levelLabel(record) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'buildingId'">
           {{ buildingLabel(record.buildingId) || '—' }}
@@ -740,6 +750,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
+.tree-node { display: inline-flex; align-items: center; gap: 6px; }
+.type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; background: #E8FFEA; color: #00B42A; }
 /* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
 .tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
