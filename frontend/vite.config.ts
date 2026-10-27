@@ -27,6 +27,8 @@ export default defineConfig({
   server: {
     port: 5273,
     strictPort: true, // 端口被占直接报错，不自动跳端口（固定 5273）
+    // 放行花生壳等公网域名（Host 校验白名单），开发期全放行
+    allowedHosts: true,
     // 代理后端（避免跨域），/api/* → http://127.0.0.1:8080/*
     proxy: {
       '/api': {
