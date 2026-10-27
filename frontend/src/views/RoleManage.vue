@@ -81,6 +81,8 @@ function loadColState() {
 function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
 function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
 function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+// 自适应列宽：清空各列固定宽，交给表格按内容分配（再拖拽即重新固定）
+function autoFitCols() { for (const c of colState.value) { (c as any).width = undefined } saveColState() }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {
   const arr = colState.value
@@ -94,10 +96,10 @@ const columns = computed(() => {
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
   const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
-    customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
+    customHeaderCell: () => ({ class: 'ops-th', onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
   const list = colState.value
     .filter(c => c.visible)
-    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
+    .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, ...(c.width != null ? { width: c.width } : {}), customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
     .filter(Boolean)
   return [idx, ...list, ops]
 })
@@ -113,18 +115,42 @@ function onHeaderMouseDown(key: string, e: MouseEvent) {
   if (key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
+  const nextIsOps = !!th.nextElementSibling?.classList.contains('ops-th')
+  const atOpsLeft = key === 'ops' && e.clientX <= rect.left + 16
+  const atOpsRight = key === 'ops' && e.clientX >= rect.right - 16
+  const atPrevRightOfOps = nextIsOps && e.clientX >= rect.right - 16
+  if (atOpsLeft || atOpsRight || atPrevRightOfOps) {
+    // 操作列：本列左/右缘、以及前驱列的右缘交界线，都归操作列（从左缘拖时宽度反向）
+    const fromLeft = atOpsLeft || atPrevRightOfOps
+    const startX = e.clientX
+    const startW = opsWidth.value
+    const onMove = (ev: MouseEvent) => onColResize('ops', fromLeft ? startW - (ev.clientX - startX) : startW + (ev.clientX - startX))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      suppressHeaderClickUntil = Date.now() + 300
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  if (key === 'ops') return
   if (e.clientX < rect.right - 14) return
-  const startX = e.clientX
-  const startW = rect.width
-  const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
+  const startX2 = e.clientX
+  const startW2 = rect.width
+  const onMove2 = (ev: MouseEvent) => onColResize(key, startW2 + (ev.clientX - startX2))
+  const onUp2 = () => {
+    document.removeEventListener('mousemove', onMove2)
+    document.removeEventListener('mouseup', onUp2)
     document.body.style.cursor = ''
     suppressHeaderClickUntil = Date.now() + 300
   }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+  document.addEventListener('mousemove', onMove2)
+  document.addEventListener('mouseup', onUp2)
   document.body.style.cursor = 'col-resize'
   e.preventDefault()
   e.stopPropagation()
@@ -348,6 +374,7 @@ onMounted(() => { loadList(); loadColState() })
             <a-divider style="margin: 6px 0" />
             <div class="col-set-foot">
               <a size="small" @click="showAllCols">恢复默认</a>
+              <a size="small" @click="autoFitCols">自适应列宽</a>
               <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
             </div>
           </a-card>
