@@ -160,7 +160,7 @@ const orgRows = computed(() => {
       const ok = (!kw || String(n.orgName || '').includes(kw))
         && (!type || n.orgCategory === type)
         && (!st || n.status === st)
-      if (ok) out.push(n)
+      if (ok) out.push({ ...n, children: undefined })
       walk(n.children || [])
     }
   }
@@ -565,6 +565,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <a-table
       :columns="columns"
       :data-source="orgRows"
+      children-column-name="_flat_"
       :loading="loading"
       :pagination="false"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
