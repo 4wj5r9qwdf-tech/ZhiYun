@@ -61,13 +61,6 @@ function onTreeSelect(keys: any[]) {
   loadList()
 }
 
-function clearTreeSelect() {
-  selectedOrgId.value = null
-  orgId.value = undefined
-  pageNum.value = 1
-  loadList()
-}
-
 const empStatus = ref<string | undefined>()
 const orgId = ref<string | undefined>()
 
@@ -557,6 +550,7 @@ function restorePerson(row: any) {
 function resetFilter() {
   keyword.value = ''; empStatus.value = undefined; orgId.value = undefined
   gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
+  selectedOrgId.value = null; treeCollapsed.value = false
   pageNum.value = 1
   loadList()
 }
@@ -572,12 +566,42 @@ function resetFilter() {
     </div>
 
     <!-- 筛选 + 操作（同一行：筛选控件在左，新增/导入/导出靠右） -->
+  <div class="filter-bar">
+    <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
+    <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+      <a-select-option value="试用">试用</a-select-option>
+      <a-select-option value="在职">在职</a-select-option>
+      <a-select-option value="离职">离职</a-select-option>
+      <a-select-option value="长假">长假</a-select-option>
+    </a-select>
+    <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
+      <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
+    </a-select>
+    <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
+      <a-select-option value="1">男</a-select-option>
+      <a-select-option value="2">女</a-select-option>
+    </a-select>
+    <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
+    <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
+    <a-button type="primary" @click="loadList">查询</a-button>
+    <a-button @click="resetFilter">重置</a-button>
+    <a-divider type="vertical" />
+    <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
+    <a-divider type="vertical" />
+    <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
+    <div class="filter-spacer"></div>
+    <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
+    <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
+    <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
+    <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
+  </div>
+
     <div class="org-body" :class="{ 't-collapsed': treeCollapsed }">
       <!-- 左：组织树 -->
       <div class="org-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
           <span class="tree-title">组织架构</span>
-          <a v-if="selectedOrgId" class="tree-clear" @click="clearTreeSelect">重置</a>
+          <a v-if="selectedOrgId" class="tree-clear" @click="resetFilter">重置</a>
         </div>
         <div class="tree-body">
           <a-tree
@@ -606,35 +630,6 @@ function resetFilter() {
     
 
       <div class="org-main">
-    <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
-      <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
-        <a-select-option value="试用">试用</a-select-option>
-        <a-select-option value="在职">在职</a-select-option>
-        <a-select-option value="离职">离职</a-select-option>
-        <a-select-option value="长假">长假</a-select-option>
-      </a-select>
-      <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
-        <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
-      </a-select>
-      <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
-        <a-select-option value="1">男</a-select-option>
-        <a-select-option value="2">女</a-select-option>
-      </a-select>
-      <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
-      <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
-      <a-button type="primary" @click="loadList">查询</a-button>
-      <a-button @click="resetFilter">重置</a-button>
-      <a-divider type="vertical" />
-      <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
-      <a-divider type="vertical" />
-      <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
-      <div class="filter-spacer"></div>
-      <a-button size="middle" @click="exportCsv">↓ 导出</a-button>
-      <a-button size="middle" @click="($refs.impInput as HTMLInputElement)?.click()">↑ 导入</a-button>
-      <input ref="impInput" type="file" accept=".csv,text/csv" style="display:none" @change="importFile" />
-      <a-button type="primary" size="middle" @click="openAdd">+ 新增人员</a-button>
-    </div>
 
     <!-- 列表工具行：条数 + 列设置（受控下拉，操作期间不自动收起） -->
     <div class="table-bar">
