@@ -92,15 +92,48 @@ function loadColState() {
 function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
 function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
 function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
-function autoFitCols() {
-  // 按列名长度给足最小宽度：空数据列也要放得下表头文字，不能被挤成竖排
+async function autoFitCols() {
+  // 1) 操作列：实测当前渲染的按钮组最宽一行 + 单元格内边距（内容真实宽，不拍脑袋）
+  let opsW = 200
+  const wraps = document.querySelectorAll('.ops-btns')
+  if (wraps.length) {
+    // 量按钮两端（.ops-btns 是 flex 容器会拉伸填满单元格，直接量容器宽会把摊派宽度当成内容宽）
+    const maxContent = Math.max(...[...wraps].map(w => {
+      const bs = [...w.querySelectorAll('button')]
+      if (!bs.length) return 0
+      return Math.max(...bs.map(b => b.getBoundingClientRect().right)) - Math.min(...bs.map(b => b.getBoundingClientRect().left))
+    }))
+    const td = wraps[0].closest('td')
+    const cs = td ? getComputedStyle(td) : null
+    const pad = cs ? Math.round(parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 16
+    opsW = Math.max(120, Math.round(maxContent + pad + 2))
+  }
+  // 2) 各普通列按列名给足最小宽（空数据列也放得下表头）
+  const mins = new Map<string, number>()
+  let visibleSum = 64  // 序号列固定
   for (const c of colState.value) {
     const t = ALL_COLUMNS.find(a => a.key === c.key)?.title || c.key
-    ;(c as any).width = Math.max(90, String(t).length * 16 + 48)
+    const w = Math.max(90, String(t).length * 16 + 48)
+    mins.set(c.key, w)
+    if (c.visible) visibleSum += w
+  }
+  visibleSum += opsW
+  // 3) 剩余空间（容器宽 - 列总宽）均分给可见普通列：列总宽=容器宽后 antd 不再摊派，
+  //    操作列保持实测贴合值（这是"自己按内容适配"而不是让表格暗中摊宽）
+  const container = document.querySelector('.ant-table-container')
+  const cw = container ? Math.round(container.clientWidth) : 0
+  const visibleCount = colState.value.filter(c => c.visible).length
+  if (cw > visibleSum + 10 && visibleCount > 0) {
+    const extra = Math.floor((cw - visibleSum) / visibleCount)
+    for (const c of colState.value) {
+      if (c.visible) mins.set(c.key, (mins.get(c.key) || 90) + extra)
+    }
+  }
+  for (const c of colState.value) {
+    ;(c as any).width = mins.get(c.key)
   }
   saveColState()
-  // 操作列同步收窄到刚好放下按钮（并持久化）
-  opsWidth.value = 190
+  opsWidth.value = opsW
   try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
