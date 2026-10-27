@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, CaretLeftOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
@@ -27,7 +27,7 @@ const treeCollapsed = ref(false)
 // 筛选：层级 + 状态（前端过滤）
 const filterCategory = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
-function resetFilters() { keyword.value = ''; filterCategory.value = undefined; filterStatus.value = undefined }
+function resetFilters() { keyword.value = ''; filterCategory.value = undefined; filterStatus.value = undefined; selectedOrgId.value = null; treeCollapsed.value = false }
 
 // 左侧组织树（a-tree 展开用）：全量树
 const leftTree = computed(() => tree.value)
@@ -503,7 +503,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     </div>
 
     <!-- 树 + 表格 并排（树可向左收起，收起后表格占满） -->
-    <div class="org-body">
+    <div class="org-body" :class="{ 't-collapsed': treeCollapsed }">
       <!-- 左：组织树 -->
       <div class="org-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
@@ -532,10 +532,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       </div>
 
       <!-- 收起/展开手柄 -->
-      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
-        <CaretRightOutlined v-if="treeCollapsed" />
-        <CaretLeftOutlined v-else />
-      </div>
+      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed" />
+    
 
       <!-- 右：表格区 -->
       <div class="org-main">
@@ -743,6 +741,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 /* 左树 + 右表 分栏 */
 /* 树 + 表格 并排（标题行/筛选栏下方） */
 .org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); position: relative; }
+.org-body.t-collapsed .org-main { margin-left: 14px; }
 .org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
@@ -752,9 +751,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; background: #E8FFEA; color: #00B42A; }
 /* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
-.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 246px; z-index: 6; width: 16px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; font-size: 11px; transition: color .15s, border-color .15s, left .2s; }
+.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 248px; z-index: 6; width: 8px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
+.tree-toggle::before { content: ''; width: 0; height: 0; border: 3.5px solid transparent; border-right-color: #86909C; margin-left: -2px; }
 .tree-toggle.at-left { left: 4px; }
-.tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
+.tree-toggle.at-left::before { border-right-color: transparent; border-left-color: #86909C; margin-left: 2px; }
+.tree-toggle:hover, .tree-toggle:hover::before { border-color: #1E5EFF; }
+.tree-toggle:hover::before { border-right-color: #1E5EFF; }
+.tree-toggle.at-left:hover::before { border-left-color: #1E5EFF; border-right-color: transparent; }
 .org-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
 .back:hover { color: #1E5EFF; }
