@@ -546,31 +546,53 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
 <template>
   <div class="org-page">
+    <!-- 页头行：← 组织架构 + 查询条件（搜索/类型/状态） -->
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
         <span class="head-title">组织架构</span>
       </div>
+      <div class="head-filters">
+        <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px" @press-enter="loadTree">
+          <template #prefix><SearchOutlined style="color:#86909C" /></template>
+        </a-input>
+        <a-select v-model:value="filterCategory" allow-clear placeholder="类型" style="width:110px" @change="loadTree">
+          <a-select-option value="部门">部门</a-select-option>
+          <a-select-option value="科室">科室</a-select-option>
+          <a-select-option value="小组">小组</a-select-option>
+        </a-select>
+        <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px" @change="loadTree">
+          <a-select-option value="0">启用</a-select-option>
+          <a-select-option value="1">停用</a-select-option>
+        </a-select>
+      </div>
     </div>
 
-    <!-- 筛选栏：关键词 + 层级(动态) + 状态 + 查询/重置 + 靠右操作（新增） -->
+    <!-- 按钮行：新增组织（最左）→ 查询 → 重置 …… 列设置（最右） -->
     <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px">
-        <template #prefix><SearchOutlined style="color:#86909C" /></template>
-      </a-input>
-      <a-select v-model:value="filterCategory" allow-clear placeholder="类型" style="width:110px">
-        <a-select-option value="部门">部门</a-select-option>
-        <a-select-option value="科室">科室</a-select-option>
-        <a-select-option value="小组">小组</a-select-option>
-      </a-select>
-      <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px">
-        <a-select-option value="0">启用</a-select-option>
-        <a-select-option value="1">停用</a-select-option>
-      </a-select>
+      <a-button type="primary" @click="openAddTop"><PlusOutlined />新增组织</a-button>
       <a-button type="primary" @click="loadTree">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
-      <a-button type="primary" @click="openAddTop"><PlusOutlined />新增组织</a-button>
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+        <a-button>⚙ 列设置</a-button>
+        <template #overlay>
+          <a-menu>
+            <a-menu-item v-for="c in colState" :key="c.key">
+              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
+              <span class="col-move">
+                <a-button type="text" size="small" :disabled="colState.indexOf(c) === 0" @click="moveCol(colState.indexOf(c), -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="colState.indexOf(c) === colState.length - 1" @click="moveCol(colState.indexOf(c), 1)">↓</a-button>
+              </span>
+            </a-menu-item>
+            <a-menu-divider />
+            <a-menu-item>
+              <a @click="showAllCols">恢复默认</a>
+              <a style="margin-left: 16px" @click="autoFitCols">自适应列宽</a>
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
     </div>
 
     <!-- 树 + 表格 并排（树可向左收起，收起后表格占满） -->
@@ -609,29 +631,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <!-- 右：表格区 -->
       <div class="org-main">
 
-    <!-- 列表工具行：条数 + 列设置 -->
-    <div class="table-bar">
-      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
-        <a-button style="margin-left: auto">⚙ 列设置</a-button>
-        <template #overlay>
-          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
-            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
-              <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
-              <span class="col-move">
-                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
-                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
-              </span>
-            </div>
-            <a-divider style="margin: 6px 0" />
-            <div class="col-set-foot">
-              <a size="small" @click="showAllCols">恢复默认</a>
-              <a size="small" @click="autoFitCols">自适应列宽</a>
-              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
-            </div>
-          </a-card>
-        </template>
-      </a-dropdown>
-    </div>
 
     <!-- 树表 -->
     <a-table
@@ -808,6 +807,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 <style scoped>
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .head-left { display: flex; align-items: center; gap: 6px; }
+.head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* 左树 + 右表 分栏 */
 /* 树 + 表格 并排（标题行/筛选栏下方） */
