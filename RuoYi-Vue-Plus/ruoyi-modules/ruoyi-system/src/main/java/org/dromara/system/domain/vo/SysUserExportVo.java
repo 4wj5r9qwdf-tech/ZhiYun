@@ -5,7 +5,7 @@ import lombok.NoArgsConstructor;
 import org.apache.fesod.sheet.annotation.ExcelProperty;
 import org.dromara.common.excel.annotation.ExcelDictFormat;
 import org.dromara.common.excel.convert.ExcelDictConvert;
-import org.dromara.system.listener.DeptExcelConverter;
+import org.dromara.system.listener.OrgExcelConverter;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -38,8 +38,8 @@ public class SysUserExportVo implements Serializable {
     /**
      * 部门ID
      */
-    @ExcelProperty(value = "部门名称", converter = DeptExcelConverter.class)
-    private Long deptId;
+    @ExcelProperty(value = "部门名称", converter = OrgExcelConverter.class)
+    private Long orgId;
 
     /**
      * 用户昵称

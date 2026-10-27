@@ -80,10 +80,10 @@ public interface ISysUserService {
      * 通过用户ID串查询用户
      *
      * @param userIds 用户ID串
-     * @param deptId  部门id
+     * @param orgId  部门id
      * @return 用户列表信息
      */
-    List<SysUserVo> selectUserByIds(Collection<Long> userIds, Long deptId);
+    List<SysUserVo> selectUserByIds(Collection<Long> userIds, Long orgId);
 
     /**
      * 根据用户ID查询用户所属角色组
@@ -216,8 +216,8 @@ public interface ISysUserService {
     /**
      * 通过部门id查询当前部门所有用户
      *
-     * @param deptId 部门id
+     * @param orgId 部门id
      * @return 结果
      */
-    List<SysUserVo> selectUserListByDept(Long deptId);
+    List<SysUserVo> selectUserListByOrg(Long orgId);
 }

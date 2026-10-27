@@ -89,7 +89,7 @@ public class TestDemoServiceImpl implements ITestDemoService {
      */
     private LambdaQueryWrapper<TestDemo> buildQueryWrapper(TestDemoBo bo) {
         LambdaQueryWrapper<TestDemo> lqw = Wrappers.lambdaQuery();
-        lqw.eq(bo.getDeptId() != null, TestDemo::getDeptId, bo.getDeptId());
+        lqw.eq(bo.getOrgId() != null, TestDemo::getOrgId, bo.getOrgId());
         lqw.eq(bo.getUserId() != null, TestDemo::getUserId, bo.getUserId());
         lqw.like(StringUtils.isNotBlank(bo.getTestKey()), TestDemo::getTestKey, bo.getTestKey());
         lqw.eq(StringUtils.isNotBlank(bo.getValue()), TestDemo::getValue, bo.getValue());

@@ -13,15 +13,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 部门表 sys_dept
+ * 部门表 sys_org
  *
  * @author Lion Li
  */
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("sys_dept")
-public class SysDept extends BaseEntity {
+@TableName("sys_org")
+public class SysOrg extends BaseEntity {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -29,8 +29,8 @@ public class SysDept extends BaseEntity {
     /**
      * 部门ID
      */
-    @TableId(value = "dept_id")
-    private Long deptId;
+    @TableId(value = "org_id")
+    private Long orgId;
 
     /**
      * 父部门ID
@@ -40,12 +40,12 @@ public class SysDept extends BaseEntity {
     /**
      * 部门名称
      */
-    private String deptName;
+    private String orgName;
 
     /**
      * 部门类别编码
      */
-    private String deptCategory;
+    private String orgCategory;
 
     /**
      * 所在建筑(物理资产)=sys_building.plant_id；只车间节点填，下面区域/组继承
@@ -97,6 +97,6 @@ public class SysDept extends BaseEntity {
      * 子部门
      */
     @TableField(exist = false)
-    private List<SysDept> children = new ArrayList<>();
+    private List<SysOrg> children = new ArrayList<>();
 
 }

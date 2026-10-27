@@ -4,7 +4,7 @@ import cn.hutool.core.util.ObjectUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.common.core.exception.ServiceException;
-import org.dromara.system.api.DeptService;
+import org.dromara.system.api.OrgService;
 import org.dromara.workflow.common.ConditionalOnEnable;
 import org.springframework.stereotype.Component;
 
@@ -22,16 +22,16 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class SpelRuleComponent {
 
-    private final DeptService deptService;
+    private final OrgService orgService;
 
     /**
      * 通过发起人部门 ID 获取部门负责人。
      *
-     * @param initiatorDeptId 发起人部门 ID
+     * @param initiatorOrgId 发起人部门 ID
      * @return 部门负责人用户 ID
      */
-    public Long selectDeptLeaderById(Long initiatorDeptId) {
-        Long leaderId = deptService.selectDeptLeaderById(initiatorDeptId);
+    public Long selectOrgLeaderById(Long initiatorOrgId) {
+        Long leaderId = orgService.selectOrgLeaderById(initiatorOrgId);
         if (ObjectUtil.isNull(leaderId)) {
             throw new ServiceException("当前部门未设置负责人，请联系管理员操作。");
         }

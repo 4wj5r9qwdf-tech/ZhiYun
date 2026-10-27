@@ -6,7 +6,7 @@
  * - a-input/a-select/a-date-picker/a-checkbox-group：控件统一
  * - message/Modal.confirm：全局反馈（替代手写 msg/confirm）
  * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
- * - 后端 orderBy 白名单：job_no/name/dept/group/emp_status/card_no/hire_date
+ * - 后端 orderBy 白名单：job_no/name/org/group/emp_status/card_no/hire_date
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -29,16 +29,16 @@ const pageSize = ref(20)
 const keyword = ref('')
 // ===== 左侧组织树（点节点筛该节点及下级人员，双线：部门/小组归属都算） =====
 const orgTree = ref<any[]>([])
-const selectedDeptId = ref<string | null>(null)
+const selectedOrgId = ref<string | null>(null)
 const treeCollapsed = ref(false)
 const orgCounts = ref<Record<string, number>>({})
 
 function buildOrgTree(list: any[]): any[] {
   const map: Record<string, any> = {}
-  for (const n of list) map[String(n.deptId)] = { ...n, children: [] }
+  for (const n of list) map[String(n.orgId)] = { ...n, children: [] }
   const roots: any[] = []
   for (const n of list) {
-    const node = map[String(n.deptId)]
+    const node = map[String(n.orgId)]
     const pid = n.parentId
     if (pid && pid !== 0 && pid !== '0' && map[String(pid)]) map[String(pid)].children.push(node)
     else roots.push(node)
@@ -55,24 +55,24 @@ async function loadOrgCounts() {
 
 function onTreeSelect(keys: any[]) {
   const id = keys?.length ? String(keys[0]) : null
-  selectedDeptId.value = id
-  deptId.value = id ?? undefined
+  selectedOrgId.value = id
+  orgId.value = id ?? undefined
   pageNum.value = 1
   loadList()
 }
 
 function clearTreeSelect() {
-  selectedDeptId.value = null
-  deptId.value = undefined
+  selectedOrgId.value = null
+  orgId.value = undefined
   pageNum.value = 1
   loadList()
 }
 
 const empStatus = ref<string | undefined>()
-const deptId = ref<string | undefined>()
+const orgId = ref<string | undefined>()
 
 // 筛选栏"部门"下拉变化 → 树高亮同步
-watch(deptId, (v) => { selectedDeptId.value = v ? String(v) : null })
+watch(orgId, (v) => { selectedOrgId.value = v ? String(v) : null })
 const gender = ref<string | undefined>()
 const postsFilter = ref('')
 const rolesFilter = ref('')
@@ -90,7 +90,7 @@ const ALL_COLUMNS = [
   { title: '姓名', dataIndex: 'name', key: 'name', sorter: true },
   { title: '性别', dataIndex: 'gender', key: 'gender' },
   { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked' },
-  { title: '部门', dataIndex: 'dept_name', key: 'dept_name', sorter: true },
+  { title: '部门', dataIndex: 'org_name', key: 'org_name', sorter: true },
   { title: '岗位', dataIndex: 'posts', key: 'posts', ellipsis: true },
   { title: '角色', dataIndex: 'roles', key: 'roles', ellipsis: true },
   { title: '状态', dataIndex: 'emp_status', key: 'emp_status', sorter: true },
@@ -191,14 +191,14 @@ const columns = computed(() => {
 })
 
 // 下拉数据
-const depts = ref<any[]>([])
-const deptTree = ref<any[]>([])   // 原始部门树（含 dept_category），供小组级联
+const orgs = ref<any[]>([])
+const orgNodes = ref<any[]>([])   // 组织树（表单下拉数据源）
 const posts = ref<any[]>([])
 const roles = ref<any[]>([])
 
 // 所属部门树选：全部非小组节点（小组是末级不当下级部门）
 // 组织节点全树可选（万物皆部门：人员可挂任意层级节点）
-const deptOptions = computed(() => deptTree.value)
+const orgOptions = computed(() => orgNodes.value)
 
 
 // ===== 弹窗 =====
@@ -210,7 +210,7 @@ const formRef = ref()
 
 const emptyForm = () => ({
   userId: null as number | null,
-  jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', deptId: undefined as string | undefined,
+  jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', orgId: undefined as string | undefined,
   status: '0', remark: '',
   password: '',
   postIds: [] as string[],
@@ -249,7 +249,7 @@ async function loadList() {
       params: {
         pageNum: pageNum.value, pageSize: pageSize.value,
         keyword: keyword.value, empStatus: empStatus.value ?? '',
-        deptId: deptId.value ?? undefined, subtree: deptId.value ? '1' : undefined, gender: gender.value ?? '',
+        orgId: orgId.value ?? undefined, subtree: orgId.value ? '1' : undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value, orderBy: orderBy.value,
         delFlag: showDeleted.value ? '1' : '0',
         includeSystem: includeSystem.value ? '1' : '0',
@@ -278,7 +278,7 @@ async function exportCsv() {
     const res: any = await api.get('/system/person/export', {
       params: {
         keyword: keyword.value, empStatus: empStatus.value ?? '',
-        deptId: deptId.value ?? undefined, gender: gender.value ?? '',
+        orgId: orgId.value ?? undefined, gender: gender.value ?? '',
         posts: postsFilter.value, roles: rolesFilter.value,
       },
     })
@@ -336,21 +336,20 @@ function importFile(e: Event) {
 async function loadOptions() {
   try {
     const [d, p, r]: any[] = await Promise.all([
-      api.get('/system/dept/list'),
+      api.get('/system/org/list'),
       api.get('/system/post/list', { params: { pageNum: 1, pageSize: 100 } }),
       api.get('/system/role/list', { params: { pageNum: 1, pageSize: 100 } }),
     ])
     if (d.code === 200) {
-      deptTree.value = d.data || []
-      depts.value = flattenDept(d.data || [])
-      orgTree.value = buildOrgTree(d.data || [])
+      orgs.value = flattenOrg(d.data || [])
+      orgNodes.value = buildOrgTree(d.data || [])
     }
     if (p.code === 200) posts.value = p.data.rows || []
     if (r.code === 200) roles.value = r.data.rows || []
   } catch { /* ignore */ }
 }
 
-function flattenDept(list: any[]): any[] {
+function flattenOrg(list: any[]): any[] {
   const out: any[] = []
   const walk = (arr: any[]) => arr.forEach(n => { out.push(n); if (n.children?.length) walk(n.children) })
   walk(list)
@@ -369,7 +368,7 @@ async function openEdit(row: any) {
   const d = res.data
   form.value = {
     userId: d.user_id, jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
-    email: d.email || '', phoneNumber: d.phone_number || '', deptId: d.dept_id ? String(d.dept_id) : undefined,
+    email: d.email || '', phoneNumber: d.phone_number || '', orgId: d.org_id ? String(d.org_id) : undefined,
     status: d.status || '0', remark: d.remark || '', password: '',
     postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
     ext: {
@@ -518,7 +517,7 @@ function restorePerson(row: any) {
 }
 
 function resetFilter() {
-  keyword.value = ''; empStatus.value = undefined; deptId.value = undefined
+  keyword.value = ''; empStatus.value = undefined; orgId.value = undefined
   gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
   pageNum.value = 1
   loadList()
@@ -535,27 +534,27 @@ function resetFilter() {
     </div>
 
     <!-- 筛选 + 操作（同一行：筛选控件在左，新增/导入/导出靠右） -->
-    <div class="dept-body">
+    <div class="org-body">
       <!-- 左：组织树 -->
-      <div class="dept-tree-panel" :class="{ collapsed: treeCollapsed }">
+      <div class="org-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
           <span class="tree-title">组织架构</span>
-          <a v-if="selectedDeptId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+          <a v-if="selectedOrgId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
         </div>
         <div class="tree-body">
           <a-tree
             v-if="orgTree.length"
             :tree-data="orgTree"
-            :field-names="{ title: 'deptName', key: 'deptId', children: 'children' }"
+            :field-names="{ title: 'orgName', key: 'orgId', children: 'children' }"
             block-node
             default-expand-all
-            :selected-keys="selectedDeptId ? [selectedDeptId] : []"
+            :selected-keys="selectedOrgId ? [selectedOrgId] : []"
             @select="onTreeSelect"
           >
-            <template #title="{ deptName, deptId }">
+            <template #title="{ orgName, orgId }">
               <span class="tree-node">
-                {{ deptName }}
-                <span v-if="orgCounts[String(deptId)]" class="tree-count">{{ orgCounts[String(deptId)] }}</span>
+                {{ orgName }}
+                <span v-if="orgCounts[String(orgId)]" class="tree-count">{{ orgCounts[String(orgId)] }}</span>
               </span>
             </template>
           </a-tree>
@@ -569,7 +568,7 @@ function resetFilter() {
         <MenuFoldOutlined v-else />
       </div>
 
-      <div class="dept-main">
+      <div class="org-main">
     <div class="filter-bar">
       <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
       <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
@@ -578,8 +577,8 @@ function resetFilter() {
         <a-select-option value="离职">离职</a-select-option>
         <a-select-option value="长假">长假</a-select-option>
       </a-select>
-      <a-select v-model:value="deptId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
-        <a-select-option v-for="d in depts" :key="String(d.deptId)" :value="String(d.deptId)">{{ d.deptName }}</a-select-option>
+      <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
+        <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
       </a-select>
       <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
         <a-select-option value="1">男</a-select-option>
@@ -704,7 +703,7 @@ function resetFilter() {
         <a-tab-pane key="duty" tab="任职信息">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="入职日期" :name="['ext','hireDate']"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="所属部门"><a-tree-select v-model:value="form.deptId" :tree-data="deptOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" tree-default-expand-all allow-clear placeholder="选择部门/科室/班组" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属部门"><a-tree-select v-model:value="form.orgId" :tree-data="orgOptions" :field-names="{ label: 'orgName', value: 'orgId', children: 'children' }" tree-default-expand-all allow-clear placeholder="选择部门/科室/班组" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工性质"><a-select v-model:value="form.ext.empType"><a-select-option value="正式">正式</a-select-option><a-select-option value="临时">临时</a-select-option><a-select-option value="劳务">劳务</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="在职状态" :name="['ext','empStatus']"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工卡"><a-input v-model:value="form.ext.cardNo" placeholder="工牌号" /></a-form-item></a-col>
@@ -789,9 +788,9 @@ function resetFilter() {
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 
 /* 左侧组织树（对齐组织架构页） */
-.dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
-.dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
-.dept-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
+.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
+.org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
 .tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
@@ -800,7 +799,7 @@ function resetFilter() {
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
 .tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
-.dept-main { flex: 1; min-width: 0; }
+.org-main { flex: 1; min-width: 0; }
 
 .filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
 .filter-spacer { flex: 1 1 auto; min-width: 8px; }

@@ -26,7 +26,7 @@ public class UserOnlineDTO implements Serializable {
     /**
      * 部门名称
      */
-    private String deptName;
+    private String orgName;
 
     /**
      * 用户账号

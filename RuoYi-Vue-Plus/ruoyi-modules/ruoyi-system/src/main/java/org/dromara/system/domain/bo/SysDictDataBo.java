@@ -72,7 +72,7 @@ public class SysDictDataBo implements Serializable {
     /**
      * 创建部门
      */
-    private Long createDept;
+    private Long createOrg;
 
     /**
      * 备注

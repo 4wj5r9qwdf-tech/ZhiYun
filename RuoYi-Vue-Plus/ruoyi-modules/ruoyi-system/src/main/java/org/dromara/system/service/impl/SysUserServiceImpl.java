@@ -48,7 +48,7 @@ import java.util.*;
 public class SysUserServiceImpl implements ISysUserService, UserService {
 
     private final SysUserMapper userMapper;
-    private final SysDeptMapper deptMapper;
+    private final SysOrgMapper orgMapper;
     private final SysRoleMapper roleMapper;
     private final SysPostMapper postMapper;
     private final SysUserRoleMapper userRoleMapper;
@@ -75,8 +75,8 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
      */
     @Override
     public List<SysUserExportVo> selectUserExportList(SysUserBo user) {
-        List<Long> deptIds = ObjectUtil.isNotNull(user.getDeptId()) ? deptMapper.selectDeptAndChildById(user.getDeptId()) : null;
-        return userMapper.selectUserExportList(user, deptIds);
+        List<Long> orgIds = ObjectUtil.isNotNull(user.getOrgId()) ? orgMapper.selectOrgAndChildById(user.getOrgId()) : null;
+        return userMapper.selectUserExportList(user, orgIds);
     }
 
     /**
@@ -95,9 +95,9 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
             .eqIfText(SysUser::getStatus, user.getStatus())
             .likeIfText(SysUser::getPhoneNumber, user.getPhoneNumber())
             .betweenParams(SysUser::getCreateTime, params, "beginTime", "endTime")
-            .and(ObjectUtil.isNotNull(user.getDeptId()), w -> {
-                List<Long> ids = deptMapper.selectDeptAndChildById(user.getDeptId());
-                w.in(SysUser::getDeptId, ids);
+            .and(ObjectUtil.isNotNull(user.getOrgId()), w -> {
+                List<Long> ids = orgMapper.selectOrgAndChildById(user.getOrgId());
+                w.in(SysUser::getOrgId, ids);
             })
             .orderByAsc(SysUser::getUserId)
             .build();
@@ -174,15 +174,15 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
      * 通过用户ID串查询用户
      *
      * @param userIds 用户ID串
-     * @param deptId  部门id
+     * @param orgId  部门id
      * @return 用户列表信息
      */
     @Override
-    public List<SysUserVo> selectUserByIds(Collection<Long> userIds, Long deptId) {
+    public List<SysUserVo> selectUserByIds(Collection<Long> userIds, Long orgId) {
         return userMapper.selectUserList(userMapper.lambda()
             .select(SysUser::getUserId, SysUser::getUserName, SysUser::getNickName)
             .eq(SysUser::getStatus, SystemConstants.NORMAL)
-            .eqIfPresent(SysUser::getDeptId, deptId)
+            .eqIfPresent(SysUser::getOrgId, orgId)
             .inIfNotEmpty(SysUser::getUserId, userIds)
             .build());
     }
@@ -547,13 +547,13 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
     /**
      * 通过部门id查询当前部门所有用户
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 用户信息集合信息
      */
     @Override
-    public List<SysUserVo> selectUserListByDept(Long deptId) {
+    public List<SysUserVo> selectUserListByOrg(Long orgId) {
         return userMapper.lambda()
-            .eq(SysUser::getDeptId, deptId)
+            .eq(SysUser::getOrgId, orgId)
             .orderByAsc(SysUser::getUserId)
             .voList();
     }
@@ -647,7 +647,7 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
     @Override
     public UserDTO selectById(Long userId) {
         SysUserVo vo = userMapper.lambda()
-            .select(SysUser::getUserId, SysUser::getDeptId, SysUser::getUserName,
+            .select(SysUser::getUserId, SysUser::getOrgId, SysUser::getUserName,
                 SysUser::getNickName, SysUser::getUserType, SysUser::getEmail,
                 SysUser::getPhoneNumber, SysUser::getGender, SysUser::getStatus,
                 SysUser::getCreateTime)
@@ -669,7 +669,7 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
             return List.of();
         }
         List<SysUserVo> list = userMapper.lambda()
-            .select(SysUser::getUserId, SysUser::getDeptId, SysUser::getUserName,
+            .select(SysUser::getUserId, SysUser::getOrgId, SysUser::getUserName,
                 SysUser::getNickName, SysUser::getUserType, SysUser::getEmail,
                 SysUser::getPhoneNumber, SysUser::getGender, SysUser::getStatus,
                 SysUser::getCreateTime)
@@ -718,18 +718,18 @@ public class SysUserServiceImpl implements ISysUserService, UserService {
     /**
      * 通过部门ID查询用户
      *
-     * @param deptIds 部门ids
+     * @param orgIds 部门ids
      * @return 用户
      */
     @Override
-    public List<UserDTO> selectUsersByDeptIds(Collection<Long> deptIds) {
-        if (CollUtil.isEmpty(deptIds)) {
+    public List<UserDTO> selectUsersByOrgIds(Collection<Long> orgIds) {
+        if (CollUtil.isEmpty(orgIds)) {
             return List.of();
         }
         List<SysUserVo> list = userMapper.lambda()
             .select(SysUser::getUserId, SysUser::getUserName, SysUser::getNickName, SysUser::getEmail, SysUser::getPhoneNumber)
             .eq(SysUser::getStatus, SystemConstants.NORMAL)
-            .in(SysUser::getDeptId, deptIds)
+            .in(SysUser::getOrgId, orgIds)
             .voList();
         return BeanUtil.copyToList(list, UserDTO.class);
     }

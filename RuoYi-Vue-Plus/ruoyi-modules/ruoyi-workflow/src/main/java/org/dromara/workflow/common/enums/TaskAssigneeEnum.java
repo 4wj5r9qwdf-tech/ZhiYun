@@ -31,7 +31,7 @@ public enum TaskAssigneeEnum {
     /**
      * 部门
      */
-    DEPT("部门", "dept:"),
+    ORG("部门", "org:"),
 
     /**
      * 岗位
@@ -116,10 +116,10 @@ public enum TaskAssigneeEnum {
     /**
      * 判断当前办理人类型是否需要调用部门服务。
      *
-     * @return 如果类型是 USER、DEPT 或 POST，则返回 true；否则返回 false
+     * @return 如果类型是 USER、ORG 或 POST，则返回 true；否则返回 false
      */
-    public boolean needsDeptService() {
-        return this == USER || this == DEPT || this == POST;
+    public boolean needsOrgService() {
+        return this == USER || this == ORG || this == POST;
     }
 
     /**

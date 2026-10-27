@@ -22,7 +22,7 @@ public class TestDemoImportVo {
      */
     @NotNull(message = "部门id不能为空")
     @ExcelProperty(value = "部门id")
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户id

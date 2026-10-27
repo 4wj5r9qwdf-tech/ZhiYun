@@ -26,7 +26,7 @@ public class PostDTO implements Serializable {
     /**
      * 部门id
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 岗位编码

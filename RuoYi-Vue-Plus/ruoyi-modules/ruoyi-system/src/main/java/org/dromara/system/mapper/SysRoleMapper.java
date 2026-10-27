@@ -31,7 +31,7 @@ public interface SysRoleMapper extends BaseMapperPlus<SysRole, SysRoleVo>, MPJBa
      * @return 包含角色信息的分页结果
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "create_dept"),
+        @DataColumn(key = "orgName", value = "create_org"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default Page<SysRoleVo> selectPageRoleList(@Param("page") Page<SysRole> page, @Param(Constants.WRAPPER) Wrapper<SysRole> queryWrapper) {
@@ -45,7 +45,7 @@ public interface SysRoleMapper extends BaseMapperPlus<SysRole, SysRoleVo>, MPJBa
      * @return 角色数据集合信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "create_dept"),
+        @DataColumn(key = "orgName", value = "create_org"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default List<SysRoleVo> selectRoleList(@Param(Constants.WRAPPER) Wrapper<SysRole> queryWrapper) {
@@ -59,7 +59,7 @@ public interface SysRoleMapper extends BaseMapperPlus<SysRole, SysRoleVo>, MPJBa
      * @return 匹配的角色数量
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "create_dept"),
+        @DataColumn(key = "orgName", value = "create_org"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default long selectRoleCount(Collection<Long> roleIds) {
@@ -73,7 +73,7 @@ public interface SysRoleMapper extends BaseMapperPlus<SysRole, SysRoleVo>, MPJBa
      * @return 对应的角色信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "create_dept"),
+        @DataColumn(key = "orgName", value = "create_org"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default SysRoleVo selectRoleById(Long roleId) {

@@ -37,17 +37,17 @@ public class LoginUser implements Serializable {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 部门类别编码
      */
-    private String deptCategory;
+    private String orgCategory;
 
     /**
      * 部门名
      */
-    private String deptName;
+    private String orgName;
 
     /**
      * 用户唯一标识

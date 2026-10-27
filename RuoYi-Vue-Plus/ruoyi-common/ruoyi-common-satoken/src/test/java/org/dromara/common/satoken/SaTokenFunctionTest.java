@@ -109,7 +109,7 @@ class SaTokenFunctionTest {
     @DisplayName("通过权限服务查询其他用户权限")
     void shouldLoadRemotePermissionsAndRejectMalformedLoginId() {
         PermissionService service = mock(PermissionService.class);
-        when(service.getMenuPermission(9L)).thenReturn(Set.of("system:dept:list"));
+        when(service.getMenuPermission(9L)).thenReturn(Set.of("system:org:list"));
 
         try (var login = mockStatic(LoginHelper.class);
              var spring = mockStatic(SpringUtil.class)) {
@@ -117,8 +117,8 @@ class SaTokenFunctionTest {
             spring.when(() -> SpringUtil.getBean(PermissionService.class)).thenReturn(service);
             SaPermissionImpl permission = new SaPermissionImpl();
 
-            assertEquals(List.of("system:dept:list"), permission.getPermissionList("sys_user:9", "login"));
-            assertEquals(List.of("system:dept:list"), permission.getPermissionList("sys_user-9", "login"));
+            assertEquals(List.of("system:org:list"), permission.getPermissionList("sys_user:9", "login"));
+            assertEquals(List.of("system:org:list"), permission.getPermissionList("sys_user-9", "login"));
             assertThrows(ServiceException.class, () -> permission.getPermissionList("invalid", "login"));
             verify(service, times(2)).getMenuPermission(9L);
         }

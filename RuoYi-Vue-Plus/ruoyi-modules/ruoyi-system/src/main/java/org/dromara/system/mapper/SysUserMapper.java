@@ -10,7 +10,7 @@ import org.dromara.common.mybatis.annotation.DataColumn;
 import org.dromara.common.mybatis.annotation.DataPermission;
 import org.dromara.common.mybatis.core.mapper.BaseMapperPlus;
 import org.dromara.common.mybatis.core.query.QueryBuilder;
-import org.dromara.system.domain.SysDept;
+import org.dromara.system.domain.SysOrg;
 import org.dromara.system.domain.SysRole;
 import org.dromara.system.domain.SysUser;
 import org.dromara.system.domain.SysUserRole;
@@ -35,7 +35,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * @return 分页的用户信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default Page<SysUserVo> selectPageUserList(Page<SysUser> page, Wrapper<SysUser> queryWrapper) {
@@ -49,7 +49,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * @return 用户信息集合
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default List<SysUserVo> selectUserList(Wrapper<SysUser> queryWrapper) {
@@ -60,25 +60,25 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * 根据条件分页查询用户列表
      *
      * @param user    查询条件
-     * @param deptIds 部门ID集合
+     * @param orgIds 部门ID集合
      * @return 用户信息集合信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "d.dept_id"),
+        @DataColumn(key = "orgName", value = "d.org_id"),
         @DataColumn(key = "userName", value = "u.create_by")
     })
-    default List<SysUserExportVo> selectUserExportList(SysUserBo user, List<Long> deptIds) {
+    default List<SysUserExportVo> selectUserExportList(SysUserBo user, List<Long> orgIds) {
         MPJLambdaWrapper<SysUser> wrapper = QueryBuilder.lambdaJoin("u", SysUser.class)
             .selectAll(SysUser.class)
             .selectAs("u1", SysUser::getUserName, SysUserExportVo::getLeaderName)
-            .leftJoin(SysDept.class, "d", SysDept::getDeptId, SysUser::getDeptId)
-            .leftJoin(SysUser.class, "u1", SysUser::getUserId, SysDept::getLeader)
+            .leftJoin(SysOrg.class, "d", SysOrg::getOrgId, SysUser::getOrgId)
+            .leftJoin(SysUser.class, "u1", SysUser::getUserId, SysOrg::getLeader)
             .likeIfText("u", SysUser::getUserName, user.getUserName())
             .likeIfText("u", SysUser::getNickName, user.getNickName())
             .eqIfText("u", SysUser::getStatus, user.getStatus())
             .likeIfText("u", SysUser::getPhoneNumber, user.getPhoneNumber())
             .betweenParams("u", SysUser::getCreateTime, user.getParams(), "beginTime", "endTime")
-            .inIfNotEmpty("u", SysUser::getDeptId, deptIds)
+            .inIfNotEmpty("u", SysUser::getOrgId, orgIds)
             .orderByAsc("u", SysUser::getUserId)
             .build();
         return this.selectJoinList(SysUserExportVo.class, wrapper);
@@ -92,7 +92,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * @return 用户信息集合信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "d.dept_id"),
+        @DataColumn(key = "orgName", value = "d.org_id"),
         @DataColumn(key = "userName", value = "u.create_by")
     })
     default Page<SysUserVo> selectAllocatedList(Page<SysUserVo> page, SysUserBo user) {
@@ -111,7 +111,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * @return 用户信息集合信息
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "d.dept_id"),
+        @DataColumn(key = "orgName", value = "d.org_id"),
         @DataColumn(key = "userName", value = "u.create_by")
     })
     default Page<SysUserVo> selectUnallocatedList(Page<SysUserVo> page, SysUserBo user, List<Long> userIds) {
@@ -128,7 +128,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      * @return 用户数量
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default long countUserById(Long userId) {
@@ -144,7 +144,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      */
     @Override
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     int update(@Param(Constants.ENTITY) SysUser user, @Param(Constants.WRAPPER) Wrapper<SysUser> updateWrapper);
@@ -157,7 +157,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
      */
     @Override
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     int updateById(@Param(Constants.ENTITY) SysUser user);
@@ -172,7 +172,7 @@ public interface SysUserMapper extends BaseMapperPlus<SysUser, SysUserVo>, MPJBa
         return QueryBuilder.lambdaJoin("u", SysUser.class)
             .distinct()
             .selectAll(SysUser.class)
-            .leftJoin(SysDept.class, "d", SysDept::getDeptId, SysUser::getDeptId)
+            .leftJoin(SysOrg.class, "d", SysOrg::getOrgId, SysUser::getOrgId)
             .leftJoin(SysUserRole.class, "sur", SysUserRole::getUserId, SysUser::getUserId)
             .leftJoin(SysRole.class, "r", SysRole::getRoleId, SysUserRole::getRoleId)
             .likeIfText("u", SysUser::getUserName, user.getUserName())

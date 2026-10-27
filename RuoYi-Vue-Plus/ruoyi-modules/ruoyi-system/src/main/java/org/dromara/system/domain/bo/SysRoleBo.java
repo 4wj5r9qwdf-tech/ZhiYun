@@ -66,7 +66,7 @@ public class SysRoleBo implements Serializable {
     /**
      * 部门树选择项是否关联显示
      */
-    private Boolean deptCheckStrictly;
+    private Boolean orgCheckStrictly;
 
     /**
      * 角色状态（0正常 1停用）
@@ -86,7 +86,7 @@ public class SysRoleBo implements Serializable {
     /**
      * 部门组（数据权限）
      */
-    private Long[] deptIds;
+    private Long[] orgIds;
 
     /**
      * 判断当前角色是否为超级管理员角色。

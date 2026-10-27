@@ -31,7 +31,7 @@ public interface TestDemoMapper extends BaseMapperPlus<TestDemo, TestDemoVo> {
      * @return 分页结果
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "user_id")
     })
     Page<TestDemoVo> customPageList(@Param("page") Page<TestDemo> page, @Param("ew") Wrapper<TestDemo> wrapper);
@@ -45,7 +45,7 @@ public interface TestDemoMapper extends BaseMapperPlus<TestDemo, TestDemoVo> {
      */
     @Override
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "user_id")
     })
     default <P extends IPage<TestDemoVo>> P selectVoPage(IPage<TestDemo> page, Wrapper<TestDemo> wrapper) {
@@ -60,7 +60,7 @@ public interface TestDemoMapper extends BaseMapperPlus<TestDemo, TestDemoVo> {
      */
     @Override
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "user_id")
     })
     default List<TestDemoVo> selectVoList(Wrapper<TestDemo> wrapper) {
@@ -75,7 +75,7 @@ public interface TestDemoMapper extends BaseMapperPlus<TestDemo, TestDemoVo> {
      */
     @Override
     @DataPermission(value = {
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "user_id")
     }, joinStr = "AND")
     List<TestDemo> selectByIds(@Param(Constants.COLL) Collection<? extends Serializable> idList);
@@ -88,7 +88,7 @@ public interface TestDemoMapper extends BaseMapperPlus<TestDemo, TestDemoVo> {
      */
     @Override
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "user_id")
     })
     int updateById(@Param(Constants.ENTITY) TestDemo entity);

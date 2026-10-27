@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
-import org.dromara.system.domain.SysDept;
+import org.dromara.system.domain.SysOrg;
 
 import java.io.Serial;
 import java.io.Serializable;
@@ -14,14 +14,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 部门业务对象 sys_dept
+ * 部门业务对象 sys_org
  *
  * @author Michelle.Chung
  */
 
 @Data
-@AutoMapper(target = SysDept.class, reverseConvertGenerate = false)
-public class SysDeptBo implements Serializable {
+@AutoMapper(target = SysOrg.class, reverseConvertGenerate = false)
+public class SysOrgBo implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -29,7 +29,7 @@ public class SysDeptBo implements Serializable {
     /**
      * 部门id
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 父部门ID
@@ -41,13 +41,13 @@ public class SysDeptBo implements Serializable {
      */
     @NotBlank(message = "部门名称不能为空")
     @Size(min = 0, max = 30, message = "部门名称长度不能超过{max}个字符")
-    private String deptName;
+    private String orgName;
 
     /**
      * 部门类别编码
      */
     @Size(min = 0, max = 100, message = "部门类别编码长度不能超过{max}个字符")
-    private String deptCategory;
+    private String orgCategory;
 
     /**
      * 所在建筑(物理资产)=sys_building.plant_id；只车间节点填，下面区域/组继承
@@ -92,7 +92,7 @@ public class SysDeptBo implements Serializable {
     /**
      * 归属部门id（部门树）
      */
-    private Long belongDeptId;
+    private Long belongOrgId;
 
     /**
      * 请求参数

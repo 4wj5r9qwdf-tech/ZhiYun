@@ -34,12 +34,12 @@ public class SysPostBo implements Serializable {
      * 部门id（单部门）
      */
     @NotNull(message = "部门id不能为空")
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 归属部门id（部门树）
      */
-    private Long belongDeptId;
+    private Long belongOrgId;
 
     /**
      * 岗位编码

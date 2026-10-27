@@ -1,7 +1,7 @@
 package org.dromara.common.translation.core.impl;
 
 import org.dromara.common.core.service.DictService;
-import org.dromara.system.api.DeptService;
+import org.dromara.system.api.OrgService;
 import org.dromara.system.api.OssService;
 import org.dromara.system.api.UserService;
 import org.dromara.system.api.domain.OssDTO;
@@ -29,11 +29,11 @@ class TranslationImplementationsTest {
     @Test
     @DisplayName("翻译部门名称")
     void shouldTranslateDepartmentNames() {
-        DeptService service = mock(DeptService.class);
-        when(service.selectDeptNameByIds("1")).thenReturn("研发部");
-        when(service.selectDeptNameByIds("1,2")).thenReturn("研发部,财务部");
-        when(service.selectDeptNamesByIds(Set.of(1L, 2L))).thenReturn(Map.of(1L, "研发部", 2L, "财务部"));
-        DeptNameTranslationImpl translation = new DeptNameTranslationImpl(service);
+        OrgService service = mock(OrgService.class);
+        when(service.selectOrgNameByIds("1")).thenReturn("研发部");
+        when(service.selectOrgNameByIds("1,2")).thenReturn("研发部,财务部");
+        when(service.selectOrgNamesByIds(Set.of(1L, 2L))).thenReturn(Map.of(1L, "研发部", 2L, "财务部"));
+        OrgNameTranslationImpl translation = new OrgNameTranslationImpl(service);
 
         assertEquals("研发部", translation.translation(1L, null));
         assertEquals("研发部,财务部", translation.translation("1,2", null));

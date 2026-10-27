@@ -27,7 +27,7 @@ public class SysPost extends BaseEntity {
     /**
      * 部门id
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 岗位编码

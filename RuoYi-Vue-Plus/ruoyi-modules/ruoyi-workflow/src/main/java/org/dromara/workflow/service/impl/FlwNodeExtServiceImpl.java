@@ -200,7 +200,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
      * <p>示例 JSON：
      * [
      * {"code": "ButtonPermissionEnum", "value": "back,termination"},
-     * {"code": "CopySettingEnum", "value": "1,3,4,#{@spelRuleComponent.selectDeptLeaderById(#deptId", "#roleId)}"},
+     * {"code": "CopySettingEnum", "value": "1,3,4,#{@spelRuleComponent.selectOrgLeaderById(#orgId", "#roleId)}"},
      * {"code": "VariablesEnum", "value": "key1=value1,key2=value2"}
      * ]
      *
@@ -286,7 +286,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
 
         StringBuilder token = new StringBuilder();
         // #{...} 的嵌套深度
-        int depth = 0;
+        int orgh = 0;
         // 是否在字符串常量中（" 或 '）
         boolean inString = false;
         // 当前字符串引号类型
@@ -296,8 +296,8 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
             char c = str.charAt(i);
 
             // 检测进入 SpEL 表达式 #{...}
-            if (!inString && c == '#' && depth == 0 && checkNext(str, i, '{')) {
-                depth++;
+            if (!inString && c == '#' && orgh == 0 && checkNext(str, i, '{')) {
+                orgh++;
                 token.append("#{");
                 // 跳过 {
                 i++;
@@ -305,18 +305,18 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
             }
 
             // 在表达式中遇到 { 或 } 改变嵌套深度
-            if (!inString && depth > 0) {
+            if (!inString && orgh > 0) {
                 if (c == '{') {
-                    depth++;
+                    orgh++;
                 } else if (c == '}') {
-                    depth--;
+                    orgh--;
                 }
                 token.append(c);
                 continue;
             }
 
             // 检测字符串开始/结束
-            if (depth > 0 && (c == '"' || c == '\'')) {
+            if (orgh > 0 && (c == '"' || c == '\'')) {
                 if (!inString) {
                     inString = true;
                     stringQuote = c;
@@ -328,7 +328,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
             }
 
             // 外层逗号才分割
-            if (c == ',' && depth == 0 && !inString) {
+            if (c == ',' && orgh == 0 && !inString) {
                 String part = token.toString().trim();
                 if (!part.isEmpty()) {
                     result.add(part);

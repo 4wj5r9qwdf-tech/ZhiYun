@@ -29,7 +29,7 @@ public interface SysPostMapper extends BaseMapperPlus<SysPost, SysPostVo>, MPJBa
      * @return 包含岗位信息的分页结果
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default Page<SysPostVo> selectPagePostList(Page<SysPost> page, Wrapper<SysPost> queryWrapper) {
@@ -43,7 +43,7 @@ public interface SysPostMapper extends BaseMapperPlus<SysPost, SysPostVo>, MPJBa
      * @return 岗位信息列表
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default List<SysPostVo> selectPostList(Wrapper<SysPost> queryWrapper) {
@@ -57,7 +57,7 @@ public interface SysPostMapper extends BaseMapperPlus<SysPost, SysPostVo>, MPJBa
      * @return 匹配的岗位数量
      */
     @DataPermission({
-        @DataColumn(key = "deptName", value = "dept_id"),
+        @DataColumn(key = "orgName", value = "org_id"),
         @DataColumn(key = "userName", value = "create_by")
     })
     default long selectPostCount(Collection<Long> postIds) {

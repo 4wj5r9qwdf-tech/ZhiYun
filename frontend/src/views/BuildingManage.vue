@@ -4,7 +4,7 @@
  * - 建筑=一栋楼（面积/楼层/地址/建成年份），部门（车间/组）坐落在建筑里；用途类别：厂房/行政楼/宿舍楼（仓库是建筑内区域不在此列）
  * - a-table：用途类别/编号/名称/楼层/占地/建筑面积/地址/建成年份/状态/关联车间/操作
  * - a-modal + a-form：新增/编辑（GET /system/building/{plantId} 详情回填）
- * - 删除：Modal.confirm 二次确认；有车间占用（deptCount>0）后端拒绝，透出后端 msg
+ * - 删除：Modal.confirm 二次确认；有车间占用（orgCount>0）后端拒绝，透出后端 msg
  * - 后端：/system/building（list/{id}/POST/PUT/DELETE/{plantId}）
  */
 import { ref, onMounted, watch } from 'vue'
@@ -48,7 +48,7 @@ const columns = [
   { title: '地址', dataIndex: 'address', key: 'address', ellipsis: true },
   { title: '建成年份', dataIndex: 'builtYear', key: 'builtYear', width: 100 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '关联车间', key: 'deptCount', width: 100 },
+  { title: '关联车间', key: 'orgCount', width: 100 },
   { title: '操作', key: 'ops', width: 120, fixed: 'right' as const },
 ]
 
@@ -281,8 +281,8 @@ onMounted(loadList)
         <template v-else-if="column.key === 'status'">
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
         </template>
-        <template v-else-if="column.key === 'deptCount'">
-          <span v-if="Number(record.deptCount) > 0" class="dept-count">{{ record.deptCount }}</span>
+        <template v-else-if="column.key === 'orgCount'">
+          <span v-if="Number(record.orgCount) > 0" class="org-count">{{ record.orgCount }}</span>
           <span v-else>—</span>
         </template>
         <template v-else-if="column.key === 'ops'">
@@ -399,7 +399,7 @@ onMounted(loadList)
 
 .plant-name { font-weight: 500; color: #1D2129; }
 .addr { color: #4E5969; }
-.dept-count { color: #1E5EFF; font-weight: 500; }
+.org-count { color: #1E5EFF; font-weight: 500; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
 </style>

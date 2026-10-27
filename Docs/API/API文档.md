@@ -40,7 +40,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 ### 3. 智能体调用红线（摘自《开发规范.md》）
 
 - 每次写操作**以发起员工本人的 token 调用**（权限由后端 Sa-Token 按 token 校验，禁止用超管 token 代执行）
-- deptId 等 bigint 主键在 JSON 里是**字符串**（如 `"2114531897794859009"`），**禁止转 number**（>2^53 丢精度）
+- orgId 等 bigint 主键在 JSON 里是**字符串**（如 `"2114531897794859009"`），**禁止转 number**（>2^53 丢精度）
 - 写接口带 `@RepeatSubmit`：间隔内相同参数重复提交会被拒（`不允许重复提交，请稍候再试`），重试需换时间或确认首次是否已生效
 
 ---
@@ -56,17 +56,17 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 ## 二、接口速查（每接口一行）
 
-### 小组管理 group（复用 `/system/dept`，小组 = `dept_category='小组'`）
+### 小组管理 group（复用 `/system/org`，小组 = `org_category='小组'`）
 
 | 方法 + 路径 | 说明 | 读/写 |
 |---|---|---|
-| `GET /system/dept/list` | 查组织树/小组列表（支持 `deptCategory` 过滤、平铺返回） | 只读 |
-| `GET /system/dept/{deptId}` | 查单个部门/小组详情（含 ancestors 层级链） | 只读 |
-| `POST /system/dept` | 新建部门/小组（`deptCategory='小组'` 即建小组） | 写 |
-| `PUT /system/dept` | 修改部门/小组 | 写 |
-| `DELETE /system/dept/{deptId}` | 删除部门/小组（5 道前置校验） | 写 |
+| `GET /system/org/list` | 查组织树/小组列表（支持 `orgCategory` 过滤、平铺返回） | 只读 |
+| `GET /system/org/{orgId}` | 查单个部门/小组详情（含 ancestors 层级链） | 只读 |
+| `POST /system/org` | 新建部门/小组（`orgCategory='小组'` 即建小组） | 写 |
+| `PUT /system/org` | 修改部门/小组 | 写 |
+| `DELETE /system/org/{orgId}` | 删除部门/小组（5 道前置校验） | 写 |
 
-> 权限码：`system:dept:list` / `system:dept:query` / `system:dept:add` / `system:dept:edit` / `system:dept:remove`（按发起员工角色过滤，无权限返回 403）。
+> 权限码：`system:org:list` / `system:org:query` / `system:org:add` / `system:org:edit` / `system:org:remove`（按发起员工角色过滤，无权限返回 403）。
 
 ---
 

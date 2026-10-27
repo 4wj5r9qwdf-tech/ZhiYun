@@ -26,13 +26,13 @@ import org.dromara.common.redis.utils.RedisUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.system.api.model.LoginUser;
-import org.dromara.system.domain.bo.SysDeptBo;
+import org.dromara.system.domain.bo.SysOrgBo;
 import org.dromara.system.domain.bo.SysPostBo;
 import org.dromara.system.domain.bo.SysRoleBo;
 import org.dromara.system.domain.bo.SysUserBo;
 import org.dromara.system.domain.vo.*;
 import org.dromara.system.listener.SysUserImportListener;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.service.ISysOrgService;
 import org.dromara.system.service.ISysPostService;
 import org.dromara.system.service.ISysRoleService;
 import org.dromara.system.service.ISysUserService;
@@ -58,7 +58,7 @@ public class SysUserController extends BaseController {
     private final ISysUserService userService;
     private final ISysRoleService roleService;
     private final ISysPostService postService;
-    private final ISysDeptService deptService;
+    private final ISysOrgService orgService;
 
     /**
      * 分页查询用户列表。
@@ -148,10 +148,10 @@ public class SysUserController extends BaseController {
             SysUserVo sysUser = userService.selectUserById(userId);
             userInfoVo.setUser(sysUser);
             userInfoVo.setRoleIds(roleService.selectRoleListByUserId(userId));
-            Long deptId = sysUser.getDeptId();
-            if (ObjectUtil.isNotNull(deptId)) {
+            Long orgId = sysUser.getOrgId();
+            if (ObjectUtil.isNotNull(orgId)) {
                 SysPostBo postBo = new SysPostBo();
-                postBo.setDeptId(deptId);
+                postBo.setOrgId(orgId);
                 userInfoVo.setPosts(postService.selectPostList(postBo));
                 userInfoVo.setPostIds(postService.selectPostListByUserId(userId));
             }
@@ -174,7 +174,7 @@ public class SysUserController extends BaseController {
     @RepeatSubmit()
     @PostMapping
     public R<Void> add(@Validated @RequestBody SysUserBo user) {
-        deptService.checkDeptDataScope(user.getDeptId());
+        orgService.checkOrgDataScope(user.getOrgId());
         if (!userService.checkUserNameUnique(user)) {
             return R.fail("新增用户'" + user.getUserName() + "'失败，登录账号已存在");
         } else if (StringUtils.isNotEmpty(user.getPhoneNumber()) && !userService.checkPhoneUnique(user)) {
@@ -199,7 +199,7 @@ public class SysUserController extends BaseController {
     public R<Void> edit(@Validated @RequestBody SysUserBo user) {
         userService.checkUserAllowed(user.getUserId());
         userService.checkUserDataScope(user.getUserId());
-        deptService.checkDeptDataScope(user.getDeptId());
+        orgService.checkOrgDataScope(user.getOrgId());
         if (!userService.checkUserNameUnique(user)) {
             return R.fail("修改用户'" + user.getUserName() + "'失败，登录账号已存在");
         } else if (StringUtils.isNotEmpty(user.getPhoneNumber()) && !userService.checkPhoneUnique(user)) {
@@ -230,14 +230,14 @@ public class SysUserController extends BaseController {
      * 根据用户ID串批量获取用户基础信息
      *
      * @param userIds 用户ID串
-     * @param deptId  部门ID
+     * @param orgId  部门ID
      * @return 用户基础信息列表
      */
     @SaCheckPermission("system:user:query")
     @GetMapping("/optionselect")
     public R<List<SysUserVo>> optionselect(@RequestParam(required = false) Long[] userIds,
-                                           @RequestParam(required = false) Long deptId) {
-        return R.ok(userService.selectUserByIds(ArrayUtil.isEmpty(userIds) ? null : List.of(userIds), deptId));
+                                           @RequestParam(required = false) Long orgId) {
+        return R.ok(userService.selectUserByIds(ArrayUtil.isEmpty(userIds) ? null : List.of(userIds), orgId));
     }
 
     /**
@@ -334,25 +334,25 @@ public class SysUserController extends BaseController {
     /**
      * 获取用户筛选用的部门树。
      *
-     * @param dept 部门查询条件
+     * @param org 部门查询条件
      * @return 部门树列表
      */
     @SaCheckPermission("system:user:list")
-    @GetMapping("/deptTree")
-    public R<List<Tree<Long>>> deptTree(SysDeptBo dept) {
-        return R.ok(deptService.selectDeptTreeList(dept));
+    @GetMapping("/orgTree")
+    public R<List<Tree<Long>>> orgTree(SysOrgBo org) {
+        return R.ok(orgService.selectOrgTreeList(org));
     }
 
     /**
      * 获取指定部门下的全部用户信息。
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 用户列表
      */
     @SaCheckPermission("system:user:list")
-    @GetMapping("/list/dept/{deptId}")
-    public R<List<SysUserVo>> listByDept(@PathVariable @NotNull Long deptId) {
-        return R.ok(userService.selectUserListByDept(deptId));
+    @GetMapping("/list/org/{orgId}")
+    public R<List<SysUserVo>> listByOrg(@PathVariable @NotNull Long orgId) {
+        return R.ok(userService.selectUserListByOrg(orgId));
     }
 
 }

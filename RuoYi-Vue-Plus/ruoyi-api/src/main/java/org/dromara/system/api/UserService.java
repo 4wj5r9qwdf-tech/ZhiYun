@@ -88,10 +88,10 @@ public interface UserService {
     /**
      * 通过部门ID查询用户
      *
-     * @param deptIds 部门ids
+     * @param orgIds 部门ids
      * @return 用户
      */
-    List<UserDTO> selectUsersByDeptIds(Collection<Long> deptIds);
+    List<UserDTO> selectUsersByOrgIds(Collection<Long> orgIds);
 
     /**
      * 通过岗位ID查询用户

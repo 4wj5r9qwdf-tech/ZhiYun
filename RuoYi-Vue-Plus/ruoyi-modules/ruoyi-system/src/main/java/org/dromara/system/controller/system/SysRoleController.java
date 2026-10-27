@@ -14,13 +14,13 @@ import org.dromara.common.mybatis.core.page.PageQuery;
 import org.dromara.common.redis.annotation.RepeatSubmit;
 import org.dromara.common.web.core.BaseController;
 import org.dromara.system.domain.SysUserRole;
-import org.dromara.system.domain.bo.SysDeptBo;
+import org.dromara.system.domain.bo.SysOrgBo;
 import org.dromara.system.domain.bo.SysRoleBo;
 import org.dromara.system.domain.bo.SysUserBo;
 import org.dromara.system.domain.vo.SysRoleVo;
 import org.dromara.system.domain.vo.SysUserVo;
 import org.dromara.system.event.OnlineUserCleanEvent;
-import org.dromara.system.service.ISysDeptService;
+import org.dromara.system.service.ISysOrgService;
 import org.dromara.system.service.ISysRoleService;
 import org.dromara.system.service.ISysUserService;
 import org.springframework.validation.annotation.Validated;
@@ -42,7 +42,7 @@ public class SysRoleController extends BaseController {
 
     private final ISysRoleService roleService;
     private final ISysUserService userService;
-    private final ISysDeptService deptService;
+    private final ISysOrgService orgService;
 
     /**
      * 分页查询角色列表。
@@ -274,11 +274,11 @@ public class SysRoleController extends BaseController {
      * @return 角色部门树信息
      */
     @SaCheckPermission("system:role:list")
-    @GetMapping(value = "/deptTree/{roleId}")
-    public R<DeptTreeSelectVo> roleDeptTreeselect(@PathVariable("roleId") Long roleId) {
-        DeptTreeSelectVo selectVo = new DeptTreeSelectVo(
-            deptService.selectDeptListByRoleId(roleId),
-            deptService.selectDeptTreeList(new SysDeptBo()));
+    @GetMapping(value = "/orgTree/{roleId}")
+    public R<OrgTreeSelectVo> roleOrgTreeselect(@PathVariable("roleId") Long roleId) {
+        OrgTreeSelectVo selectVo = new OrgTreeSelectVo(
+            orgService.selectOrgListByRoleId(roleId),
+            orgService.selectOrgTreeList(new SysOrgBo()));
         return R.ok(selectVo);
     }
 
@@ -286,9 +286,9 @@ public class SysRoleController extends BaseController {
      * 角色部门列表树信息
      *
      * @param checkedKeys 选中部门列表
-     * @param depts       下拉树结构列表
+     * @param orgs       下拉树结构列表
      */
-    public record DeptTreeSelectVo(Collection<Long> checkedKeys, List<Tree<Long>> depts) {
+    public record OrgTreeSelectVo(Collection<Long> checkedKeys, List<Tree<Long>> orgs) {
     }
 
 }

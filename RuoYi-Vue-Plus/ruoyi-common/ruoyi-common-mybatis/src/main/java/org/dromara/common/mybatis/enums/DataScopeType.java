@@ -33,17 +33,17 @@ public enum DataScopeType {
     /**
      * 自定数据权限
      */
-    CUSTOM("2", " #{#deptName} IN ( #{@sdss.getRoleCustom( #roleId )} ) ", " 1 = 0 "),
+    CUSTOM("2", " #{#orgName} IN ( #{@sdss.getRoleCustom( #roleId )} ) ", " 1 = 0 "),
 
     /**
      * 部门数据权限
      */
-    DEPT("3", " #{#deptName} = #{#user.deptId} ", " 1 = 0 "),
+    ORG("3", " #{#orgName} = #{#user.orgId} ", " 1 = 0 "),
 
     /**
      * 部门及以下数据权限
      */
-    DEPT_AND_CHILD("4", " #{#deptName} IN ( #{@sdss.getDeptAndChild( #user.deptId )} )", " 1 = 0 "),
+    ORG_AND_CHILD("4", " #{#orgName} IN ( #{@sdss.getOrgAndChild( #user.orgId )} )", " 1 = 0 "),
 
     /**
      * 仅本人数据权限
@@ -53,7 +53,7 @@ public enum DataScopeType {
     /**
      * 部门及以下或本人数据权限
      */
-    DEPT_AND_CHILD_OR_SELF("6", " #{#deptName} IN ( #{@sdss.getDeptAndChild( #user.deptId )} ) OR #{#userName} = #{#user.userId} ", " 1 = 0 ");
+    ORG_AND_CHILD_OR_SELF("6", " #{#orgName} IN ( #{@sdss.getOrgAndChild( #user.orgId )} ) OR #{#userName} = #{#user.userId} ", " 1 = 0 ");
 
     /**
      * 数据权限类型编码。

@@ -32,7 +32,7 @@ public interface TaskAssigneeService {
      * @param taskQuery 查询条件
      * @return 办理人
      */
-    TaskAssigneeDTO selectDeptsByTaskAssigneeList(TaskAssigneeBody taskQuery);
+    TaskAssigneeDTO selectOrgsByTaskAssigneeList(TaskAssigneeBody taskQuery);
 
     /**
      * 查询用户并返回任务指派的列表，支持分页

@@ -21,7 +21,7 @@ public interface FlowConstant {
     /**
      * 部门id
      */
-    String INITIATOR_DEPT_ID = "initiatorDeptId";
+    String INITIATOR_ORG_ID = "initiatorOrgId";
 
     /**
      * 流程分类 ID 转名称的翻译标识。

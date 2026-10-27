@@ -41,7 +41,7 @@ public class StartPrepareRequestComponent extends NodeComponent {
 
         Map<String, Object> variables = context.getVariables();
         variables.put(INITIATOR, LoginHelper.getUserIdStr());
-        variables.put(INITIATOR_DEPT_ID, LoginHelper.getDeptId());
+        variables.put(INITIATOR_ORG_ID, LoginHelper.getOrgId());
         variables.put(BUSINESS_ID, businessId);
 
         FlowInstance flowInstance = flowInstanceMapper.selectOne(QueryBuilder.lambda(FlowInstance.class)

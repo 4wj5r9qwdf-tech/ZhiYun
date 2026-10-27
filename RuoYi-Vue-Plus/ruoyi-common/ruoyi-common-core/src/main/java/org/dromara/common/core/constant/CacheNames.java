@@ -54,7 +54,7 @@ public interface CacheNames {
     /**
      * 部门
      */
-    String SYS_DEPT = "sys_dept#30d";
+    String SYS_ORG = "sys_org#30d";
 
     /**
      * OSS内容
@@ -69,7 +69,7 @@ public interface CacheNames {
     /**
      * 部门及以下权限
      */
-    String SYS_DEPT_AND_CHILD = "sys_dept_and_child#30d";
+    String SYS_ORG_AND_CHILD = "sys_org_and_child#30d";
 
     /**
      * OSS配置

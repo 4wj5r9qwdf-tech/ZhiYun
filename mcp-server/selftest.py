@@ -74,31 +74,31 @@ async def main() -> int:
             # 3. 建→回读→get→删 全链
             name = "__mcp_selftest__"
             r = tool_json(await session.call_tool("group_create", {
-                "employee_token": admin, "dept_name": name,
+                "employee_token": admin, "org_name": name,
                 "parent_id": "2114510418550157313", "order_num": 97}))
             check("group_create ok", r.get("ok") is True, r.get("msg", ""))
 
             r = tool_json(await session.call_tool(
-                "group_list", {"employee_token": admin, "dept_name": name}))
-            rows = [x for x in (r.get("data") or []) if x.get("deptName") == name]
+                "group_list", {"employee_token": admin, "org_name": name}))
+            rows = [x for x in (r.get("data") or []) if x.get("orgName") == name]
             check("read back new group", len(rows) == 1, f"got {len(rows)}")
-            new_id = rows[0]["deptId"] if rows else None
+            new_id = rows[0]["orgId"] if rows else None
 
             if new_id:
                 r = tool_json(await session.call_tool(
-                    "group_get", {"employee_token": admin, "dept_id": new_id}))
-                check("group_get ok", r.get("ok") is True and r["data"]["deptCategory"] == "小组")
+                    "group_get", {"employee_token": admin, "org_id": new_id}))
+                check("group_get ok", r.get("ok") is True and r["data"]["orgCategory"] == "小组")
 
                 # 4. 无权限 403 透传
                 if nocap:
                     r = tool_json(await session.call_tool("group_delete", {
-                        "employee_token": nocap, "dept_id": new_id}))
+                        "employee_token": nocap, "org_id": new_id}))
                     check("403 passthrough", r.get("ok") is False and r.get("code") == 403,
                           f"code={r.get('code')} msg={r.get('msg')}")
 
                 # 5. admin 删除清理
                 r = tool_json(await session.call_tool(
-                    "group_delete", {"employee_token": admin, "dept_id": new_id}))
+                    "group_delete", {"employee_token": admin, "org_id": new_id}))
                 check("group_delete ok", r.get("ok") is True, r.get("msg", ""))
 
     print("\n" + ("ALL PASS" if not failures else f"FAILED: {failures}"))

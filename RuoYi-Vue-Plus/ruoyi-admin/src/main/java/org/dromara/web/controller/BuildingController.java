@@ -15,7 +15,7 @@ import java.util.Map;
  * 建筑档案管理（物理资产/固定资产，非部门）。
  * 口径（2026-10-25 定稿）：建筑=一栋楼/固定资产（面积/楼层/地址/建成年份），是"地"；
  *   部门(车间/组)=管人的组织，是"人"，坐落在建筑里。用途类别：厂房/行政楼/宿舍楼（仓库是建筑内区域不在此列）。
- *   厂房一建筑=一一车间。关联：sys_dept 车间节点加 building_id 指向本表（只车间层关联，下面区域/组继承）。
+ *   厂房一建筑=一一车间。关联：sys_org 车间节点加 building_id 指向本表（只车间层关联，下面区域/组继承）。
  * 表：sys_building。基础字段（编号/名称/楼层/占地/建筑面积/地址/建成年份/状态/备注）。
  *
  * @author 织云ERP
@@ -37,7 +37,7 @@ public class BuildingController {
                                              @RequestParam(required = false) String status) {
         StringBuilder sql = new StringBuilder(
             "SELECT b.*, " +
-            "  (SELECT count(*) FROM sys_dept d WHERE d.building_id = b.plant_id AND d.del_flag='0') AS dept_count " +
+            "  (SELECT count(*) FROM sys_org d WHERE d.building_id = b.plant_id AND d.del_flag='0') AS org_count " +
             "FROM sys_building b WHERE b.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         if (keyword != null && !keyword.isBlank()) {
@@ -125,7 +125,7 @@ public class BuildingController {
     @DeleteMapping("/{plantId}")
     public R<Void> remove(@PathVariable Long plantId) {
         Long used = jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM sys_dept WHERE building_id=? AND del_flag='0'", Long.class, plantId);
+            "SELECT count(*) FROM sys_org WHERE building_id=? AND del_flag='0'", Long.class, plantId);
         if (used != null && used > 0) {
             return R.fail("该建筑下还关联着车间/部门，先解除关联再删除");
         }

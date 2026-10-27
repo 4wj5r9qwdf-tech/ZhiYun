@@ -30,7 +30,7 @@ public class TestDemo extends BaseEntity {
     /**
      * 部门id
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户id

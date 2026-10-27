@@ -27,7 +27,7 @@ class LambdaJoinQueryBuilderTest {
     static void initializeTableMetadata() {
         MybatisConfiguration configuration = new MybatisConfiguration();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "joinUser"), JoinUser.class);
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "joinDept"), JoinDept.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "joinOrg"), JoinOrg.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, "joinOrder"), JoinOrder.class);
     }
 
@@ -40,14 +40,14 @@ class LambdaJoinQueryBuilderTest {
         MPJLambdaWrapper<JoinUser> wrapper = QueryBuilder.lambdaJoin("u", JoinUser.class)
             .distinct()
             .select("u", JoinUser::getId, JoinUser::getName)
-            .selectAs("d", JoinDept::getName, JoinResult::getDeptName)
+            .selectAs("d", JoinOrg::getName, JoinResult::getOrgName)
             .selectSum("o", JoinOrder::getAmount, "totalAmount")
             .selectCount("o", JoinOrder::getId, "orderCount")
-            .leftJoin(JoinDept.class, "d", JoinDept::getId, JoinUser::getDeptId)
+            .leftJoin(JoinOrg.class, "d", JoinOrg::getId, JoinUser::getOrgId)
             .leftJoin(JoinOrder.class, "o", JoinOrder::getUserId, JoinUser::getId)
             .eqIfPresent("u", JoinUser::getName, null)
             .eqIfText("u", JoinUser::getName, "alice")
-            .likeIfText("d", JoinDept::getName, "tech")
+            .likeIfText("d", JoinOrg::getName, "tech")
             .betweenParams("o", JoinOrder::getCreatedAt, null, "begin", "end")
             .betweenParams("o", JoinOrder::getCreatedAt, Map.of("begin", "2026-01-01"), "begin", "end")
             .betweenParams("o", JoinOrder::getCreatedAt,
@@ -55,7 +55,7 @@ class LambdaJoinQueryBuilderTest {
             .inIfNotEmpty("u", JoinUser::getId, List.of())
             .inIfNotEmpty("u", JoinUser::getId, List.of(1L, 2L))
             .notInIfNotEmpty("u", JoinUser::getId, List.of())
-            .isNotNull("d", JoinDept::getId)
+            .isNotNull("d", JoinOrg::getId)
             .groupBy("u", JoinUser::getId, JoinUser::getName)
             .orderByAsc("u", JoinUser::getName)
             .orderByDesc("o", JoinOrder::getCreatedAt)
@@ -69,11 +69,11 @@ class LambdaJoinQueryBuilderTest {
         assertTrue(wrapper.getSelectDistinct());
         assertTrue(select.contains("u.id"));
         assertTrue(select.contains("u.name"));
-        assertTrue(select.contains("d.name AS deptName"));
+        assertTrue(select.contains("d.name AS orgName"));
         assertTrue(select.contains("SUM(o.amount) AS totalAmount"));
         assertTrue(select.contains("COUNT(o.id) AS orderCount"));
-        assertTrue(from.contains("LEFT JOIN test_dept d ON"));
-        assertTrue(from.contains("d.id = u.dept_id"));
+        assertTrue(from.contains("LEFT JOIN test_org d ON"));
+        assertTrue(from.contains("d.id = u.org_id"));
         assertTrue(from.contains("LEFT JOIN test_order o ON"));
         assertTrue(from.contains("o.user_id = u.id"));
         assertTrue(sql.contains("u.name ="));
@@ -143,12 +143,12 @@ class LambdaJoinQueryBuilderTest {
     void shouldPreserveNativeMpjDefaultsAndEscapeHatch() {
         MPJLambdaWrapper<JoinUser> wrapper = QueryBuilder.lambdaJoin(JoinUser.class)
             .selectAll()
-            .selectAll(JoinDept.class)
-            .leftJoin(JoinDept.class, JoinDept::getId, JoinUser::getDeptId)
+            .selectAll(JoinOrg.class)
+            .leftJoin(JoinOrg.class, JoinOrg::getId, JoinUser::getOrgId)
             .neIfText("t", JoinUser::getName, "alice")
             .betweenIfPresent("t", JoinUser::getScore, 60, 100)
             .notInIfNotEmpty("t", JoinUser::getId, List.of(3L, 4L))
-            .apply(nativeWrapper -> nativeWrapper.likeRight(JoinDept::getName, "tech"))
+            .apply(nativeWrapper -> nativeWrapper.likeRight(JoinOrg::getName, "tech"))
             .build();
 
         String select = wrapper.getSqlSelect();
@@ -160,8 +160,8 @@ class LambdaJoinQueryBuilderTest {
         assertTrue(select.contains("t.name"));
         assertTrue(select.contains("t1.id"));
         assertTrue(select.contains("t1.name"));
-        assertTrue(from.contains("LEFT JOIN test_dept t1 ON"));
-        assertTrue(from.contains("t1.id = t.dept_id"));
+        assertTrue(from.contains("LEFT JOIN test_org t1 ON"));
+        assertTrue(from.contains("t1.id = t.org_id"));
         assertTrue(sql.contains("t.name <>"));
         assertTrue(sql.contains("t.score BETWEEN"));
         assertTrue(sql.contains("t.id NOT IN"));
@@ -174,7 +174,7 @@ class LambdaJoinQueryBuilderTest {
     private static class JoinUser {
         @TableId
         private Long id;
-        private Long deptId;
+        private Long orgId;
         private String name;
         private Integer score;
 
@@ -192,8 +192,8 @@ class LambdaJoinQueryBuilderTest {
          *
          * @return 部门主键
          */
-        public Long getDeptId() {
-            return deptId;
+        public Long getOrgId() {
+            return orgId;
         }
 
         /**
@@ -215,8 +215,8 @@ class LambdaJoinQueryBuilderTest {
         }
     }
 
-    @TableName("test_dept")
-    private static class JoinDept {
+    @TableName("test_org")
+    private static class JoinOrg {
         @TableId
         private Long id;
         private String name;
@@ -298,15 +298,15 @@ class LambdaJoinQueryBuilderTest {
     }
 
     private static class JoinResult {
-        private String deptName;
+        private String orgName;
 
         /**
          * 返回结果部门名称，供 selectAs 推导字段别名。
          *
          * @return 部门名称
          */
-        public String getDeptName() {
-            return deptName;
+        public String getOrgName() {
+            return orgName;
         }
     }
 }

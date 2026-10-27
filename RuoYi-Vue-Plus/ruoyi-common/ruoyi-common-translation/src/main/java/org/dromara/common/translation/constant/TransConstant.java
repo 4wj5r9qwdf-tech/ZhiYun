@@ -20,7 +20,7 @@ public interface TransConstant {
     /**
      * 部门id转名称
      */
-    String DEPT_ID_TO_NAME = "dept_id_to_name";
+    String ORG_ID_TO_NAME = "org_id_to_name";
 
     /**
      * 字典type转label

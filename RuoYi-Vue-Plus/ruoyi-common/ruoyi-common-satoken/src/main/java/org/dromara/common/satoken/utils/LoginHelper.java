@@ -37,9 +37,9 @@ public class LoginHelper {
     public static final String LOGIN_USER_KEY = "loginUser";
     public static final String USER_KEY = "userId";
     public static final String USER_NAME_KEY = "userName";
-    public static final String DEPT_KEY = "deptId";
-    public static final String DEPT_NAME_KEY = "deptName";
-    public static final String DEPT_CATEGORY_KEY = "deptCategory";
+    public static final String ORG_KEY = "orgId";
+    public static final String ORG_NAME_KEY = "orgName";
+    public static final String ORG_CATEGORY_KEY = "orgCategory";
     public static final String CLIENT_KEY = "clientid";
     public static final String CLIENT_ACCESS_PATH_KEY = "clientAccessPath";
     public static final String CLIENT_IP_WHITELIST_KEY = "clientIpWhitelist";
@@ -57,9 +57,9 @@ public class LoginHelper {
         StpUtil.login(loginUser.getLoginId(),
             model.setExtra(USER_KEY, loginUser.getUserId())
                 .setExtra(USER_NAME_KEY, loginUser.getUsername())
-                .setExtra(DEPT_KEY, loginUser.getDeptId())
-                .setExtra(DEPT_NAME_KEY, loginUser.getDeptName())
-                .setExtra(DEPT_CATEGORY_KEY, loginUser.getDeptCategory())
+                .setExtra(ORG_KEY, loginUser.getOrgId())
+                .setExtra(ORG_NAME_KEY, loginUser.getOrgName())
+                .setExtra(ORG_CATEGORY_KEY, loginUser.getOrgCategory())
         );
         StpUtil.getTokenSession().set(LOGIN_USER_KEY, loginUser);
     }
@@ -172,8 +172,8 @@ public class LoginHelper {
      *
      * @return 部门 ID
      */
-    public static Long getDeptId() {
-        return Convert.toLong(getExtra(DEPT_KEY));
+    public static Long getOrgId() {
+        return Convert.toLong(getExtra(ORG_KEY));
     }
 
     /**
@@ -181,8 +181,8 @@ public class LoginHelper {
      *
      * @return 部门名称
      */
-    public static String getDeptName() {
-        return Convert.toStr(getExtra(DEPT_NAME_KEY));
+    public static String getOrgName() {
+        return Convert.toStr(getExtra(ORG_NAME_KEY));
     }
 
     /**
@@ -190,8 +190,8 @@ public class LoginHelper {
      *
      * @return 部门类别编码
      */
-    public static String getDeptCategory() {
-        return Convert.toStr(getExtra(DEPT_CATEGORY_KEY));
+    public static String getOrgCategory() {
+        return Convert.toStr(getExtra(ORG_CATEGORY_KEY));
     }
 
     /**

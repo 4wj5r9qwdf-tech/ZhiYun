@@ -88,7 +88,7 @@ public class SysOperLogServiceImpl implements ISysOperLogService {
             .eqIfPresent(SysOperLog::getStatus, operLog.getStatus())
             .likeIfText(SysOperLog::getOperName, operLog.getOperName())
             .eqIfPresent(SysOperLog::getUserId, operLog.getUserId())
-            .eqIfPresent(SysOperLog::getDeptId, operLog.getDeptId())
+            .eqIfPresent(SysOperLog::getOrgId, operLog.getOrgId())
             .eqIfText(SysOperLog::getClientKey, operLog.getClientKey())
             .eqIfText(SysOperLog::getDeviceType, operLog.getDeviceType())
             .likeIfText(SysOperLog::getBrowser, operLog.getBrowser())

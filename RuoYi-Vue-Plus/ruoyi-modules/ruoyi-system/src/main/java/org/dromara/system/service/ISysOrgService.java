@@ -3,8 +3,8 @@ package org.dromara.system.service;
 import cn.hutool.core.lang.tree.Tree;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.mybatis.core.page.PageQuery;
-import org.dromara.system.domain.bo.SysDeptBo;
-import org.dromara.system.domain.vo.SysDeptVo;
+import org.dromara.system.domain.bo.SysOrgBo;
+import org.dromara.system.domain.vo.SysOrgVo;
 
 import java.util.Collection;
 import java.util.List;
@@ -15,40 +15,40 @@ import java.util.Map;
  *
  * @author Lion Li
  */
-public interface ISysDeptService {
+public interface ISysOrgService {
 
     /**
      * 分页查询部门管理数据
      *
-     * @param dept      部门信息
+     * @param org      部门信息
      * @param pageQuery 分页对象
      * @return 部门信息集合
      */
-    PageResult<SysDeptVo> selectPageDeptList(SysDeptBo dept, PageQuery pageQuery);
+    PageResult<SysOrgVo> selectPageOrgList(SysOrgBo org, PageQuery pageQuery);
 
     /**
      * 查询部门管理数据
      *
-     * @param dept 部门信息
+     * @param org 部门信息
      * @return 部门信息集合
      */
-    List<SysDeptVo> selectDeptList(SysDeptBo dept);
+    List<SysOrgVo> selectOrgList(SysOrgBo org);
 
     /**
      * 查询部门树结构信息
      *
-     * @param dept 部门信息
+     * @param org 部门信息
      * @return 部门树信息集合
      */
-    List<Tree<Long>> selectDeptTreeList(SysDeptBo dept);
+    List<Tree<Long>> selectOrgTreeList(SysOrgBo org);
 
     /**
      * 构建前端所需要下拉树结构
      *
-     * @param depts 部门列表
+     * @param orgs 部门列表
      * @return 下拉树结构列表
      */
-    List<Tree<Long>> buildDeptTreeSelect(List<SysDeptVo> depts);
+    List<Tree<Long>> buildOrgTreeSelect(List<SysOrgVo> orgs);
 
     /**
      * 根据角色ID查询部门树信息
@@ -56,42 +56,42 @@ public interface ISysDeptService {
      * @param roleId 角色ID
      * @return 选中部门列表
      */
-    List<Long> selectDeptListByRoleId(Long roleId);
+    List<Long> selectOrgListByRoleId(Long roleId);
 
     /**
      * 根据部门ID查询信息
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 部门信息
      */
-    SysDeptVo selectDeptById(Long deptId);
+    SysOrgVo selectOrgById(Long orgId);
 
     /**
      * 通过部门ID串查询部门
      *
-     * @param deptIds 部门id串
+     * @param orgIds 部门id串
      * @return 部门列表信息
      */
-    List<SysDeptVo> selectDeptByIds(Collection<Long> deptIds);
+    List<SysOrgVo> selectOrgByIds(Collection<Long> orgIds);
 
     /**
      * 查询某部门管辖的被管部门ID列表
      *
-     * @param deptId 管辖方部门ID
+     * @param orgId 管辖方部门ID
      * @return 被管部门ID列表
      */
-    List<Long> selectManagedDeptIds(Long deptId);
+    List<Long> selectManagedOrgIds(Long orgId);
 
     /**
      * 设置某部门管辖的被管部门（全量覆盖）
      *
-     * @param deptId  管辖方部门ID
-     * @param deptIds 被管部门ID列表（空=清空）
+     * @param orgId  管辖方部门ID
+     * @param orgIds 被管部门ID列表（空=清空）
      */
-    void updateManagedDepts(Long deptId, List<Long> deptIds);
+    void updateManagedOrgs(Long orgId, List<Long> orgIds);
 
     /**
-     * 查询全部部门的被管数量（deptId -> 被管部门数）
+     * 查询全部部门的被管数量（orgId -> 被管部门数）
      *
      * @return 管辖方部门ID -> 被管部门数
      */
@@ -100,41 +100,41 @@ public interface ISysDeptService {
     /**
      * 根据ID查询所有子部门数（正常状态）
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 子部门数
      */
-    long selectNormalChildrenDeptById(Long deptId);
+    long selectNormalChildrenOrgById(Long orgId);
 
     /**
      * 是否存在部门子节点
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 结果
      */
-    boolean hasChildByDeptId(Long deptId);
+    boolean hasChildByOrgId(Long orgId);
 
     /**
      * 查询部门是否存在用户
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 结果 true 存在 false 不存在
      */
-    boolean checkDeptExistUser(Long deptId);
+    boolean checkOrgExistUser(Long orgId);
 
     /**
      * 校验部门名称是否唯一
      *
-     * @param dept 部门信息
+     * @param org 部门信息
      * @return 结果
      */
-    boolean checkDeptNameUnique(SysDeptBo dept);
+    boolean checkOrgNameUnique(SysOrgBo org);
 
     /**
      * 校验部门是否有数据权限
      *
-     * @param deptId 部门id
+     * @param orgId 部门id
      */
-    void checkDeptDataScope(Long deptId);
+    void checkOrgDataScope(Long orgId);
 
     /**
      * 新增保存部门信息
@@ -142,7 +142,7 @@ public interface ISysDeptService {
      * @param bo 部门信息
      * @return 结果
      */
-    int insertDept(SysDeptBo bo);
+    int insertOrg(SysOrgBo bo);
 
     /**
      * 修改保存部门信息
@@ -150,13 +150,13 @@ public interface ISysDeptService {
      * @param bo 部门信息
      * @return 结果
      */
-    int updateDept(SysDeptBo bo);
+    int updateOrg(SysOrgBo bo);
 
     /**
      * 删除部门管理信息
      *
-     * @param deptId 部门ID
+     * @param orgId 部门ID
      * @return 结果
      */
-    int deleteDeptById(Long deptId);
+    int deleteOrgById(Long orgId);
 }

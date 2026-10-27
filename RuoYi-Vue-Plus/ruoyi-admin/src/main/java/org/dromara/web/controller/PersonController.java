@@ -34,14 +34,14 @@ public class PersonController {
 
     /**
      * 人员列表（分页，join 扩展表+车间+岗位+角色；敏感字段脱敏）。
-     * 筛选：keyword(工号/姓名/手机号)、empStatus、deptId、gender、posts(岗位名)、roles(角色名)。
+     * 筛选：keyword(工号/姓名/手机号)、empStatus、orgId、gender、posts(岗位名)、roles(角色名)。
      * 排序：orderBy=字段:asc|desc（白名单校验，防注入）。
      */
     @SaCheckPermission("system:person:list")
     @GetMapping("/list")
     public R<Map<String, Object>> list(@RequestParam(required = false) String keyword,
                                        @RequestParam(required = false) String empStatus,
-                                       @RequestParam(required = false) Long deptId,
+                                       @RequestParam(required = false) Long orgId,
                                        @RequestParam(required = false) String gender,
                                        @RequestParam(required = false) String posts,
                                        @RequestParam(required = false) String roles,
@@ -57,10 +57,10 @@ public class PersonController {
         // 默认隐藏内置系统账号 admin（它不是工厂员工）；includeSystem=1 才显示
         if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : deptId, gender, posts, roles);
-        // 树节点筛选：deptId 按"含下级"双线展开（部门线 OR 小组线，与数据范围同款）
-        if (deptId != null && "1".equals(subtree)) {
-            appendSubtreeFilter(where, deptId);
+        applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : orgId, gender, posts, roles);
+        // 树节点筛选：orgId 按"含下级"双线展开（部门线 OR 小组线，与数据范围同款）
+        if (orgId != null && "1".equals(subtree)) {
+            appendSubtreeFilter(where, orgId);
         }
         applyDataScope(where, args);
         Long total = jdbcTemplate.queryForObject(
@@ -87,15 +87,15 @@ public class PersonController {
     @GetMapping("/export")
     public R<Map<String, Object>> export(@RequestParam(required = false) String keyword,
                                          @RequestParam(required = false) String empStatus,
-                                         @RequestParam(required = false) Long deptId,
+                                         @RequestParam(required = false) Long orgId,
                                          @RequestParam(required = false) String gender,
                                          @RequestParam(required = false) String posts,
                                          @RequestParam(required = false) String roles) {
         StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        applyFilters(where, args, keyword, empStatus, deptId, gender, posts, roles);
-        if (deptId != null) {
-            appendSubtreeFilter(where, deptId);
+        applyFilters(where, args, keyword, empStatus, orgId, gender, posts, roles);
+        if (orgId != null) {
+            appendSubtreeFilter(where, orgId);
         }
         applyDataScope(where, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -109,7 +109,7 @@ public class PersonController {
               .append(csv(str(r.get("name")))).append(',')
               .append(csv("1".equals(str(r.get("gender"))) ? "男" : "2".equals(str(r.get("gender"))) ? "女" : "")).append(',')
               .append(csv(str(r.get("phone_masked")))).append(',')
-              .append(csv(str(r.get("dept_name")))).append(',')
+              .append(csv(str(r.get("org_name")))).append(',')
               .append(csv(str(r.get("posts")))).append(',')
               .append(csv(str(r.get("roles")))).append(',')
               .append(csv(str(r.get("emp_status")))).append(',')
@@ -126,18 +126,18 @@ public class PersonController {
     /** 列表/导出共用 SELECT。 */
     private String selectSql() {
         return "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
-            "  u.phone_number, u.dept_id, d.dept_name, e.emp_status, e.emp_type, " +
+            "  u.phone_number, u.org_id, d.org_name, e.emp_status, e.emp_type, " +
             "  e.hire_date, e.card_no, e.is_dorm, " +
             "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
             "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
             "FROM sys_user u " +
             "LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " +
-            "LEFT JOIN sys_dept d ON u.dept_id=d.dept_id ";
+            "LEFT JOIN sys_org d ON u.org_id=d.org_id ";
     }
 
     /**
      * 数据范围过滤（统一双线模型，2026-10-26 定版）：
-     * 档位：1=全部数据；2=自定义节点(sys_role_dept 勾选部门/小组)；3=本部门及以下；5=仅本人；6=本小组及下级。
+     * 档位：1=全部数据；2=自定义节点(sys_role_org 勾选部门/小组)；3=本部门及以下；5=仅本人；6=本小组及下级。
      * 生效语义（部门与小组统一为组织树节点）：
      *   员工可见 = (其部门 ∈ 勾选节点及下级) OR (其小组 ∈ 勾选节点及下级) OR (恒含自己)
      * - admin 豁免；任一启用角色=全部则放行；多角色并集。
@@ -171,11 +171,11 @@ public class PersonController {
             if (scope == null) continue;
             switch (scope) {
                 case "2" -> jdbcTemplate.queryForList(                       // 自定义节点（部门或小组）
-                    "SELECT dept_id FROM sys_role_dept WHERE role_id=?", Long.class, roleId).forEach(nodes::add);
+                    "SELECT org_id FROM sys_role_org WHERE role_id=?", Long.class, roleId).forEach(nodes::add);
                 case "3" -> {                                                  // 本部门及以下
-                    Long myDept = jdbcTemplate.queryForObject(
-                        "SELECT dept_id FROM sys_user WHERE user_id=?", Long.class, userId);
-                    if (myDept != null) nodes.add(myDept);
+                    Long myOrg = jdbcTemplate.queryForObject(
+                        "SELECT org_id FROM sys_user WHERE user_id=?", Long.class, userId);
+                    if (myOrg != null) nodes.add(myOrg);
                 }
                 case "6" -> {                                                  // 本小组及下级
                     Long myGroup = jdbcTemplate.query(
@@ -187,11 +187,11 @@ public class PersonController {
                 default -> { }
             }
         }
-        // 节点统一展开"自身+全部下级"（部门与小组同为 sys_dept 节点，一套 ancestors 逻辑）
-        java.util.Set<Long> expanded = expandDeptWithChildren(nodes);
+        // 节点统一展开"自身+全部下级"（部门与小组同为 sys_org 节点，一套 ancestors 逻辑）
+        java.util.Set<Long> expanded = expandOrgWithChildren(nodes);
         StringBuilder cond = new StringBuilder();
         if (!expanded.isEmpty()) {
-            cond.append("u.dept_id IN (");
+            cond.append("u.org_id IN (");
             for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
             cond.append(") OR e.group_id IN (");
             for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
@@ -205,10 +205,10 @@ public class PersonController {
     }
 
     /** 树节点筛选：所选节点及下级，双线匹配（人员部门线 OR 小组线）。展开 id 为库内 bigint，字面量拼接无注入。 */
-    private void appendSubtreeFilter(StringBuilder where, Long deptId) {
-        java.util.Set<Long> expanded = expandDeptWithChildren(java.util.Set.of(deptId));
-        String ids = expanded.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(String.valueOf(deptId));
-        where.append(" AND (u.dept_id IN (").append(ids).append(") OR e.group_id IN (").append(ids).append("))");
+    private void appendSubtreeFilter(StringBuilder where, Long orgId) {
+        java.util.Set<Long> expanded = expandOrgWithChildren(java.util.Set.of(orgId));
+        String ids = expanded.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(String.valueOf(orgId));
+        where.append(" AND (u.org_id IN (").append(ids).append(") OR e.group_id IN (").append(ids).append("))");
     }
 
     /**
@@ -219,20 +219,20 @@ public class PersonController {
     @GetMapping("/org-counts")
     public R<Map<String, Long>> orgCounts() {
         List<Map<String, Object>> people = jdbcTemplate.queryForList(
-            "SELECT dept_id FROM sys_user WHERE del_flag='0'");
-        List<Map<String, Object>> depts = jdbcTemplate.queryForList(
-            "SELECT dept_id, ancestors FROM sys_dept");
+            "SELECT org_id FROM sys_user WHERE del_flag='0'");
+        List<Map<String, Object>> orgs = jdbcTemplate.queryForList(
+            "SELECT org_id, ancestors FROM sys_org");
         java.util.Map<Long, String> ancMap = new java.util.HashMap<>();
-        for (Map<String, Object> d : depts) {
-            ancMap.put(((Number) d.get("dept_id")).longValue(),
+        for (Map<String, Object> d : orgs) {
+            ancMap.put(((Number) d.get("org_id")).longValue(),
                 String.valueOf(d.get("ancestors") == null ? "" : d.get("ancestors")));
         }
         Map<String, Long> out = new java.util.LinkedHashMap<>();
-        for (Map<String, Object> d : depts) {
-            long nodeId = ((Number) d.get("dept_id")).longValue();
+        for (Map<String, Object> d : orgs) {
+            long nodeId = ((Number) d.get("org_id")).longValue();
             long cnt = 0;
             for (Map<String, Object> p : people) {
-                Long pd = p.get("dept_id") == null ? null : ((Number) p.get("dept_id")).longValue();
+                Long pd = p.get("org_id") == null ? null : ((Number) p.get("org_id")).longValue();
                 if (belongTo(pd, nodeId, ancMap)) {
                     cnt++;
                 }
@@ -255,17 +255,17 @@ public class PersonController {
     }
 
     /** 部门集合展开：所选部门 + 祖先链包含任一所选部门的所有下级。 */
-    private java.util.Set<Long> expandDeptWithChildren(java.util.Set<Long> roots) {
+    private java.util.Set<Long> expandOrgWithChildren(java.util.Set<Long> roots) {
         java.util.Set<Long> out = new java.util.LinkedHashSet<>(roots);
         if (roots.isEmpty()) {
             return out;
         }
-        List<Map<String, Object>> all = jdbcTemplate.queryForList("SELECT dept_id, ancestors FROM sys_dept");
+        List<Map<String, Object>> all = jdbcTemplate.queryForList("SELECT org_id, ancestors FROM sys_org");
         for (Map<String, Object> d : all) {
             String anc = String.valueOf(d.get("ancestors") == null ? "" : d.get("ancestors"));
             for (Long r : roots) {
                 if (anc.contains(String.valueOf(r))) {
-                    out.add(((Number) d.get("dept_id")).longValue());
+                    out.add(((Number) d.get("org_id")).longValue());
                     break;
                 }
             }
@@ -275,14 +275,14 @@ public class PersonController {
 
     /** 组装筛选条件（列表/导出共用）。 */
     private void applyFilters(StringBuilder where, java.util.List<Object> args,
-                              String keyword, String empStatus, Long deptId, String gender, String posts, String roles) {
+                              String keyword, String empStatus, Long orgId, String gender, String posts, String roles) {
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND (u.user_name LIKE ? OR u.nick_name LIKE ? OR u.phone_number LIKE ?)");
             String kw = "%" + keyword.trim() + "%";
             args.add(kw); args.add(kw); args.add(kw);
         }
         if (empStatus != null && !empStatus.isBlank()) { where.append(" AND e.emp_status=?"); args.add(empStatus); }
-        if (deptId != null) { where.append(" AND u.dept_id=?"); args.add(deptId); }
+        if (orgId != null) { where.append(" AND u.org_id=?"); args.add(orgId); }
         if (gender != null && !gender.isBlank()) { where.append(" AND u.gender=?"); args.add(gender); }
         if (posts != null && !posts.isBlank()) {
             where.append(" AND EXISTS (SELECT 1 FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id AND p.post_name LIKE ?)");
@@ -297,7 +297,7 @@ public class PersonController {
     /** 排序白名单（防注入）。 */
     private String safeOrderBy(String orderBy) {
         java.util.Map<String, String> allow = java.util.Map.of(
-            "job_no", "u.user_name", "name", "u.nick_name", "dept", "d.dept_name",
+            "job_no", "u.user_name", "name", "u.nick_name", "org", "d.org_name",
             "status", "e.emp_status", "card", "e.card_no", "hire", "e.hire_date");
         if (orderBy == null || orderBy.isBlank()) return "u.user_id DESC";
         String[] p = orderBy.split(":");
@@ -332,7 +332,7 @@ public class PersonController {
 
     /**
      * 新增人员（建人员=建登录账号）：写 sys_user + sys_person_ext + 岗位/角色关系。
-     * body: jobNo(工号6位)、name、gender、phoneNumber、deptId、password(可空=默认123456)、
+     * body: jobNo(工号6位)、name、gender、phoneNumber、orgId、password(可空=默认123456)、
      *   postIds[]、roleIds[]、ext{...}。
      */
     @SaCheckPermission("system:person:add")
@@ -353,9 +353,9 @@ public class PersonController {
         String password = body.get("password") == null || str(body.get("password")).isBlank()
             ? DEFAULT_PASSWORD : str(body.get("password"));
         jdbcTemplate.update(
-            "INSERT INTO sys_user (user_id, dept_id, user_name, nick_name, user_type, email, phone_number, gender, password, status, del_flag, create_time, remark) " +
+            "INSERT INTO sys_user (user_id, org_id, user_name, nick_name, user_type, email, phone_number, gender, password, status, del_flag, create_time, remark) " +
             "VALUES (?,?,?,?,?,?,?,?,?,?,'0',now(),?)",
-            userId, deptIdOrNull(body.get("deptId")), jobNo, str(body.get("name")), "00",
+            userId, orgIdOrNull(body.get("orgId")), jobNo, str(body.get("name")), "00",
             str(body.get("email")), str(body.get("phoneNumber")), str(body.get("gender")),
             BCrypt.hashpw(password), str(body.getOrDefault("status", "0")), str(body.get("remark")));
         saveExt(userId, body);
@@ -375,15 +375,15 @@ public class PersonController {
         // 密码：填了就重置（BCrypt），不填不动
         if (pwd != null && !pwd.isBlank()) {
             jdbcTemplate.update(
-                "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, password=?, update_time=now() WHERE user_id=?",
-                deptIdOrNull(body.get("deptId")), str(body.get("name")), str(body.get("email")),
+                "UPDATE sys_user SET org_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, password=?, update_time=now() WHERE user_id=?",
+                orgIdOrNull(body.get("orgId")), str(body.get("name")), str(body.get("email")),
                 str(body.get("phoneNumber")), str(body.get("gender")),
                 str(body.getOrDefault("status", "0")), str(body.get("remark")),
                 BCrypt.hashpw(pwd), userId);
         } else {
             jdbcTemplate.update(
-                "UPDATE sys_user SET dept_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
-                deptIdOrNull(body.get("deptId")), str(body.get("name")), str(body.get("email")),
+                "UPDATE sys_user SET org_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
+                orgIdOrNull(body.get("orgId")), str(body.get("name")), str(body.get("email")),
                 str(body.get("phoneNumber")), str(body.get("gender")),
                 str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
         }
@@ -453,14 +453,14 @@ public class PersonController {
     private void saveExt(Long userId, Map<String, Object> body) {
         @SuppressWarnings("unchecked")
         Map<String, Object> ext = body.get("ext") instanceof Map ? (Map<String, Object>) body.get("ext") : java.util.Map.of();
-        // 小组：优先 group_id 关联（组织树 dept_category=小组）；带 group_id 时同步冗余 group_name（取小组节点名，找不到则用传入文本）
+        // 小组：优先 group_id 关联（组织树 org_category=小组）；带 group_id 时同步冗余 group_name（取小组节点名，找不到则用传入文本）
         Object gidRaw = ext.get("groupId");
-        // 前端 groupId 以字符串传输（防 bigint 精度丢失），Number 判断会漏——统一走 deptIdOrNull
-        Long groupId = deptIdOrNull(gidRaw);
+        // 前端 groupId 以字符串传输（防 bigint 精度丢失），Number 判断会漏——统一走 orgIdOrNull
+        Long groupId = orgIdOrNull(gidRaw);
         String groupName = str(ext.get("groupName"));
         if (groupId != null) {
             String node = jdbcTemplate.query(
-                "SELECT dept_name FROM sys_dept WHERE dept_id=? AND dept_category='小组'", rs -> rs.next() ? rs.getString(1) : null, groupId);
+                "SELECT org_name FROM sys_org WHERE org_id=? AND org_category='小组'", rs -> rs.next() ? rs.getString(1) : null, groupId);
             if (node != null) groupName = node;
         }
         jdbcTemplate.update(
@@ -518,7 +518,7 @@ public class PersonController {
     private String str(Object o) { return o == null ? null : o.toString(); }
 
     /** 部门ID：前端 bigint 以字符串传输（防 JS 精度丢失），落库前转 Long；空→null。 */
-    private Long deptIdOrNull(Object o) {
+    private Long orgIdOrNull(Object o) {
         String s = str(o);
         return (s == null || s.isBlank()) ? null : Long.valueOf(s);
     }

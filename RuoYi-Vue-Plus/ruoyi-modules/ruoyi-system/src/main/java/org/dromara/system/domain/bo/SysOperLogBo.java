@@ -77,12 +77,12 @@ public class SysOperLogBo implements Serializable {
     /**
      * 操作部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 部门名称
      */
-    private String deptName;
+    private String orgName;
 
     /**
      * 客户端

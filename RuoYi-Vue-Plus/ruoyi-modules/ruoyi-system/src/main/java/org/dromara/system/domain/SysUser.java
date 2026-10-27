@@ -30,7 +30,7 @@ public class SysUser extends BaseEntity {
     /**
      * 部门ID
      */
-    private Long deptId;
+    private Long orgId;
 
     /**
      * 用户账号

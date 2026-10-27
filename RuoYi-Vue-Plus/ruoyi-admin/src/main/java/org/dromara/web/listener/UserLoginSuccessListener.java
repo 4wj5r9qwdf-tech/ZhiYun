@@ -56,7 +56,7 @@ public class UserLoginSuccessListener {
         dto.setUserName(username);
         dto.setClientKey((String) loginParameter.getExtra(LoginHelper.CLIENT_KEY));
         dto.setDeviceType(loginParameter.getDeviceType());
-        dto.setDeptName((String) loginParameter.getExtra(LoginHelper.DEPT_NAME_KEY));
+        dto.setOrgName((String) loginParameter.getExtra(LoginHelper.ORG_NAME_KEY));
         if (loginParameter.getTimeout() == -1) {
             RedisUtils.setCacheObject(CacheNames.ONLINE_TOKEN_KEY + tokenValue, dto);
         } else {
