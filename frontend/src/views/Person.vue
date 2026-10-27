@@ -127,6 +127,8 @@ function showAllCols() {
   colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
   saveColState()
 }
+// 自适应列宽：清空各列固定宽，交给表格按内容分配（再拖拽即重新固定）
+function autoFitCols() { for (const c of colState.value) { (c as any).width = undefined } saveColState() }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 // 列设置里上下移动排序（拖拽或按钮）
 function moveCol(index: number, dir: -1 | 1) {
@@ -151,20 +153,44 @@ let suppressHeaderClickUntil = 0
 // 表头 mousedown：只在 th 右缘 14px 内才开始拖拽（否则让位给排序点击）
 function onHeaderMouseDown(key: string, e: MouseEvent) {
   if (key === 'index') return
-  const th = (e.currentTarget as HTMLElement) as HTMLTableCellElement
+  const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
-  if (e.clientX < rect.right - 14) return   // 不在右缘 → 不拦截，交给排序
-  const startX = e.clientX
-  const startW = rect.width
-  const onMove = (ev: MouseEvent) => { onColResize(key, startW + (ev.clientX - startX)) }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.cursor = ''
-    suppressHeaderClickUntil = Date.now() + 300   // 拖拽后 300ms 内抑制 click(排序)
+  const nextIsOps = !!th.nextElementSibling?.classList.contains('ops-th')
+  const atOpsLeft = key === 'ops' && e.clientX <= rect.left + 16
+  const atOpsRight = key === 'ops' && e.clientX >= rect.right - 16
+  const atPrevRightOfOps = nextIsOps && e.clientX >= rect.right - 16
+  if (atOpsLeft || atOpsRight || atPrevRightOfOps) {
+    // 操作列：本列左/右缘、以及前驱列的右缘交界线，都归操作列（从左缘拖时宽度反向）
+    const fromLeft = atOpsLeft || atPrevRightOfOps
+    const startX = e.clientX
+    const startW = opsWidth.value
+    const onMove = (ev: MouseEvent) => onColResize('ops', fromLeft ? startW - (ev.clientX - startX) : startW + (ev.clientX - startX))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      suppressHeaderClickUntil = Date.now() + 300
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    e.preventDefault()
+    e.stopPropagation()
+    return
   }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
+  if (key === 'ops') return
+  if (e.clientX < rect.right - 14) return
+  const startX2 = e.clientX
+  const startW2 = rect.width
+  const onMove2 = (ev: MouseEvent) => onColResize(key, startW2 + (ev.clientX - startX2))
+  const onUp2 = () => {
+    document.removeEventListener('mousemove', onMove2)
+    document.removeEventListener('mouseup', onUp2)
+    document.body.style.cursor = ''
+    suppressHeaderClickUntil = Date.now() + 300
+  }
+  document.addEventListener('mousemove', onMove2)
+  document.addEventListener('mouseup', onUp2)
   document.body.style.cursor = 'col-resize'
   e.preventDefault()
   e.stopPropagation()
@@ -181,12 +207,12 @@ const columns = computed(() => {
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
   const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
-    customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
+    customHeaderCell: () => ({ class: 'ops-th', onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => {
       const base = ALL_COLUMNS.find(a => a.key === c.key)!
-      return { ...base, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }
+      return { ...base, ...(c.width != null ? { width: c.width } : {}), customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }
     })
     .filter(Boolean)
   return [idx, ...list, ops]
@@ -541,7 +567,7 @@ function resetFilter() {
       <div class="org-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
           <span class="tree-title">组织架构</span>
-          <a v-if="selectedOrgId" class="tree-clear" @click="clearTreeSelect">显示全部</a>
+          <a v-if="selectedOrgId" class="tree-clear" @click="clearTreeSelect">重置</a>
         </div>
         <div class="tree-body">
           <a-tree
@@ -616,6 +642,7 @@ function resetFilter() {
             <a-divider style="margin: 6px 0" />
             <div class="col-set-foot">
               <a size="small" @click="showAllCols">恢复默认</a>
+              <a size="small" @click="autoFitCols">自适应列宽</a>
               <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
             </div>
           </a-card>
