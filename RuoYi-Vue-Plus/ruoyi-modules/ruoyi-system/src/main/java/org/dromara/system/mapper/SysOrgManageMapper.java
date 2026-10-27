@@ -29,9 +29,13 @@ public interface SysOrgManageMapper {
         "VALUES (#{manageOrgId}, #{managedOrgId}, now()) ON CONFLICT DO NOTHING")
     int insertManage(@Param("manageOrgId") Long manageOrgId, @Param("managedOrgId") Long managedOrgId);
 
-    /** 全量统计：每个管辖方管了多少被管部门 */
-    @Select("SELECT manage_org_id AS manageOrgId, COUNT(*) AS cnt FROM sys_org_manage GROUP BY manage_org_id")
+    /** 全量统计：每个管辖方管了多少被管部门（别名必须加引号，否则 PG 折叠成小写取不到） */
+    @Select("SELECT manage_org_id AS \"manageOrgId\", COUNT(*) AS cnt FROM sys_org_manage GROUP BY manage_org_id")
     List<Map<String, Object>> selectManagedCounts();
+
+    /** 全量名单：每个管辖方管了哪些被管组织（名称，供列表悬停展示） */
+    @Select("SELECT m.manage_org_id AS \"orgId\", o.org_name AS \"orgName\" FROM sys_org_manage m JOIN sys_org o ON o.org_id = m.managed_org_id ORDER BY m.manage_org_id, o.org_id")
+    List<Map<String, Object>> selectManagedNames();
 
     /** 被管部门是否被引用（删除部门前校验） */
     @Select("SELECT COUNT(*) FROM sys_org_manage WHERE managed_org_id = #{orgId}")

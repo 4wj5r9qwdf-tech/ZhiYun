@@ -474,6 +474,17 @@ public class SysOrgServiceImpl implements ISysOrgService, OrgService {
     }
 
     @Override
+    public Map<Long, java.util.List<String>> selectManagedNames() {
+        List<Map<String, Object>> rows = orgManageMapper.selectManagedNames();
+        Map<Long, java.util.List<String>> map = new HashMap<>();
+        for (Map<String, Object> r : rows) {
+            Long orgId = Convert.toLong(r.get("orgId"));
+            if (orgId == null) { continue; }
+            map.computeIfAbsent(orgId, k -> new java.util.ArrayList<>()).add(Convert.toStr(r.get("orgName"), ""));
+        }
+        return map;
+    }
+
     public Map<Long, Long> selectManagedCounts() {
         List<Map<String, Object>> rows = orgManageMapper.selectManagedCounts();
         Map<Long, Long> map = new HashMap<>();
