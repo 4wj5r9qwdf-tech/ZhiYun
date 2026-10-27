@@ -7,14 +7,12 @@
  * - 操作：编辑 / 新增下级 / 删除；位置(楼/层/房间)渐进式；业务管辖关联
  */
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 
-const router = useRouter()
 
 // ===== 列表 =====
 const tree = ref<any[]>([])        // 原始部门树（含 children）
@@ -548,7 +546,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
   <div class="org-page">
     <!-- 页头行：← 组织架构 + 查询条件（搜索/类型/状态） -->
     <div class="page-header">
-      <a class="back-btn" title="返回" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
       <div class="head-filters">
         <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px" @press-enter="loadTree">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
@@ -574,20 +571,21 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
-          <a-menu>
-            <a-menu-item v-for="c in colState" :key="c.key">
+          <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
               <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
               <span class="col-move">
-                <a-button type="text" size="small" :disabled="colState.indexOf(c) === 0" @click="moveCol(colState.indexOf(c), -1)">↑</a-button>
-                <a-button type="text" size="small" :disabled="colState.indexOf(c) === colState.length - 1" @click="moveCol(colState.indexOf(c), 1)">↓</a-button>
+                <a-button type="text" size="small" :disabled="i === 0" @click="moveCol(i, -1)">↑</a-button>
+                <a-button type="text" size="small" :disabled="i === colState.length - 1" @click="moveCol(i, 1)">↓</a-button>
               </span>
-            </a-menu-item>
-            <a-menu-divider />
-            <a-menu-item>
-              <a @click="showAllCols">恢复默认</a>
-              <a style="margin-left: 16px" @click="autoFitCols">自适应列宽</a>
-            </a-menu-item>
-          </a-menu>
+            </div>
+            <a-divider style="margin: 6px 0" />
+            <div class="col-set-foot">
+              <a size="small" @click="showAllCols">恢复默认</a>
+              <a size="small" @click="autoFitCols">自适应列宽</a>
+              <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
+            </div>
+          </a-card>
         </template>
       </a-dropdown>
     </div>
@@ -803,8 +801,6 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
 <style scoped>
 .page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
-.back-btn { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #E5E8EF; border-radius: 50%; background: #fff; color: #4E5969; font-size: 14px; text-decoration: none; transition: color .15s, border-color .15s; }
-.back-btn:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .head-left { display: flex; align-items: center; gap: 6px; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
