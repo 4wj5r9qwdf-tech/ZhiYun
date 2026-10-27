@@ -817,14 +817,14 @@ function resetFilter() {
 /* 左侧组织树（对齐部门管理） */
 .dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
 .dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
-.dept-tree-panel.collapsed { width: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
+.dept-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
 .tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
-.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: center; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .dept-main { flex: 1; min-width: 0; }
 
