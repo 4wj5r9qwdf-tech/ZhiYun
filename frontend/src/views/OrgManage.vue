@@ -547,7 +547,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
             <template #title="{ orgName, orgCategory }">
               <span class="tree-node">
                 {{ orgName }}
-                <span v-if="orgCategory === '小组'" class="type-tag">小组</span>
+                <a-tag v-if="orgCategory" :color="typeColorOf(orgCategory)" class="type-tag">{{ orgCategory }}</a-tag>
               </span>
             </template>
           </a-tree>
