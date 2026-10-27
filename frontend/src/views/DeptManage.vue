@@ -735,13 +735,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 /* 树 + 表格 并排（标题行/筛选栏下方） */
 .dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
 .dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
-.dept-tree-panel.collapsed { width: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
+.dept-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
 .tree-title { font-size: 14px; font-weight: 600; color: #1D2129; white-space: nowrap; }
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
 /* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
-.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: center; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .dept-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
