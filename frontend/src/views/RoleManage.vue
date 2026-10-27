@@ -92,7 +92,7 @@ function moveCol(index: number, dir: -1 | 1) {
 const columns = computed(() => {
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 190, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 260, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
@@ -377,11 +377,13 @@ onMounted(() => { loadList(); loadColState() })
           <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a v-if="record.roleKey !== 'superadmin'" class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
-          <a v-else class="ops-link ops-disabled" title="系统内置角色，不可编辑删除">编辑</a>
-          <a class="ops-link" @click="openPerm(record)"><SafetyCertificateOutlined />分配权限</a>
-          <a v-if="record.roleKey !== 'superadmin'" class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
-          <a v-else class="ops-link ops-disabled" title="系统内置角色，不可编辑删除">删除</a>
+          <div class="ops-btns">
+            <a-button v-if="record.roleKey !== 'superadmin'" type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+            <a-button v-else size="small" disabled title="系统内置角色，不可编辑删除">编辑</a-button>
+            <a-button size="small" @click="openPerm(record)">分配权限</a-button>
+            <a-button v-if="record.roleKey !== 'superadmin'" danger size="small" @click="removeOne(record)">删除</a-button>
+            <a-button v-else danger size="small" disabled title="系统内置角色，不可编辑删除">删除</a-button>
+          </div>
         </template>
       </template>
     </a-table>
@@ -514,6 +516,7 @@ onMounted(() => { loadList(); loadColState() })
 .role-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .role-name { font-weight: 500; color: #1D2129; }
+.ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .ops-disabled { color: #C9CDD4; cursor: not-allowed; }
 .danger-link { color: #F53F3F; }

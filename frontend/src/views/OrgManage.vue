@@ -8,7 +8,7 @@
  */
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, MenuFoldOutlined, MenuUnfoldOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined, DoubleLeftOutlined, DoubleRightOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
 import Modal from 'ant-design-vue/es/modal'
@@ -140,7 +140,7 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 190, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 250, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
@@ -529,9 +529,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       </div>
 
       <!-- 收起/展开手柄 -->
-      <div class="tree-toggle" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
-        <MenuUnfoldOutlined v-if="treeCollapsed" />
-        <MenuFoldOutlined v-else />
+      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
+        <DoubleRightOutlined v-if="treeCollapsed" />
+        <DoubleLeftOutlined v-else />
       </div>
 
       <!-- 右：表格区 -->
@@ -610,9 +610,11 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           />
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
-          <a class="ops-link" @click="openAddChild(record)"><PlusOutlined />新增下级</a>
-          <a class="ops-link danger-link" @click="removeOrg(record)"><DeleteOutlined />删除</a>
+          <div class="ops-btns">
+            <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+            <a-button size="small" @click="openAddChild(record)">新增下级</a-button>
+            <a-button danger size="small" @click="removeOrg(record)">删除</a-button>
+          </div>
         </template>
       </template>
     </a-table>
@@ -737,7 +739,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
 /* 左树 + 右表 分栏 */
 /* 树 + 表格 并排（标题行/筛选栏下方） */
-.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); position: relative; }
 .org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
@@ -747,7 +749,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; background: #E8FFEA; color: #00B42A; }
 /* 收起/展开手柄：竖条 + 图标，贴在树右缘 */
-.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle { position: absolute; top: 10px; left: 244px; z-index: 6; width: 16px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; font-size: 11px; transition: color .15s, border-color .15s, left .2s; }
+.tree-toggle.at-left { left: 4px; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .org-main { flex: 1; min-width: 0; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }
@@ -778,6 +781,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .org-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .org-name { font-weight: 500; color: #1D2129; }
+.ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }

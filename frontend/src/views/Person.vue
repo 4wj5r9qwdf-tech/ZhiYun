@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
+import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined, DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
@@ -179,7 +179,7 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 150, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 230, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => {
@@ -563,9 +563,9 @@ function resetFilter() {
       </div>
 
       <!-- 收起/展开手柄 -->
-      <div class="tree-toggle" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
-        <MenuUnfoldOutlined v-if="treeCollapsed" />
-        <MenuFoldOutlined v-else />
+      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed">
+        <DoubleRightOutlined v-if="treeCollapsed" />
+        <DoubleLeftOutlined v-else />
       </div>
 
       <div class="org-main">
@@ -648,14 +648,14 @@ function resetFilter() {
         </template>
         <template v-else-if="column.key === 'ops'">
           <!-- 查看已删除时：只给"恢复"；正常列表：编辑/重置密码/删除 -->
-          <template v-if="showDeleted">
-            <a class="ops-link" @click="restorePerson(record)"><UndoOutlined />恢复</a>
-          </template>
-          <template v-else>
-            <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
-            <a class="ops-link" @click="resetPwd(record)"><KeyOutlined />重置密码</a>
-            <a class="ops-link danger-link" @click="removePerson(record)"><DeleteOutlined />删除</a>
-          </template>
+          <div class="ops-btns">
+            <a-button v-if="showDeleted" type="primary" size="small" @click="restorePerson(record)">恢复</a-button>
+            <template v-else>
+              <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+              <a-button size="small" @click="resetPwd(record)">重置密码</a-button>
+              <a-button danger size="small" @click="removePerson(record)">删除</a-button>
+            </template>
+          </div>
         </template>
       </template>
     </a-table>
@@ -788,7 +788,7 @@ function resetFilter() {
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 
 /* 左侧组织树（对齐组织架构页） */
-.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
+.org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); position: relative; }
 .org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
@@ -797,7 +797,8 @@ function resetFilter() {
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
-.tree-toggle { flex: none; width: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 6px; margin-right: 8px; align-self: flex-start; margin-top: 12px; height: 44px; font-size: 12px; transition: color .15s, border-color .15s; }
+.tree-toggle { position: absolute; top: 10px; left: 244px; z-index: 6; width: 16px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #86909C; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; font-size: 11px; transition: color .15s, border-color .15s, left .2s; }
+.tree-toggle.at-left { left: 4px; }
 .tree-toggle:hover { color: #1E5EFF; border-color: #1E5EFF; }
 .org-main { flex: 1; min-width: 0; }
 
@@ -826,6 +827,7 @@ function resetFilter() {
 .person-table :deep(.ant-table-thead > tr > th) { background: #FAFBFD; }
 .person-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .person-tabs :deep(.ant-tabs-nav) { margin-bottom: 0; }
 .person-tabs :deep(.ant-tabs-content-holder) { padding-top: 16px; }

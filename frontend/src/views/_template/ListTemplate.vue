@@ -18,7 +18,7 @@
  */
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../../api'
@@ -101,7 +101,7 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }  // 序号列：固定最左、不可隐藏、不进 colState
-  const ops = { title: '操作', key: 'ops', width: 120, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 160, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
@@ -318,8 +318,10 @@ onMounted(() => { loadList(); loadColState() })
           <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
-          <a class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
+          <div class="ops-btns">
+            <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+            <a-button danger size="small" @click="removeOne(record)">删除</a-button>
+          </div>
         </template>
       </template>
     </a-table>
@@ -380,6 +382,7 @@ onMounted(() => { loadList(); loadColState() })
 .xxx-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
 .xxx-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }

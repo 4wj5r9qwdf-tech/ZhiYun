@@ -115,7 +115,7 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 120, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: 160, fixed: 'right' as const }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
@@ -368,8 +368,10 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
           <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <a class="ops-link" @click="openEdit(record)"><EditOutlined />编辑</a>
-          <a class="ops-link danger-link" @click="removeOne(record)"><DeleteOutlined />删除</a>
+          <div class="ops-btns">
+            <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+            <a-button danger size="small" @click="removeOne(record)">删除</a-button>
+          </div>
         </template>
       </template>
     </a-table>
@@ -440,6 +442,7 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 .post-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
 .post-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
