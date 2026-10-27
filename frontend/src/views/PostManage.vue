@@ -109,6 +109,9 @@ function autoFitCols() {
     ;(c as any).width = Math.max(90, String(t).length * 16 + 48)
   }
   saveColState()
+  // 操作列同步收窄到刚好放下按钮（并持久化）
+  opsWidth.value = 150
+  try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {

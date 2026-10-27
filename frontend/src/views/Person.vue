@@ -30,6 +30,8 @@ const keyword = ref('')
 const selectedOrgId = ref<string | null>(null)
 const treeCollapsed = ref(false)
 const orgCounts = ref<Record<string, number>>({})
+// 类型 tag 配色（与组织架构页一致：小组绿/科室蓝/部门灰）
+function typeColorOf(t: string) { return t === '小组' ? 'green' : t === '科室' ? 'blue' : 'default' }
 
 function buildOrgTree(list: any[]): any[] {
   const map: Record<string, any> = {}
@@ -133,6 +135,9 @@ function autoFitCols() {
     ;(c as any).width = Math.max(90, String(t).length * 16 + 48)
   }
   saveColState()
+  // 操作列同步收窄到刚好放下按钮（并持久化）
+  opsWidth.value = 215
+  try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 // 列设置里上下移动排序（拖拽或按钮）
@@ -584,9 +589,10 @@ function resetFilter() {
             :selected-keys="selectedOrgId ? [selectedOrgId] : []"
             @select="onTreeSelect"
           >
-            <template #title="{ orgName, orgId }">
+            <template #title="{ orgName, orgId, orgCategory }">
               <span class="tree-node">
                 {{ orgName }}
+                <a-tag v-if="orgCategory" :color="typeColorOf(orgCategory)" class="type-tag">{{ orgCategory }}</a-tag>
                 <span v-if="orgCounts[String(orgId)]" class="tree-count">{{ orgCounts[String(orgId)] }}</span>
               </span>
             </template>
@@ -829,6 +835,8 @@ function resetFilter() {
 .tree-clear { font-size: 12px; color: #1E5EFF; cursor: pointer; white-space: nowrap; }
 .tree-body { flex: 1; overflow: auto; padding: 8px; }
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
+.type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; background: #E8FFEA; color: #00B42A; margin: 0; }
+.type-tag .ant-tag { margin: 0; }
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
 .tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 248px; z-index: 6; width: 8px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
 .tree-toggle::before { content: ''; width: 0; height: 0; border: 3.5px solid transparent; border-right-color: #86909C; margin-left: -2px; }
