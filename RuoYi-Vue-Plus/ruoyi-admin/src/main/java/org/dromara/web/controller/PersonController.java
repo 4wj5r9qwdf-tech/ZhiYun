@@ -110,7 +110,6 @@ public class PersonController {
               .append(csv("1".equals(str(r.get("gender"))) ? "男" : "2".equals(str(r.get("gender"))) ? "女" : "")).append(',')
               .append(csv(str(r.get("phone_masked")))).append(',')
               .append(csv(str(r.get("dept_name")))).append(',')
-              .append(csv(str(r.get("group_name")))).append(',')
               .append(csv(str(r.get("posts")))).append(',')
               .append(csv(str(r.get("roles")))).append(',')
               .append(csv(str(r.get("emp_status")))).append(',')
@@ -127,7 +126,7 @@ public class PersonController {
     /** 列表/导出共用 SELECT。 */
     private String selectSql() {
         return "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
-            "  u.phone_number, u.dept_id, d.dept_name, e.group_name, e.group_id, e.emp_status, e.emp_type, " +
+            "  u.phone_number, u.dept_id, d.dept_name, e.emp_status, e.emp_type, " +
             "  e.hire_date, e.card_no, e.is_dorm, " +
             "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
             "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
@@ -220,7 +219,7 @@ public class PersonController {
     @GetMapping("/org-counts")
     public R<Map<String, Long>> orgCounts() {
         List<Map<String, Object>> people = jdbcTemplate.queryForList(
-            "SELECT u.dept_id, e.group_id FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id WHERE u.del_flag='0'");
+            "SELECT dept_id FROM sys_user WHERE del_flag='0'");
         List<Map<String, Object>> depts = jdbcTemplate.queryForList(
             "SELECT dept_id, ancestors FROM sys_dept");
         java.util.Map<Long, String> ancMap = new java.util.HashMap<>();
@@ -234,8 +233,7 @@ public class PersonController {
             long cnt = 0;
             for (Map<String, Object> p : people) {
                 Long pd = p.get("dept_id") == null ? null : ((Number) p.get("dept_id")).longValue();
-                Long pg = p.get("group_id") == null ? null : ((Number) p.get("group_id")).longValue();
-                if (belongTo(pd, nodeId, ancMap) || belongTo(pg, nodeId, ancMap)) {
+                if (belongTo(pd, nodeId, ancMap)) {
                     cnt++;
                 }
             }
@@ -300,7 +298,7 @@ public class PersonController {
     private String safeOrderBy(String orderBy) {
         java.util.Map<String, String> allow = java.util.Map.of(
             "job_no", "u.user_name", "name", "u.nick_name", "dept", "d.dept_name",
-            "group", "e.group_name", "status", "e.emp_status", "card", "e.card_no", "hire", "e.hire_date");
+            "status", "e.emp_status", "card", "e.card_no", "hire", "e.hire_date");
         if (orderBy == null || orderBy.isBlank()) return "u.user_id DESC";
         String[] p = orderBy.split(":");
         String col = allow.get(p[0].trim());

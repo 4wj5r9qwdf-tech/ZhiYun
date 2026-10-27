@@ -91,7 +91,6 @@ const ALL_COLUMNS = [
   { title: '性别', dataIndex: 'gender', key: 'gender' },
   { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked' },
   { title: '部门', dataIndex: 'dept_name', key: 'dept_name', sorter: true },
-  { title: '小组', dataIndex: 'group_name', key: 'group_name', sorter: true },
   { title: '岗位', dataIndex: 'posts', key: 'posts', ellipsis: true },
   { title: '角色', dataIndex: 'roles', key: 'roles', ellipsis: true },
   { title: '状态', dataIndex: 'emp_status', key: 'emp_status', sorter: true },
@@ -198,40 +197,9 @@ const posts = ref<any[]>([])
 const roles = ref<any[]>([])
 
 // 所属部门树选：全部非小组节点（小组是末级不当下级部门）
-const deptOptions = computed(() => {
-  const walk = (nodes: any[]): any[] => nodes
-    .filter(n => n.deptCategory !== '小组')
-    .map(n => ({ ...n, children: walk(n.children || []) }))
-  return walk(deptTree.value)
-})
+// 组织节点全树可选（万物皆部门：人员可挂任意层级节点）
+const deptOptions = computed(() => deptTree.value)
 
-// 所属小组树选：只保留小组（小组可多级，非小组祖先剔除、小组子树保留）
-const groupTreeOptions = computed(() => {
-  const walk = (nodes: any[]): any[] => {
-    const out: any[] = []
-    for (const n of nodes) {
-      const kids = walk(n.children || [])
-      if (n.deptCategory === '小组') out.push({ ...n, children: kids })
-      else out.push(...kids)
-    }
-    return out
-  }
-  return walk(deptTree.value)
-})
-
-// 选中小组 → 自动带出所属部门（沿 ancestors 向上找最近的非小组节点）
-function onGroupChange(val: any) {
-  const gid = val ? String(val) : undefined
-  form.value.ext.groupId = gid
-  form.value.ext.groupName = gid ? (depts.value.find(d => String(d.deptId) === gid)?.deptName || '') : ''
-  if (!gid) return
-  const node = depts.value.find(d => String(d.deptId) === gid)
-  const anc = String(node?.ancestors || '0').split(',').filter(x => x && x !== '0')
-  for (let i = anc.length - 1; i >= 0; i--) {
-    const p = depts.value.find(d => String(d.deptId) === anc[i])
-    if (p && p.deptCategory !== '小组') { form.value.deptId = String(p.deptId); break }
-  }
-}
 
 // ===== 弹窗 =====
 const activeTab = ref('base')   // 表单 Tab 分页（基本信息[含手机号/邮箱]/任职信息/合同薪酬/社保保险）
@@ -250,7 +218,7 @@ const emptyForm = () => ({
   ext: {
     maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
-    hireDate: '', groupName: '', groupId: undefined as string | undefined, empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
+    hireDate: '', empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
     bankCardNo: '', signEntity: '', contractYears: undefined as number | undefined, contractStart: '', contractEnd: '',
     hasSocial: '0', socialAmount: undefined as number | undefined, socialSubsidy: undefined as number | undefined,
     hasCommercial: '0', commercialType: '', socialCheckDate: '',
@@ -352,7 +320,7 @@ function importFile(e: Event) {
           phoneNumber: cols[idx('手机号')]?.trim() || '',
           postIds: [], roleIds: [],
           ext: { hireDate: new Date().toISOString().slice(0, 10), empStatus: cols[idx('状态')]?.trim() || '试用',
-                 groupName: cols[idx('小组')]?.trim() || '', cardNo: cols[idx('员工卡')]?.trim() || '' },
+                 cardNo: cols[idx('员工卡')]?.trim() || '' },
         })
         if (res.code === 200) ok++; else fail++
       } catch { fail++ }
@@ -409,7 +377,7 @@ async function openEdit(row: any) {
       nation: d.nation || '', education: d.education || '', birthDate: dateOnly(d.birth_date),
       graduateSchool: d.graduate_school || '', nativePlace: d.native_place || '', address: d.address || '',
       certExpireDate: dateOnly(d.cert_expire_date),
-      hireDate: dateOnly(d.hire_date), groupName: d.group_name || '', groupId: d.group_id ? String(d.group_id) : undefined, empType: d.emp_type || '正式',
+      hireDate: dateOnly(d.hire_date), empType: d.emp_type || '正式',
       leaveDate: dateOnly(d.leave_date), cardNo: d.card_no || '', empStatus: d.emp_status || '试用',
       bankCardNo: d.bank_card_no || '', signEntity: d.sign_entity || '',
       contractYears: d.contract_years ?? undefined, contractStart: dateOnly(d.contract_start), contractEnd: dateOnly(d.contract_end),
@@ -482,7 +450,7 @@ async function save() {
     // 校验失败：自动切到出错字段所在的 Tab
     const first = e?.errorFields?.[0]?.name
     const key = Array.isArray(first) ? first.join('.') : String(first || '')
-    if (key.startsWith('ext.hireDate') || key.startsWith('ext.empStatus') || key.startsWith('ext.groupId')) activeTab.value = 'duty'
+    if (key.startsWith('ext.hireDate') || key.startsWith('ext.empStatus')) activeTab.value = 'duty'
     else activeTab.value = 'base'
     return
   }
@@ -736,8 +704,7 @@ function resetFilter() {
         <a-tab-pane key="duty" tab="任职信息">
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="入职日期" :name="['ext','hireDate']"><a-input v-model:value="form.ext.hireDate" type="date" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="所属部门"><a-tree-select v-model:value="form.deptId" :tree-data="deptOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" tree-default-expand-all allow-clear placeholder="请选择部门" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="所属小组"><a-tree-select v-model:value="form.ext.groupId" :tree-data="groupTreeOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" tree-default-expand-all allow-clear placeholder="选择小组（自动带出部门）" @change="onGroupChange" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="所属部门"><a-tree-select v-model:value="form.deptId" :tree-data="deptOptions" :field-names="{ label: 'deptName', value: 'deptId', children: 'children' }" tree-default-expand-all allow-clear placeholder="选择部门/科室/班组" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工性质"><a-select v-model:value="form.ext.empType"><a-select-option value="正式">正式</a-select-option><a-select-option value="临时">临时</a-select-option><a-select-option value="劳务">劳务</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="在职状态" :name="['ext','empStatus']"><a-select v-model:value="form.ext.empStatus"><a-select-option value="试用">试用</a-select-option><a-select-option value="在职">在职</a-select-option><a-select-option value="离职">离职</a-select-option><a-select-option value="长假">长假</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="员工卡"><a-input v-model:value="form.ext.cardNo" placeholder="工牌号" /></a-form-item></a-col>
@@ -821,7 +788,7 @@ function resetFilter() {
 .back:hover { color: #1E5EFF; }
 .head-title { font-size: 16px; font-weight: 600; color: #1D2129; }
 
-/* 左侧组织树（对齐部门管理） */
+/* 左侧组织树（对齐组织架构页） */
 .dept-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); }
 .dept-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .dept-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }

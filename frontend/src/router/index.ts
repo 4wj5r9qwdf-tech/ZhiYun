@@ -28,8 +28,7 @@ const router = createRouter({
       children: [
         { path: '', name: 'PersonIndex', component: () => import('../views/PersonIndex.vue'), meta: { title: '人员' } },
         { path: 'person-info', name: 'Person', component: () => import('../views/Person.vue'), meta: { title: '人员信息', tab: true } },
-        { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '部门管理', tab: true } },
-        { path: 'group', name: 'GroupManage', component: () => import('../views/GroupManage.vue'), meta: { title: '小组管理', tab: true } },
+        { path: 'dept', name: 'DeptManage', component: () => import('../views/DeptManage.vue'), meta: { title: '组织架构', tab: true } },
         { path: 'post', name: 'PostManage', component: () => import('../views/PostManage.vue'), meta: { title: '岗位管理', tab: true } },
       ],
     },
@@ -50,11 +49,11 @@ const router = createRouter({
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
 // 路由级权限映射：无权限直接访问 URL 也拦（卡片显隐只是第一层）
 const ROUTE_PERMS: Record<string, string> = {
-  Person: 'system:person:list', DeptManage: 'system:dept:list', GroupManage: 'system:dept:list',
+  Person: 'system:person:list', DeptManage: 'system:dept:list',
   PostManage: 'system:post:list', RoleManage: 'system:role:list', BuildingManage: 'system:building:list',
   Company: 'system:company:list',
 }
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'PersonIndex', 'Person', 'DeptManage', 'GroupManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'PersonIndex', 'Person', 'DeptManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
