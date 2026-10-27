@@ -83,6 +83,7 @@ const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
 // v1：2026-10-26 列顺序调整（岗位名称提首位），升版让新默认顺序对已存 colState 的用户立即生效
 const colStoreKey = computed(() => `post_list_v1:${localStorage.getItem('userId') || 'anon'}`)
+const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 160)  // 操作列宽可拖拽并持久化
 function loadColState() {
   try {
     const raw = localStorage.getItem(colStoreKey.value)
@@ -115,7 +116,8 @@ const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  const ops = { title: '操作', key: 'ops', width: 160, fixed: 'right' as const }
+  const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
+    customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }) }
   const list = colState.value
     .filter(c => c.visible)
     .map(c => ({ ...ALL_COLUMNS.find(a => a.key === c.key)!, width: c.width, customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }) }))
@@ -126,11 +128,12 @@ const columns = computed(() => {
 // ===== 列宽拖拽（原生表头 + customHeaderCell） =====
 let suppressHeaderClickUntil = 0
 function onColResize(key: string, w: number) {
+  if (key === 'ops') { opsWidth.value = Math.max(150, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 function onHeaderMouseDown(key: string, e: MouseEvent) {
-  if (key === 'ops' || key === 'index') return
+  if (key === 'index') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
   if (e.clientX < rect.right - 14) return
