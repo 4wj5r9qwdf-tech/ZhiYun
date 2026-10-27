@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 部门管理（人员模块）—— ant-design-vue：左树 + 右表分栏
+ * 组织架构（人员模块）——原部门管理，万物皆部门后统一管理组织节点（部门/科室/小组）—— ant-design-vue：左树 + 右表分栏
  * - 左侧组织树（点节点→右侧只显示该节点及下级）
  * - 层级 = 树深度，按 ancestors 实时算（一级/二级/三级…），不依赖 dept_category
  * - a-table 树形展开表 + 列设置 + 列宽拖拽（对齐人员信息标准布局）
@@ -58,14 +58,10 @@ async function loadManageCounts() {
 }
 function manageCount(id: any) { return manageCounts.value[String(id)] || 0 }
 
-// 层级标签配色：按级数 1级=蓝 2级=绿 3级=橙 4级及以上=紫
-const levelColor: Record<number, string> = { 1: 'blue', 2: 'green', 3: 'orange' }
-function levelColorOf(n: any): string { return levelColor[deptLevel(n)] || 'purple' }
-
 // 全部列（不含操作列，操作列固定最后）
 const ALL_COLUMNS = [
   { title: '部门名称', dataIndex: 'deptName', key: 'deptName' },
-  { title: '层级', key: 'deptCategory', width: 90 },
+  { title: '类型', key: 'deptCategory', width: 80 },
   { title: '所在建筑', key: 'buildingId', width: 110 },
   { title: '位置', key: 'location', width: 160 },
   { title: '管辖', key: 'manages', width: 80 },
@@ -250,6 +246,29 @@ async function toggleStatus(row: any, checked: any) {
 }
 
 // ===== 表单弹窗 =====
+// 类型 tag 配色（档案标识，仅展示）
+function typeColorOf(t: string) { return t === '小组' ? 'green' : t === '科室' ? 'blue' : 'default' }
+
+// ===== 负责人：人员下拉（leader 存 user_id；bigint 一律字符串传输） =====
+const persons = ref<any[]>([])
+const personNameMap = computed(() => {
+  const m: Record<string, string> = {}
+  for (const p of persons.value) m[String(p.user_id)] = String(p.nick_name || p.user_name || '')
+  return m
+})
+function personLabel(id: any) {
+  if (id === null || id === undefined || id === '') return ''
+  return personNameMap.value[String(id)] || String(id)
+}
+async function loadPersons() {
+  try {
+    const res: any = await api.get('/system/person/list', { params: { pageNum: 1, pageSize: 500 } })
+    if (res.code === 200) persons.value = res.data?.rows || []
+  } catch { /* ignore */ }
+}
+
+function personFilter(input: string, option: any) { return String(option.children).includes(input) }
+
 const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
@@ -259,12 +278,12 @@ const emptyForm = () => ({
   deptId: null as string | null,
   parentId: undefined as string | undefined,
   deptName: '',
-  deptCategory: undefined as string | undefined,
+  deptCategory: '部门',
   buildingId: undefined as number | undefined,   // 所在建筑（哪栋楼，可选，所有层级都能填）
   floor: undefined as number | undefined,        // 楼层（几层，可选；buildingId 选了才出现）
   location: '',                                   // 位置路径尾段（车间/房间等，可选，自由填）
   orderNum: 0,
-  leader: '',
+  leader: undefined as string | undefined,
   phone: '',
   email: '',
   status: '0',
@@ -319,12 +338,6 @@ function deptLevel(n: any): number {
   return anc.split(',').filter(x => x !== '').length || 1
 }
 // 由上级推导本级层级（新节点）：父级深度+1
-function deriveLevel(parentId: any): number {
-  if (!parentId) return 1
-  const node = findNode(tree.value, String(parentId))
-  return node ? deptLevel(node) + 1 : 2
-}
-function levelLabel(n: any): string { return `${deptLevel(n)} 级` }
 
 // 层级筛选选项：按当前数据实际深度动态生成（一级..N级）
 const levelOptions = computed(() => {
@@ -336,18 +349,10 @@ const levelOptions = computed(() => {
   return opts
 })
 
-// 上级部门变化 → 层级自动跟随
-function onParentChange() {
-  // 小组身份保持：编辑小组改上级时不能被冲成"N 级"（小组只能从小组管理页变更）
-  if (form.value.deptCategory === '小组') return
-  form.value.deptCategory = levelLabelOf(deriveLevel(form.value.parentId))
-}
-function levelLabelOf(level: number): string { return `${level} 级` }
 
 function openAddTop() {
   isEdit.value = false
   form.value = emptyForm()
-  form.value.deptCategory = '1 级'
   managedIds.value = []
   showDlg.value = true
 }
@@ -357,7 +362,6 @@ function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
   form.value.parentId = String(row.deptId)
-  form.value.deptCategory = levelLabelOf(deptLevel(row) + 1)
   managedIds.value = []
   showDlg.value = true
 }
@@ -381,12 +385,12 @@ async function openEdit(row: any) {
     deptId: String(d.deptId),
     parentId: d.parentId === 0 || d.parentId === '0' ? undefined : String(d.parentId),
     deptName: d.deptName || '',
-    deptCategory: levelLabelOf(deptLevel(d)),
+    deptCategory: d.deptCategory || '部门',
     buildingId: d.buildingId ? Number(d.buildingId) : undefined,
     floor,
     location: tail,
     orderNum: Number(d.orderNum ?? 0),
-    leader: d.leader || '',
+    leader: d.leader ? String(d.leader) : undefined,
     phone: d.phone || '',
     email: d.email || '',
     status: d.status || '0',
@@ -435,7 +439,7 @@ async function save() {
       buildingId: form.value.buildingId ?? null,
       location: composeLocation(),
       orderNum: form.value.orderNum ?? 0,
-      leader: form.value.leader || '',
+      leader: form.value.leader ?? null,
       phone: form.value.phone || '',
       email: form.value.email || '',
       status: form.value.status || '0',
@@ -456,7 +460,7 @@ async function save() {
 // 删除：后端会校验有无子部门/人员占用，失败时弹后端 msg
 function removeDept(row: any) {
   Modal.confirm({
-    title: '删除部门',
+    title: '删除组织',
     content: `确认删除「${row.deptName}」？若有下级部门或已分配人员，后端将拒绝删除。`,
     okText: '删除', okType: 'danger', cancelText: '取消',
     onOk: async () => {
@@ -486,7 +490,7 @@ function onRowExpand(exp: boolean, record: any) {
   else expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
 }
 
-onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState() })
+onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(); loadPersons() })
 </script>
 
 <template>
@@ -494,13 +498,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <div class="page-header">
       <div class="head-left">
         <a class="back" @click.prevent="router.push({ name: 'PersonIndex' })" href="javascript:;">←</a>
-        <span class="head-title">部门管理</span>
+        <span class="head-title">组织架构</span>
       </div>
     </div>
 
     <!-- 筛选栏：关键词 + 层级(动态) + 状态 + 查询/重置 + 靠右操作（新增） -->
     <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索部门名称" allow-clear style="width:200px">
+      <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
       <a-select v-model:value="filterCategory" allow-clear placeholder="层级" style="width:110px">
@@ -513,7 +517,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <a-button type="primary" @click="loadTree">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
-      <a-button type="primary" @click="openAddTop"><PlusOutlined />新增部门</a-button>
+      <a-button type="primary" @click="openAddTop"><PlusOutlined />新增组织</a-button>
     </div>
 
     <!-- 树 + 表格 并排（树可向左收起，收起后表格占满） -->
@@ -541,7 +545,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
               </span>
             </template>
           </a-tree>
-          <a-empty v-else description="暂无部门，点右上'新增部门'创建顶层部门" />
+          <a-empty v-else description="暂无组织，点右上'新增组织'创建顶层节点" />
         </div>
       </div>
 
@@ -556,7 +560,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
     <!-- 列表工具行：条数 + 列设置 -->
     <div class="table-bar">
-      <span class="total">共 {{ deptCount }} 个部门</span>
+      <span class="total">共 {{ deptCount }} 个组织</span>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -600,8 +604,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span class="dept-name">{{ record.deptName }}</span>
         </template>
         <template v-else-if="column.key === 'deptCategory'">
-          <a-tag v-if="record.deptCategory === '小组'" color="green">小组</a-tag>
-          <a-tag v-else :color="levelColorOf(record)">{{ levelLabel(record) }}</a-tag>
+          <a-tag :color="typeColorOf(record.deptCategory)">{{ record.deptCategory || '部门' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'buildingId'">
           {{ buildingLabel(record.buildingId) || '—' }}
@@ -615,7 +618,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <span v-else class="muted">—</span>
         </template>
         <template v-else-if="column.key === 'leader'">
-          {{ record.leader || '-' }}
+          {{ personLabel(record.leader) || '-' }}
         </template>
         <template v-else-if="column.key === 'phone'">
           {{ record.phone || '-' }}
@@ -643,7 +646,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       :mask-closable="false"
       :keyboard="false"
       v-model:open="showDlg"
-      :title="isEdit ? '编辑部门' : '新增部门'"
+      :title="isEdit ? '编辑组织' : '新增组织'"
       width="640px"
       :confirm-loading="saving"
       ok-text="保存"
@@ -653,12 +656,25 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
-            <a-form-item label="部门名称" name="deptName">
+            <a-form-item label="组织名称" name="deptName">
               <a-input v-model:value="form.deptName" :maxlength="30" placeholder="请输入" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="上级部门">
+            <a-form-item label="档案类型">
+              <a-select v-model:value="form.deptCategory">
+                <a-select-option value="厂区">厂区</a-select-option>
+                <a-select-option value="部门">部门</a-select-option>
+                <a-select-option value="车间">车间</a-select-option>
+                <a-select-option value="科室">科室</a-select-option>
+                <a-select-option value="区域">区域</a-select-option>
+                <a-select-option value="小组">小组</a-select-option>
+              </a-select>
+              <div class="form-tip">仅作档案标识与展示区分，不影响数据权限逻辑</div>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="上级组织">
               <a-tree-select
                 v-model:value="form.parentId"
                 :tree-data="parentTree"
@@ -666,7 +682,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
                 allow-clear
                 tree-default-expand-all
                 placeholder="不选 = 顶层"
-                @change="onParentChange"
+               
               />
             </a-form-item>
           </a-col>
@@ -713,7 +729,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           </a-col>
           <a-col :span="12">
             <a-form-item label="负责人">
-              <a-input v-model:value="form.leader" :maxlength="20" placeholder="请输入" />
+              <a-select v-model:value="form.leader" allow-clear placeholder="选人员（可空）" show-search :filter-option="personFilter">
+                <a-select-option v-for="p in persons" :key="String(p.user_id)" :value="String(p.user_id)">{{ p.nick_name || p.user_name }}（{{ p.user_name }}）</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="12">

@@ -34,8 +34,7 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' , perm: 'system:role:list' },
   // 人员模块
   { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' , perm: 'system:person:list' },
-  { key: 'person_dept', title: '部门管理', desc: '厂→车间→区域', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' , perm: 'system:dept:list' },
-  { key: 'person_group', title: '小组管理', desc: '小组挂车间/区域下', icon: 'ClusterOutlined', route: 'GroupManage', module: 'person' , perm: 'system:dept:list' },
+  { key: 'person_dept', title: '组织架构', desc: '部门/科室/小组统一管理', icon: 'ApartmentOutlined', route: 'DeptManage', module: 'person' , perm: 'system:dept:list' },
   { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' , perm: 'system:post:list' },
   // 物业资产模块
   { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' , perm: 'system:building:list' },
