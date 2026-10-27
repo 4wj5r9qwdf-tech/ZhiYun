@@ -457,7 +457,8 @@ public class PersonController {
         Map<String, Object> ext = body.get("ext") instanceof Map ? (Map<String, Object>) body.get("ext") : java.util.Map.of();
         // 小组：优先 group_id 关联（组织树 dept_category=小组）；带 group_id 时同步冗余 group_name（取小组节点名，找不到则用传入文本）
         Object gidRaw = ext.get("groupId");
-        Long groupId = (gidRaw instanceof Number n) ? n.longValue() : null;
+        // 前端 groupId 以字符串传输（防 bigint 精度丢失），Number 判断会漏——统一走 deptIdOrNull
+        Long groupId = deptIdOrNull(gidRaw);
         String groupName = str(ext.get("groupName"));
         if (groupId != null) {
             String node = jdbcTemplate.query(
