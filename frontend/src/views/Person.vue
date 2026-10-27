@@ -10,7 +10,7 @@
  */
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { EditOutlined, DeleteOutlined, KeyOutlined, UndoOutlined, DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons-vue'
+import { DoubleLeftOutlined, DoubleRightOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
