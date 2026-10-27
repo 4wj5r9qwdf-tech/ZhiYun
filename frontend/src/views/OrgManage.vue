@@ -578,8 +578,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 
     <!-- 列表工具行：条数 + 列设置 -->
     <div class="table-bar">
-      <a-dropdown v-model:open="colSetOpen" :trigger="['click']" style="margin-left: auto">
-        <a-button>⚙ 列设置</a-button>
+      <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
+        <a-button style="margin-left: auto">⚙ 列设置</a-button>
         <template #overlay>
           <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
             <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
