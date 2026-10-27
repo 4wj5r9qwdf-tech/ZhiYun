@@ -71,7 +71,7 @@ type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
 const colStoreKey = computed(() => `org_list:${localStorage.getItem('userId') || 'anon'}`)
-const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 250)  // 操作列宽可拖拽并持久化
+const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 200)  // 操作列宽可拖拽并持久化
 
 function loadColState() {
   try {
@@ -99,7 +99,7 @@ function autoFitCols() {
   }
   saveColState()
   // 操作列同步收窄到刚好放下按钮（并持久化）
-  opsWidth.value = 225
+  opsWidth.value = 190
   try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
@@ -113,7 +113,7 @@ function moveCol(index: number, dir: -1 | 1) {
 
 // 列宽拖拽：改 colState 里对应列的 width 并持久化
 function onColResize(key: string, w: number) {
-  if (key === 'ops') { opsWidth.value = Math.max(150, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
+  if (key === 'ops') { opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -821,6 +821,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .org-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
 .org-name { font-weight: 500; color: #1D2129; }
+.ops-btns .ant-btn-sm { padding-inline: 5px; }
 .ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }

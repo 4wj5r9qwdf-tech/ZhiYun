@@ -69,7 +69,7 @@ type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
 const colStoreKey = computed(() => `xxx_list:${localStorage.getItem('userId') || 'anon'}`)  // TODO key 前缀
-const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 160)  // 操作列宽可拖拽并持久化
+const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 140)  // 操作列宽可拖拽并持久化
 function loadColState() {
   try {
     const raw = localStorage.getItem(colStoreKey.value)
@@ -96,7 +96,7 @@ function autoFitCols() {
   }
   saveColState()
   // 操作列同步收窄到刚好放下按钮（并持久化）
-  opsWidth.value = 150
+  opsWidth.value = 130
   try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
 }
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
@@ -125,7 +125,7 @@ const columns = computed(() => {
 // ===== 列宽拖拽（原生表头 + customHeaderCell，标准件勿改） =====
 let suppressHeaderClickUntil = 0
 function onColResize(key: string, w: number) {
-  if (key === 'ops') { opsWidth.value = Math.max(150, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
+  if (key === 'ops') { opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -421,6 +421,7 @@ onMounted(() => { loadList(); loadColState() })
 .xxx-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
 .xxx-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 
+.ops-btns .ant-btn-sm { padding-inline: 5px; }
 .ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-link { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; font-size: 13px; }
 .danger-link { color: #F53F3F; }
