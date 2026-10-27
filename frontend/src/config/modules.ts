@@ -32,6 +32,7 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   // 系统模块
   { key: 'company', title: '公司档案', desc: '公司名/logo/登录背景', icon: 'BankOutlined', route: 'Company', module: 'system' , perm: 'system:company:list' },
   { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' , perm: 'system:role:list' },
+  { key: 'system_template', title: '功能模板', desc: '标准件展览：树/列表/列设置/分页等，后期按需搬', icon: 'AppstoreOutlined', route: 'SystemTemplate', module: 'system' , perm: 'system:template:list' },
   // 人员模块
   { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' , perm: 'system:person:list' },
   { key: 'person_org', title: '组织架构', desc: '部门/科室/小组统一管理', icon: 'ApartmentOutlined', route: 'OrgManage', module: 'person' , perm: 'system:org:list' },

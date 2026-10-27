@@ -17,6 +17,7 @@ const router = createRouter({
         { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统' } },
         { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案', tab: true } },
         { path: 'role', name: 'RoleManage', component: () => import('../views/RoleManage.vue'), meta: { title: '角色管理', tab: true } },
+        { path: 'template', name: 'SystemTemplate', component: () => import('../views/SystemTemplate.vue'), meta: { title: '功能模板', tab: true } },
       ],
     },
     // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
@@ -50,10 +51,10 @@ const router = createRouter({
 // 路由级权限映射：无权限直接访问 URL 也拦（卡片显隐只是第一层）
 const ROUTE_PERMS: Record<string, string> = {
   Person: 'system:person:list', OrgManage: 'system:org:list',
-  PostManage: 'system:post:list', RoleManage: 'system:role:list', BuildingManage: 'system:building:list',
+  PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', BuildingManage: 'system:building:list',
   Company: 'system:company:list',
 }
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
+const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
