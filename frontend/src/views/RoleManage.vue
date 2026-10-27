@@ -42,7 +42,7 @@ function resetFilters() { keyword.value = ''; pageNum.value = 1; loadList() }
 
 // 数据范围映射（RuoYi sys_role.data_scope）
 const DATA_SCOPE: Record<string, string> = {
-  '1': '全部数据', '2': '自定义节点', '3': '本部门及以下', '5': '仅本人', '6': '本小组及下级',
+  '1': '全部数据', '2': '自定义节点', '3': '本组织及以下', '5': '仅本人',
 }
 function scopeLabel(v: any) { return DATA_SCOPE[String(v)] || String(v ?? '') }
 function statusText(s: any) { return String(s) === '0' ? '启用' : '停用' }
@@ -318,7 +318,7 @@ async function savePerm() {
 }
 
 
-// ===== 自定义部门（数据范围=2）勾选弹窗 =====
+// ===== 自定义组织节点（数据范围=2）勾选弹窗 =====
 const orgDlg = ref({ open: false, saving: false })
 const orgTreeData = ref<any[]>([])      // 全部部门树（排除小组）
 const orgChecked = ref<string[]>([])
@@ -342,13 +342,13 @@ async function openOrgPick() {
     try {
       const res: any = await api.get('/system/org/list')
       if (res.code === 200) orgTreeData.value = buildOrgTree(res.data || [])
-    } catch (e: any) { message.error(e?.response?.data?.msg || '加载部门失败') }
+    } catch (e: any) { message.error(e?.response?.data?.msg || '加载组织失败') }
   }
   // 数据就绪后再开弹窗：antd tree 的 default-expand-all 只在挂载时生效，异步晚到不会补展开
   orgDlg.value.open = true
 }
 
-// 编辑回显：角色已选部门
+// 编辑回显：角色已选组织节点
 async function loadRoleOrgs(roleId: string) {
   try {
     const res: any = await api.get(`/system/role/orgTree/${roleId}`)
@@ -477,8 +477,7 @@ onMounted(() => { loadList(); loadColState() })
           <a-select v-model:value="form.dataScope" @change="form.dataScope === '2' ? openOrgPick() : undefined">
             <a-select-option value="1">全部数据</a-select-option>
             <a-select-option value="2">自定义节点</a-select-option>
-            <a-select-option value="3">本部门及以下</a-select-option>
-            <a-select-option value="6">本小组及下级</a-select-option>
+            <a-select-option value="3">本组织及以下</a-select-option>
             <a-select-option value="5">仅本人</a-select-option>
           </a-select>
           <div v-if="form.dataScope === '2'" class="scope-orgs">
@@ -504,7 +503,7 @@ onMounted(() => { loadList(); loadColState() })
       v-model:open="orgDlg.open"
       :mask-closable="false"
       :keyboard="false"
-      title="选择数据范围节点（部门/小组均可勾，均含其全部下级）"
+      title="选择数据范围节点（组织节点均可勾，含其全部下级）"
       width="460px"
       ok-text="确定"
       cancel-text="取消"

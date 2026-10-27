@@ -58,7 +58,7 @@ public class PersonController {
         if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
         applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : orgId, gender, posts, roles);
-        // 树节点筛选：orgId 按"含下级"双线展开（部门线 OR 小组线，与数据范围同款）
+        // 树节点筛选：orgId 按"含下级"展开（组织节点，与数据范围同款）
         if (orgId != null && "1".equals(subtree)) {
             appendSubtreeFilter(where, orgId);
         }
@@ -103,7 +103,7 @@ public class PersonController {
         for (Map<String, Object> r : rows) {
             r.put("phone_masked", mask(str(r.get("phone_number"))));
         }
-        StringBuilder sb = new StringBuilder("﻿工号,姓名,性别,手机号,车间,小组,岗位,角色,状态,员工卡\r\n");
+        StringBuilder sb = new StringBuilder("﻿工号,姓名,性别,手机号,部门,岗位,角色,状态,员工卡\r\n");
         for (Map<String, Object> r : rows) {
             sb.append(csv(str(r.get("job_no")))).append(',')
               .append(csv(str(r.get("name")))).append(',')
@@ -170,18 +170,12 @@ public class PersonController {
                 "SELECT data_scope FROM sys_role WHERE role_id=?", rs -> rs.next() ? rs.getString(1) : null, roleId);
             if (scope == null) continue;
             switch (scope) {
-                case "2" -> jdbcTemplate.queryForList(                       // 自定义节点（部门或小组）
+                case "2" -> jdbcTemplate.queryForList(                       // 自定义组织节点
                     "SELECT org_id FROM sys_role_org WHERE role_id=?", Long.class, roleId).forEach(nodes::add);
-                case "3" -> {                                                  // 本部门及以下
+                case "3" -> {                                                  // 本组织及以下
                     Long myOrg = jdbcTemplate.queryForObject(
                         "SELECT org_id FROM sys_user WHERE user_id=?", Long.class, userId);
                     if (myOrg != null) nodes.add(myOrg);
-                }
-                case "6" -> {                                                  // 本小组及下级
-                    Long myGroup = jdbcTemplate.query(
-                        "SELECT group_id FROM sys_person_ext WHERE user_id=? AND group_id IS NOT NULL",
-                        rs -> rs.next() ? rs.getLong(1) : null, userId);
-                    if (myGroup != null) nodes.add(myGroup);
                 }
                 case "5" -> { }                                                // 仅本人：不产生节点，恒自己兜底
                 default -> { }
@@ -193,10 +187,7 @@ public class PersonController {
         if (!expanded.isEmpty()) {
             cond.append("u.org_id IN (");
             for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
-            cond.append(") OR e.group_id IN (");
-            for (int i = 0; i < expanded.size(); i++) { if (i > 0) cond.append(','); cond.append('?'); }
             cond.append(')');
-            args.addAll(expanded);
             args.addAll(expanded);
         }
         cond.append(cond.length() > 0 ? " OR u.user_id=?" : "u.user_id=?");
@@ -204,16 +195,15 @@ public class PersonController {
         where.append(" AND (").append(cond).append(')');
     }
 
-    /** 树节点筛选：所选节点及下级，双线匹配（人员部门线 OR 小组线）。展开 id 为库内 bigint，字面量拼接无注入。 */
+    /** 树节点筛选：所选组织节点及全部下级。展开 id 为库内 bigint，字面量拼接无注入。 */
     private void appendSubtreeFilter(StringBuilder where, Long orgId) {
         java.util.Set<Long> expanded = expandOrgWithChildren(java.util.Set.of(orgId));
         String ids = expanded.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(String.valueOf(orgId));
-        where.append(" AND (u.org_id IN (").append(ids).append(") OR e.group_id IN (").append(ids).append("))");
+        where.append(" AND u.org_id IN (").append(ids).append(')');
     }
 
     /**
-     * 组织树人数角标：每个节点 = 该节点及下级的在册人数（双线：人员部门∈展开 或 小组∈展开——
-     * 与树节点筛选同口径，角标数 = 点选后列表数）。
+     * 组织树人数角标：每个节点 = 该节点及下级的在册人数（与树节点筛选同口径，角标数 = 点选后列表数）。
      */
     @SaCheckPermission("system:person:query")
     @GetMapping("/org-counts")
