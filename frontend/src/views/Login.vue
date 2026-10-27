@@ -18,6 +18,7 @@ const theme = ref('')
 const slogan = ref('')
 const loginBgUrl = ref('')
 const loginBgMode = ref('A')  // A=铺满左侧品牌区 / B=铺满整页
+const nameColor = ref('#FFFFFF')  // 登录页公司名颜色（公司档案里可配，暗背景默认白）
 
 // 登录表单
 // 登录表单（绑定 a-form :model，校验状态随输入/blur 自动清除）
@@ -43,6 +44,7 @@ onMounted(async () => {
       slogan.value = res.data.slogan || ''
       loginBgUrl.value = res.data.login_bg_url || ''
       loginBgMode.value = res.data.login_bg_mode || 'A'
+      nameColor.value = res.data.name_color || '#FFFFFF'
     }
   } catch {
     companyName.value = '织云ERP'
@@ -104,7 +106,7 @@ async function handleLogin() {
           <img v-if="logoUrl" :src="logoUrl" :alt="companyName" />
           <div v-else class="logo-placeholder">织</div>
         </div>
-        <h1 class="brand-name">{{ companyName || '织云 ERP' }}</h1>
+        <h1 class="brand-name" :style="{ color: nameColor }">{{ companyName || '织云 ERP' }}</h1>
         <p class="brand-slogan">{{ slogan || '服装代工厂生产管理系统' }}</p>
       </div>
     </div>
@@ -224,15 +226,19 @@ async function handleLogin() {
   backdrop-filter: blur(8px);
 }
 .brand-content {
+  position: relative;
+  z-index: 2;              /* 浮在 brand-bg 之上：A 模式 static 会被 absolute 背景盖住（logo/公司名隐形根因） */
   text-align: center;
   padding: 40px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.55);  /* 浅色背景图上文字可读（配色任意都有投影兜底） */
 }
 .brand-logo {
   width: 88px;
   height: 88px;
   margin: 0 auto 24px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -31,7 +31,7 @@ const form = ref({
   loginBgOssId: null as string | null,
   logoUrl: '',
   loginBgUrl: '',
-  slogan: '',
+  slogan: '', nameColor: '#FFFFFF',
   loginBgMode: 'A',
   isDefault: '0',
   theme: '',
@@ -60,13 +60,13 @@ async function loadList() {
 
 function openAdd() {
   isEdit.value = false
-  form.value = { companyId: null, companyName: '', logoOssId: null, loginBgOssId: null, logoUrl: '', loginBgUrl: '', slogan: '', loginBgMode: 'A', isDefault: '0', theme: '', status: '0' }
+  form.value = { companyId: null, companyName: '', logoOssId: null, loginBgOssId: null, logoUrl: '', loginBgUrl: '', slogan: '', nameColor: '#FFFFFF', loginBgMode: 'A', isDefault: '0', theme: '', status: '0' }
   showDlg.value = true
 }
 
 function openEdit(row: any) {
   isEdit.value = true
-  form.value = { companyId: row.company_id, companyName: row.company_name, logoOssId: row.logo_oss_id, loginBgOssId: row.login_bg_oss_id, logoUrl: row.logo_url, loginBgUrl: row.login_bg_url, slogan: row.slogan || '', loginBgMode: row.login_bg_mode || 'A', isDefault: row.is_default, theme: row.theme || '', status: row.status }
+  form.value = { companyId: row.company_id, companyName: row.company_name, logoOssId: row.logo_oss_id, loginBgOssId: row.login_bg_oss_id, logoUrl: row.logo_url, loginBgUrl: row.login_bg_url, slogan: row.slogan || '', nameColor: row.name_color || '#FFFFFF', loginBgMode: row.login_bg_mode || 'A', isDefault: row.is_default, theme: row.theme || '', status: row.status }
   showDlg.value = true
 }
 
@@ -117,6 +117,7 @@ async function save() {
       logoOssId: form.value.logoOssId,
       loginBgOssId: form.value.loginBgOssId,
       slogan: form.value.slogan,
+      nameColor: form.value.nameColor,
       loginBgMode: form.value.loginBgMode,
       isDefault: form.value.isDefault,
       theme: form.value.theme,
@@ -187,6 +188,7 @@ function remove(row: any) {
           </div>
           <div class="card-body">
             <div class="info-row"><span class="label">宣传语</span><span class="val">{{ c.slogan || '（默认）' }}</span></div>
+            <div class="info-row"><span class="label">公司名颜色</span><span class="val"><span class="color-dot" :style="{ background: c.name_color || '#FFFFFF' }"></span>{{ c.name_color || '#FFFFFF' }}</span></div>
             <div class="info-row"><span class="label">背景模式</span><span class="val">{{ c.login_bg_mode === 'B' ? 'B 整页' : 'A 左侧' }}</span></div>
             <div class="info-row"><span class="label">登录背景</span><span class="val">{{ c.login_bg_url ? '已上传' : '未上传' }}</span></div>
             <div class="info-row"><span class="label">状态</span><span class="val"><a-tag :color="c.status === '0' ? 'green' : 'default'">{{ c.status === '0' ? '正常' : '停用' }}</a-tag></span></div>
@@ -215,6 +217,13 @@ function remove(row: any) {
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-form-item label="公司名称" name="companyName">
           <a-input v-model:value="form.companyName" placeholder="如：河北佰信达实业有限公司" />
+        </a-form-item>
+        <a-form-item label="登录页公司名颜色">
+          <div class="color-row">
+            <input v-model="form.nameColor" type="color" class="native-color" title="点击选择颜色" />
+            <a-input v-model:value="form.nameColor" style="width: 130px" :maxlength="20" placeholder="#FFFFFF" />
+            <span class="color-tip">暗色背景图建议白/浅色系；改完保存后登录页生效</span>
+          </div>
         </a-form-item>
         <a-form-item label="宣传语">
           <a-input v-model:value="form.slogan" placeholder="留空则用默认：服装代工厂生产管理系统" />
@@ -288,4 +297,8 @@ function remove(row: any) {
 .upload-preview.bg { width: 120px; height: 68px; }
 .upload-preview img { width: 100%; height: 100%; object-fit: cover; }
 .upload-ph { color: #C9CDD4; font-size: 12px; }
+.color-row { display: flex; align-items: center; gap: 10px; }
+.native-color { width: 34px; height: 30px; padding: 2px; border: 1px solid #E5E8EF; border-radius: 6px; background: #fff; cursor: pointer; }
+.color-tip { font-size: 12px; color: #86909C; }
+.color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid #E5E8EF; margin-right: 6px; vertical-align: -1px; }
 </style>

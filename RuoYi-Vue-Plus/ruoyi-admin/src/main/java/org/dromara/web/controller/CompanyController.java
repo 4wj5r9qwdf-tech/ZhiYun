@@ -42,7 +42,7 @@ public class CompanyController {
             "SELECT count(*) FROM sys_company WHERE del_flag='0'", Long.class);
         java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(
             "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login_bg_oss_id, " +
-            "       c.slogan, c.login_bg_mode, c.is_default, c.theme, c.status, " +
+            "       c.slogan, c.login_bg_mode, c.name_color, c.is_default, c.theme, c.status, " +
             "       COALESCE(o.url,'') AS logo_url, COALESCE(bg.url,'') AS login_bg_url " +
             "FROM sys_company c " +
             "LEFT JOIN sys_oss o ON c.logo_oss_id = o.oss_id " +
@@ -60,7 +60,7 @@ public class CompanyController {
     public R<Map<String, Object>> getInfo(@PathVariable Long companyId) {
         Map<String, Object> row = jdbcTemplate.queryForMap(
             "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login_bg_oss_id, " +
-            "       c.slogan, c.login_bg_mode, c.is_default, c.theme, c.status, " +
+            "       c.slogan, c.login_bg_mode, c.name_color, c.is_default, c.theme, c.status, " +
             "       COALESCE(o.url,'') AS logo_url, COALESCE(bg.url,'') AS login_bg_url " +
             "FROM sys_company c " +
             "LEFT JOIN sys_oss o ON c.logo_oss_id = o.oss_id " +
@@ -79,11 +79,11 @@ public class CompanyController {
         Long companyId = System.currentTimeMillis();
         jdbcTemplate.update(
             "INSERT INTO sys_company (company_id, company_name, logo_oss_id, login_bg_oss_id, " +
-            "  slogan, login_bg_mode, is_default, theme, status, del_flag, create_time) " +
-            "VALUES (?,?,?,?,?,?,'0',?,'0','0',now())",
+            "  slogan, login_bg_mode, name_color, is_default, theme, status, del_flag, create_time) " +
+            "VALUES (?,?,?,?,?,?,?,'0',?,'0','0',now())",
             companyId, body.get("companyName"), toLong(body.get("logoOssId")),
             toLong(body.get("loginBgOssId")), body.get("slogan"),
-            body.getOrDefault("loginBgMode", "A"), body.get("theme"));
+            body.getOrDefault("loginBgMode", "A"), body.getOrDefault("nameColor", "#FFFFFF"), body.get("theme"));
         // 若设为默认，取消其他默认
         if ("1".equals(body.get("isDefault"))) {
             setDefault(companyId);
@@ -101,10 +101,11 @@ public class CompanyController {
         Long companyId = Long.valueOf(body.get("companyId").toString());
         jdbcTemplate.update(
             "UPDATE sys_company SET company_name=?, logo_oss_id=?, login_bg_oss_id=?, " +
-            "  slogan=?, login_bg_mode=?, theme=?, status=?, update_time=now() " +
+            "  slogan=?, login_bg_mode=?, name_color=?, theme=?, status=?, update_time=now() " +
             "WHERE company_id=?",
             body.get("companyName"), toLong(body.get("logoOssId")), toLong(body.get("loginBgOssId")),
             body.get("slogan"), body.getOrDefault("loginBgMode", "A"),
+            body.getOrDefault("nameColor", "#FFFFFF"),
             body.get("theme"), body.getOrDefault("status", "0"), companyId);
         if ("1".equals(body.get("isDefault"))) {
             setDefault(companyId);

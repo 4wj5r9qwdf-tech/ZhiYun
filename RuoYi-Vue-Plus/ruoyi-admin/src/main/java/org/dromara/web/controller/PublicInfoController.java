@@ -34,7 +34,7 @@ public class PublicInfoController {
         Map<String, Object> data = new HashMap<>();
         try {
             Map<String, Object> row = jdbcTemplate.queryForMap(
-                "SELECT c.company_id, c.company_name, c.theme, c.slogan, c.login_bg_mode, " +
+                "SELECT c.company_id, c.company_name, c.theme, c.slogan, c.login_bg_mode, c.name_color, " +
                 "       COALESCE(o.url, '') AS logo_url, " +
                 "       COALESCE(bg.url, '') AS login_bg_url " +
                 "FROM sys_company c " +
@@ -49,6 +49,7 @@ public class PublicInfoController {
             data.put("slogan", "");
             data.put("login_bg_url", "");
             data.put("login_bg_mode", "A");
+            data.put("name_color", "#FFFFFF");
         }
         return R.ok(data);
     }
