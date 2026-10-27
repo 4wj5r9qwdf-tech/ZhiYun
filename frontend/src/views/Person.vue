@@ -101,7 +101,7 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)   // 列设置下拉受控开关（操作期间保持打开）
-const colStoreKey = computed(() => `person_list:${localStorage.getItem('userId') || 'anon'}`)
+const colStoreKey = computed(() => `person_list_v2:${localStorage.getItem('userId') || 'anon'}`)
 const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 180)  // 操作列宽可拖拽并持久化
 
 function loadColState() {
@@ -888,6 +888,13 @@ function resetFilter() {
 
 .danger-link { color: #F53F3F; }
 .danger-link:hover { color: #cb2634; }
+
+/* 表格纵向滚动条：细条+去箭头（操作列右缘拖拽不被滚动条按钮截获） */
+.person-table :deep(.ant-table-body) { scrollbar-width: thin; }
+.person-table :deep(.ant-table-body::-webkit-scrollbar) { width: 8px; }
+.person-table :deep(.ant-table-body::-webkit-scrollbar-button) { display: none; height: 0; }
+.person-table :deep(.ant-table-body::-webkit-scrollbar-thumb) { background: #C9CDD4; border-radius: 4px; }
+.person-table :deep(.ant-table-body::-webkit-scrollbar-track) { background: transparent; }
 </style>
 
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->

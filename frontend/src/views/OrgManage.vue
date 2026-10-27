@@ -829,6 +829,13 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 .loc-preview { margin-top: 4px; font-size: 12px; color: #1E5EFF; background: #F4F7FF; border-radius: 4px; padding: 2px 8px; }
 .loc-cell { color: #1E5EFF; font-size: 12px; }
 .muted { color: #C9CDD4; }
+
+/* 表格纵向滚动条：细条+去箭头（操作列右缘拖拽不被滚动条按钮截获） */
+.org-table :deep(.ant-table-body) { scrollbar-width: thin; }
+.org-table :deep(.ant-table-body::-webkit-scrollbar) { width: 8px; }
+.org-table :deep(.ant-table-body::-webkit-scrollbar-button) { display: none; height: 0; }
+.org-table :deep(.ant-table-body::-webkit-scrollbar-thumb) { background: #C9CDD4; border-radius: 4px; }
+.org-table :deep(.ant-table-body::-webkit-scrollbar-track) { background: transparent; }
 </style>
 
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
