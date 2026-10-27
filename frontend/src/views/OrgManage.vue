@@ -38,12 +38,7 @@ const selectedSubtree = computed(() => {
   return node ? [node] : tree.value
 })
 // 过滤后部门总数（含下级）
-const orgCount = computed(() => {
-  let n = 0
-  const walk = (nodes: any[]) => { for (const x of nodes) { n++; walk(x.children || []) } }
-  walk(orgTree.value)
-  return n
-})
+const orgCount = computed(() => orgRows.value.length)
 
 // 业务管辖：每个部门管辖了多少被管部门（orgId -> 数），列表展示
 const manageCounts = ref<Record<string, number>>({})
@@ -153,28 +148,24 @@ const columns = computed(() => {
   return [idx, ...list, ops]
 })
 
-// 右侧数据源：左树选中节点(及下级) + 关键词/层级/状态过滤（保留命中节点及其祖先链）
-const orgTree = computed(() => {
+// 右侧数据源：平铺列表（树形交给左侧导航）——左树选中节点(及下级) + 关键词/类型/状态过滤
+const orgRows = computed(() => {
   const base = selectedSubtree.value
   const kw = keyword.value.trim()
-  const lvl = filterCategory.value   // 层级筛选：值为数字字符串如 '1'/'2'
+  const type = filterCategory.value   // 类型筛选：'部门'/'科室'/'小组'
   const st = filterStatus.value
-  if (!kw && !lvl && !st) return base
-  const match = (n: any) => {
-    if (kw && !String(n.orgName || '').includes(kw)) return false
-    if (lvl && String(orgLevel(n)) !== lvl) return false
-    if (st && n.status !== st) return false
-    return true
-  }
-  const walk = (nodes: any[]): any[] => {
-    const out: any[] = []
+  const out: any[] = []
+  const walk = (nodes: any[]) => {
     for (const n of nodes) {
-      const kids = walk(n.children || [])
-      if (match(n) || kids.length) out.push({ ...n, children: kids })
+      const ok = (!kw || String(n.orgName || '').includes(kw))
+        && (!type || n.orgCategory === type)
+        && (!st || n.status === st)
+      if (ok) out.push(n)
+      walk(n.children || [])
     }
-    return out
   }
-  return walk(base)
+  walk(base)
+  return out
 })
 
 async function loadTree() {
@@ -333,21 +324,8 @@ function findNode(nodes: any[], id: string): any {
 
 // ===== 层级 = 树深度（按 ancestors 实时算，不依赖 org_category）=====
 // ancestors 形如 "0" / "0,父id" / "0,父id,祖父id" → 段数 = 层级（顶层=1级）
-function orgLevel(n: any): number {
-  const anc = String(n?.ancestors ?? '0')
-  return anc.split(',').filter(x => x !== '').length || 1
-}
 // 由上级推导本级层级（新节点）：父级深度+1
 
-// 层级筛选选项：按当前数据实际深度动态生成（一级..N级）
-const levelOptions = computed(() => {
-  let max = 0
-  const walk = (nodes: any[]) => { for (const n of nodes) { max = Math.max(max, orgLevel(n)); walk(n.children || []) } }
-  walk(tree.value)
-  const opts: { value: string; label: string }[] = []
-  for (let i = 1; i <= max; i++) opts.push({ value: String(i), label: `${i} 级` })
-  return opts
-})
 
 
 function openAddTop() {
@@ -362,8 +340,16 @@ function openAddChild(row: any) {
   isEdit.value = false
   form.value = emptyForm()
   form.value.parentId = String(row.orgId)
+  form.value.buildingId = row.buildingId ?? undefined   // 默认带出上级所在建筑（同一栋楼）
   managedIds.value = []
   showDlg.value = true
+}
+
+// 弹窗内手动换上级：当前建筑为空时自动带出新上级的建筑
+function onParentPicked(val: any) {
+  if (!val || form.value.buildingId) return
+  const n = findNode(tree.value, String(val))
+  if (n?.buildingId) form.value.buildingId = n.buildingId
 }
 
 async function openEdit(row: any) {
@@ -475,20 +461,11 @@ function removeOrg(row: any) {
 watch(showDlg, (v) => { if (!v) formRef.value?.clearValidate() })
 
 // 左树点节点 → 右侧只显示该节点及下级，并自动展开该节点的行（再点取消）
-const expandedRowKeys = ref<string[]>([])
 function onTreeSelect(keys: any[]) {
-  const id = keys.length ? String(keys[0]) : null
-  selectedOrgId.value = id
-  expandedRowKeys.value = id ? [id] : []
+  selectedOrgId.value = keys.length ? String(keys[0]) : null
 }
 // 取消选中（回到全部）
-function clearTreeSelect() { selectedOrgId.value = null; expandedRowKeys.value = [] }
-// 手动点行首 +/- 展开收起，同步受控 expandedRowKeys
-function onRowExpand(exp: boolean, record: any) {
-  const id = String(record.orgId)
-  if (exp) { if (!expandedRowKeys.value.includes(id)) expandedRowKeys.value.push(id) }
-  else expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== id)
-}
+function clearTreeSelect() { selectedOrgId.value = null }
 
 onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(); loadPersons() })
 </script>
@@ -507,8 +484,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
       </a-input>
-      <a-select v-model:value="filterCategory" allow-clear placeholder="层级" style="width:110px">
-        <a-select-option v-for="o in levelOptions" :key="o.value" :value="o.value">{{ o.label }}</a-select-option>
+      <a-select v-model:value="filterCategory" allow-clear placeholder="类型" style="width:110px">
+        <a-select-option value="部门">部门</a-select-option>
+        <a-select-option value="科室">科室</a-select-option>
+        <a-select-option value="小组">小组</a-select-option>
       </a-select>
       <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px">
         <a-select-option value="0">启用</a-select-option>
@@ -585,13 +564,11 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <!-- 树表 -->
     <a-table
       :columns="columns"
-      :data-source="orgTree"
+      :data-source="orgRows"
       :loading="loading"
       :pagination="false"
       :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
-      :expanded-row-keys="expandedRowKeys"
-      @expand="(exp: boolean, record: any) => onRowExpand(exp, record)"
       row-key="orgId"
       size="middle"
       class="org-table"
@@ -663,11 +640,8 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
           <a-col :span="12">
             <a-form-item label="档案类型">
               <a-select v-model:value="form.orgCategory">
-                <a-select-option value="厂区">厂区</a-select-option>
                 <a-select-option value="部门">部门</a-select-option>
-                <a-select-option value="车间">车间</a-select-option>
                 <a-select-option value="科室">科室</a-select-option>
-                <a-select-option value="区域">区域</a-select-option>
                 <a-select-option value="小组">小组</a-select-option>
               </a-select>
               <div class="form-tip">仅作档案标识与展示区分，不影响数据权限逻辑</div>
@@ -682,6 +656,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
                 allow-clear
                 tree-default-expand-all
                 placeholder="不选 = 顶层"
+                @change="onParentPicked"
                
               />
             </a-form-item>
