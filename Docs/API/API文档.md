@@ -1,7 +1,7 @@
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-10-26
+> 更新日期：2026-10-28
 > 说明：面向智能体的 API 总索引。格式遵守《Docs/API文档规范.md》：先在此定位功能分组与接口，再进分组文档看完整契约。**分组文档一律放 `Docs/API/` 目录。**
 
 ---
@@ -49,22 +49,21 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 功能分组 | 英文键 | 分组文档 | 状态 | 验收日期 |
 |---|---|---|---|---|
-| 小组管理 | group | [Docs/API/小组管理API.md](小组管理API.md) | ✅ 已达标 | 2026-10-26 |
 | （后续功能验收后逐组追加） | | | | |
 
 ---
 
 ## 二、接口速查（每接口一行）
 
-### 小组管理 group（复用 `/system/org`，小组 = `org_category='小组'`）
+### 组织架构 org（`/system/org` 复用；档案类型 org_category 由用户自选，仅展示标识）
 
 | 方法 + 路径 | 说明 | 读/写 |
 |---|---|---|
-| `GET /system/org/list` | 查组织树/小组列表（支持 `orgCategory` 过滤、平铺返回） | 只读 |
-| `GET /system/org/{orgId}` | 查单个部门/小组详情（含 ancestors 层级链） | 只读 |
-| `POST /system/org` | 新建部门/小组（`orgCategory='小组'` 即建小组） | 写 |
-| `PUT /system/org` | 修改部门/小组 | 写 |
-| `DELETE /system/org/{orgId}` | 删除部门/小组（5 道前置校验） | 写 |
+| `GET /system/org/list` | 查组织树/组织列表（支持 `orgCategory` 过滤、平铺返回） | 只读 |
+| `GET /system/org/{orgId}` | 查单个组织节点详情（含 ancestors 层级链） | 只读 |
+| `POST /system/org` | 新建组织节点（orgCategory 用户自选） | 写 |
+| `PUT /system/org` | 修改组织节点 | 写 |
+| `DELETE /system/org/{orgId}` | 删除组织节点（5 道前置校验） | 写 |
 
 > 权限码：`system:org:list` / `system:org:query` / `system:org:add` / `system:org:edit` / `system:org:remove`（按发起员工角色过滤，无权限返回 403）。
 
@@ -75,4 +74,4 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 1. 每个功能**验收通过后**当批次补一份分组文档进 `Docs/API/`，并更新本索引（分组清单 + 速查行）。
 2. 分组文档必须含**机器契约五字段**（幂等性/副作用/前置条件/是否需审批/权限要求），缺一不算达标。
 3. 示例必须是**可直接运行的 curl/JSON**，与后端实测一致（禁止凭记忆写）。
-4. MCP 工具（`mcp-server/`）与 Skill（`Docs/Skills/`）以本索引为能力清单来源。
+4. Skill 契约（`Docs/Skills/`）以本索引为能力清单来源；MCP 工具按《内嵌智能体规范》接入时逐组登记。

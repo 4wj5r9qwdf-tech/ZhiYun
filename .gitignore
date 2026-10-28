@@ -48,7 +48,6 @@ Thumbs.db
 /vendor/
 /bin/ (本地工具，调用 Windows 浏览器)
 
-# ===== MCP Server（Python）=====
-mcp-server/.venv/
+# ===== Python 通用 =====
 __pycache__/
 *.pyc
