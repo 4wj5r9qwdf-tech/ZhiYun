@@ -287,6 +287,32 @@ const permChecked = ref<string[]>([])    // 已勾选（String id）
 const permHalf = ref<string[]>([])
 const permSaving = ref(false)
 
+/**
+ * 祖先闭包：把 keys 中每个节点的所有祖先节点补进来。
+ * 根因修复：严格模式(role.menu_check_strictly=1)回显的 checkedKeys 只含角色实际存了行的节点；
+ * 按钮(F)勾了而所属 C 页面/M 目录没落库时，用户"有按钮码却进不了页面"，且再次原样保存
+ * 会永久丢失父级行。保存前必须把"勾了叶子"闭包成"叶子+全部祖先"一起提交。
+ */
+function ancestorClosure(tree: any[], keys: Iterable<string>): string[] {
+  const parentOf = new Map<string, string>()
+  const walk = (nodes: any[], parent?: string) => {
+    for (const n of nodes || []) {
+      if (parent !== undefined) parentOf.set(String(n.id), parent)
+      walk(n.children, String(n.id))
+    }
+  }
+  walk(tree)
+  const out = new Set<string>(keys)
+  for (const k of out) {
+    let p = parentOf.get(k)
+    while (p !== undefined) {
+      out.add(p)
+      p = parentOf.get(p)
+    }
+  }
+  return [...out]
+}
+
 async function openPerm(row: any) {
   permDlg.value = { open: true, roleId: String(row.roleId), roleName: row.roleName }
   permTree.value = []
@@ -305,11 +331,12 @@ async function openPerm(row: any) {
 async function savePerm() {
   permSaving.value = true
   try {
-    // 勾了按钮必须隐含所属页面（半选父节点一起提交），否则"给了查询却进不了页面/列表403"
+    // 提交前补全祖先闭包：勾了按钮隐含所属页面/目录一起落库（否则"给了查询却进不了页面/列表403"）
     const ids = new Set<string>([...permChecked.value, ...permHalf.value])
+    const menuIds = ancestorClosure(permTree.value, ids)
     const res: any = await api.put('/system/role/permission', {
       roleId: permDlg.value.roleId,
-      menuIds: [...ids],
+      menuIds,
     })
     if (res.code === 200) { message.success('权限已分配'); permDlg.value.open = false }
     else message.error(res.msg || '分配失败')
