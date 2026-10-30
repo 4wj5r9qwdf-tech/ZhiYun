@@ -1,20 +1,21 @@
 -- =====================================================================
 -- 组织树迁移：RuoYi 脚手架示例部门 → 织云服装厂真实组织树（2026-10-25）
+-- 2026-10-30 同步：dept→org 全局改名后表名/列名（org_*），数据值不变；执行顺序见 sql/迁移_dept改org_20261027.sql 头部
 -- 层级：厂(顶层) → 车间 → 区域 → 小组   （仓走库存模块，不进组织树）
--- 依据：用户定"厂→车间→区域→小组"，dept_category 区分层级
+-- 依据：用户定"厂→车间→区域→小组"，org_category 区分层级
 -- 幂等：可重复执行（先查后插，示例部门仅首次软删）
 -- =====================================================================
 
--- 1) 软删 RuoYi 示例部门（保留审计、可恢复；测试人员 dept_id 随后重置）
-UPDATE sys_dept
+-- 1) 软删 RuoYi 示例部门（保留审计、可恢复；测试人员 org_id 随后重置）
+UPDATE sys_org
    SET del_flag = '1', update_time = now()
  WHERE del_flag = '0'
-   AND dept_name IN ('XXX科技','深圳总公司','长沙分公司','研发部门','市场部门',
+   AND org_name IN ('XXX科技','深圳总公司','长沙分公司','研发部门','市场部门',
                      '测试部门','财务部门','运维部门');
 
--- 2) 预置组织树（dept_id 用固定可读段，避免与业务ID冲突）
+-- 2) 预置组织树（org_id 用固定可读段，避免与业务ID冲突）
 --    厂(1780000000000000001) → 车间(...002~004) → 区域 → 小组
-INSERT INTO sys_dept (dept_id, parent_id, ancestors, dept_name, dept_category, order_num, status, del_flag, create_time)
+INSERT INTO sys_org (org_id, parent_id, ancestors, org_name, org_category, order_num, status, del_flag, create_time)
 SELECT * FROM (VALUES
   -- 顶层厂区
   (1780000000000000001::bigint, 0::bigint, '0',                    '织云服装厂', '厂区',  1, '0','0', now()),
@@ -38,29 +39,29 @@ SELECT * FROM (VALUES
   (1780000000000000012::bigint, 1780000000000000007::bigint, '0,1780000000000000001,1780000000000000003,1780000000000000007', '缝纫一组', '小组', 1, '0','0', now()),
   -- 后整A区 → 小组
   (1780000000000000013::bigint, 1780000000000000008::bigint, '0,1780000000000000001,1780000000000000004,1780000000000000008', '后整一组', '小组', 1, '0','0', now())
-) AS v(dept_id, parent_id, ancestors, dept_name, dept_category, order_num, status, del_flag, create_time)
-WHERE NOT EXISTS (SELECT 1 FROM sys_dept d WHERE d.dept_id = v.dept_id);
+) AS v(org_id, parent_id, ancestors, org_name, org_category, order_num, status, del_flag, create_time)
+WHERE NOT EXISTS (SELECT 1 FROM sys_org d WHERE d.org_id = v.org_id);
 
 -- 3) 人员 group_id 关联迁移：按 group_name 匹配同名小组节点（如 裁剪一组）
 UPDATE sys_person_ext e
-   SET group_id = g.dept_id
-  FROM sys_dept g
- WHERE g.dept_category = '小组'
+   SET group_id = g.org_id
+  FROM sys_org g
+ WHERE g.org_category = '小组'
    AND g.del_flag = '0'
-   AND g.dept_name = e.group_name
+   AND g.org_name = e.group_name
    AND e.group_id IS NULL;
 
--- 4) 测试人员 dept_id 重置（原指向已删示例部门）：
+-- 4) 测试人员 org_id 重置（原指向已删示例部门）：
 --    admin → 顶层厂区；test/test1 → 置空（真实车间建好后再分配）
-UPDATE sys_user SET dept_id = 1780000000000000001, update_time = now()
+UPDATE sys_user SET org_id = 1780000000000000001, update_time = now()
  WHERE user_name = 'admin';
-UPDATE sys_user SET dept_id = NULL, update_time = now()
+UPDATE sys_user SET org_id = NULL, update_time = now()
  WHERE user_name IN ('test','test1');
 
 -- =====================================================================
 -- 校验
 -- =====================================================================
--- SELECT dept_id, dept_name, dept_category, parent_id FROM sys_dept
+-- SELECT org_id, org_name, org_category, parent_id FROM sys_org
 --  WHERE del_flag='0' ORDER BY ancestors, order_num;
 -- SELECT user_name, group_name, group_id FROM sys_person_ext e
 --  JOIN sys_user u ON u.user_id=e.user_id WHERE e.group_id IS NOT NULL;

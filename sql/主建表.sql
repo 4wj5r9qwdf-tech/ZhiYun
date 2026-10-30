@@ -4,7 +4,11 @@
 --       （见 智能体交接说明.md 四、协作流程第 5 步）
 -- 依赖：RuoYi-Vue-Plus 基础表已导入（script/sql/postgres/*.sql）
 --       本文件只建"织云自建地基表"，不重复建 RuoYi 自带表
--- 关联：组织树数据预置见 sql/迁移_组织树服装厂.sql + sql/迁移_组织树按厂房重建.sql（厂→车间[厂房]→区域[工序]→小组，dept_category 区分；仓走库存模块不进组织树）
+-- 新库构建顺序（2026-10-30 定版）：
+--   ① 框架 SQL   RuoYi-Vue-Plus/script/sql/postgres/*.sql（含改名前的 sys_dept 等）
+--   ② 改名迁移   sql/迁移_dept改org_20261027.sql（dept→org 全局改名 + 线上扩展列）
+--   ③ 本文件     sql/主建表.sql（织云自建地基表，全 org 命名）
+--   ④ 组织树数据 sql/迁移_组织树服装厂.sql + sql/迁移_组织树按厂房重建.sql（org_category 区分 厂→车间[厂房]→区域[工序]→小组；仓走库存模块不进组织树）
 -- 执行：psql -U zhizhun -d zhizhun_erp -f sql/主建表.sql
 -- 更新：2026-10-24
 -- 更新：2026-10-30（与线上库对齐：create_dept→create_org；sys_role.data_scope_dept_ids→data_scope_org_ids；
