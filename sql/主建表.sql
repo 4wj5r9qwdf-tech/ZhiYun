@@ -38,6 +38,12 @@ COMMENT ON TABLE  sys_post_role                IS '岗位默认角色关联表�
 COMMENT ON COLUMN sys_post_role.post_id        IS '岗位ID';
 COMMENT ON COLUMN sys_post_role.role_id        IS '角色ID';
 COMMENT ON COLUMN sys_post_role.sort           IS '同岗位多角色带出顺序';
+COMMENT ON COLUMN sys_post_role.create_dept    IS '创建部门（→ sys_org.org_id）';
+COMMENT ON COLUMN sys_post_role.create_by      IS '创建者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_post_role.create_time    IS '创建时间';
+COMMENT ON COLUMN sys_post_role.update_by      IS '更新者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_post_role.update_time    IS '更新时间';
+COMMENT ON COLUMN sys_post_role.remark         IS '备注';
 
 CREATE INDEX IF NOT EXISTS idx_sys_post_role_role_id ON sys_post_role (role_id);
 
@@ -103,13 +109,22 @@ CREATE TABLE IF NOT EXISTS sys_company (
 );
 
 COMMENT ON TABLE  sys_company            IS '公司档案表（前端规范A.1：登录页/首页公司名+logo，展示层）';
+COMMENT ON COLUMN sys_company.company_id IS '公司ID（主键）';
 COMMENT ON COLUMN sys_company.company_name IS '公司名（管理端可编辑，不写死代码）';
 COMMENT ON COLUMN sys_company.logo_oss_id  IS 'logo文件（→ sys_oss.oss_id，走MinIO，暂可空）';
 COMMENT ON COLUMN sys_company.is_default   IS '是否默认展示公司（是=登录页/首页显示）';
 COMMENT ON COLUMN sys_company.theme        IS '主题（A.5多主题：工业蓝/深色大屏/自定义色）';
 COMMENT ON COLUMN sys_company.login_bg_oss_id IS '登录背景图（→ sys_oss.oss_id，走MinIO，建议竖版1080x1920或方图1200x1200，暂可空）';
-COMMENT ON COLUMN sys_company.slogan       IS '登录页宣传语（暂可空，空则用默认\"服装代工厂生产管理系统\"）';
+COMMENT ON COLUMN sys_company.slogan       IS '登录页宣传语（暂可空，空则用默认"服装代工厂生产管理系统"）';
 COMMENT ON COLUMN sys_company.login_bg_mode IS '登录背景显示模式：A=铺满左侧品牌区叠加公司名(默认) / B=铺满整页登录卡片悬浮';
+COMMENT ON COLUMN sys_company.status       IS '状态：0正常/1停用';
+COMMENT ON COLUMN sys_company.del_flag     IS '删除标志：0存在/1删除';
+COMMENT ON COLUMN sys_company.create_dept  IS '创建部门（→ sys_org.org_id）';
+COMMENT ON COLUMN sys_company.create_by    IS '创建者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_company.create_time  IS '创建时间';
+COMMENT ON COLUMN sys_company.update_by    IS '更新者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_company.update_time  IS '更新时间';
+COMMENT ON COLUMN sys_company.remark       IS '备注';
 
 -- 默认只允许一家默认展示公司（部分唯一索引，status=0 且 del_flag=0 生效）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_company_default
@@ -144,12 +159,16 @@ CREATE TABLE IF NOT EXISTS sys_user_menu_config (
 );
 
 COMMENT ON TABLE  sys_user_menu_config          IS '用户功能菜单配置（拖拽排序/卡片宽高自由拉伸/置顶/加入工作台）';
+COMMENT ON COLUMN sys_user_menu_config.user_id    IS '用户ID（→ sys_user.user_id）';
 COMMENT ON COLUMN sys_user_menu_config.menu_key IS '功能标识（前端功能卡key）';
+COMMENT ON COLUMN sys_user_menu_config.sort     IS '排序（拖拽后记录）';
 COMMENT ON COLUMN sys_user_menu_config.card_w   IS '卡片宽度（自由拉伸，80-480）';
 COMMENT ON COLUMN sys_user_menu_config.card_h   IS '卡片高度（自由拉伸，60-320，与宽度独立）';
 COMMENT ON COLUMN sys_user_menu_config.icon_size IS '兼容旧列（=card_w）';
 COMMENT ON COLUMN sys_user_menu_config.is_top   IS '置顶 0否1是';
 COMMENT ON COLUMN sys_user_menu_config.in_workbench IS '加入工作台 0否1是';
+COMMENT ON COLUMN sys_user_menu_config.create_time  IS '创建时间';
+COMMENT ON COLUMN sys_user_menu_config.update_time  IS '更新时间';
 
 -- ------------------------------------------------------------
 -- 7. 用户工作台（2026-10-24）
@@ -164,6 +183,10 @@ CREATE TABLE IF NOT EXISTS sys_user_workbench (
 );
 
 COMMENT ON TABLE sys_user_workbench IS '用户工作台（登录默认首页，聚合加入的功能）';
+COMMENT ON COLUMN sys_user_workbench.user_id     IS '用户ID（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_user_workbench.menu_key    IS '功能标识（前端功能卡 key，→ config/modules.ts）';
+COMMENT ON COLUMN sys_user_workbench.sort        IS '排序';
+COMMENT ON COLUMN sys_user_workbench.create_time IS '创建时间';
 
 -- ------------------------------------------------------------
 -- 8. 统一待办表（2026-10-24 占位，业务模块开发后接入真实数据）
@@ -186,9 +209,16 @@ CREATE TABLE IF NOT EXISTS sys_todo (
 );
 
 COMMENT ON TABLE  sys_todo              IS '统一待办表（红点占位，业务模块开发后接入真实数据）';
+COMMENT ON COLUMN sys_todo.todo_id      IS '待办ID（主键）';
+COMMENT ON COLUMN sys_todo.user_id      IS '归属用户（→ sys_user.user_id；空=模块/功能级待办，任何人可见）';
 COMMENT ON COLUMN sys_todo.module_key   IS '所属模块（左侧导航模块key，红点模块级累加）';
 COMMENT ON COLUMN sys_todo.menu_key     IS '所属功能（功能卡key，红点功能级）';
+COMMENT ON COLUMN sys_todo.title        IS '待办标题';
 COMMENT ON COLUMN sys_todo.status       IS '0待处理(计红点) 1已完成(不计)';
+COMMENT ON COLUMN sys_todo.biz_id       IS '业务单据ID（审批/预警等，后期关联）';
+COMMENT ON COLUMN sys_todo.biz_type     IS '业务类型：approve审批/alert预警/...';
+COMMENT ON COLUMN sys_todo.create_time  IS '创建时间';
+COMMENT ON COLUMN sys_todo.handle_time  IS '处理完成时间';
 
 CREATE INDEX IF NOT EXISTS idx_sys_todo_module ON sys_todo (module_key, menu_key, status);
 
@@ -251,6 +281,28 @@ COMMENT ON COLUMN sys_person_ext.bank_card_no IS '银行卡号（敏感，脱敏
 COMMENT ON COLUMN sys_person_ext.has_social   IS '是否缴纳社保 0否1是（临工可0）';
 COMMENT ON COLUMN sys_person_ext.has_commercial IS '是否缴纳商业险 0否1是（保险=商业险）';
 COMMENT ON COLUMN sys_person_ext.is_dorm      IS '是否住宿 0否1是（只登记，床位在宿舍模块）';
+COMMENT ON COLUMN sys_person_ext.marital_status IS '婚姻状况：未婚/已婚/离异';
+COMMENT ON COLUMN sys_person_ext.cert_type    IS '证件类型：身份证/护照/其他';
+COMMENT ON COLUMN sys_person_ext.nation       IS '民族';
+COMMENT ON COLUMN sys_person_ext.education    IS '学历';
+COMMENT ON COLUMN sys_person_ext.birth_date   IS '出生日期';
+COMMENT ON COLUMN sys_person_ext.graduate_school IS '毕业院校';
+COMMENT ON COLUMN sys_person_ext.native_place IS '籍贯';
+COMMENT ON COLUMN sys_person_ext.address      IS '详细地址';
+COMMENT ON COLUMN sys_person_ext.cert_expire_date IS '证件到期日（进证件预警）';
+COMMENT ON COLUMN sys_person_ext.emp_type     IS '员工性质：正式/临时/劳务';
+COMMENT ON COLUMN sys_person_ext.leave_date   IS '离职日期';
+COMMENT ON COLUMN sys_person_ext.card_no      IS '员工卡（工牌号）';
+COMMENT ON COLUMN sys_person_ext.sign_entity  IS '签约主体（合同签约公司）';
+COMMENT ON COLUMN sys_person_ext.contract_years IS '合同年限（年）';
+COMMENT ON COLUMN sys_person_ext.contract_start IS '合同签订日期';
+COMMENT ON COLUMN sys_person_ext.contract_end  IS '合同截止日期';
+COMMENT ON COLUMN sys_person_ext.social_amount IS '社保缴纳金额（元/月，DECIMAL(10,2)）';
+COMMENT ON COLUMN sys_person_ext.social_subsidy IS '社保补助金额（元/月，DECIMAL(10,2)）';
+COMMENT ON COLUMN sys_person_ext.commercial_type IS '商业险种（意外险/雇主责任险等）';
+COMMENT ON COLUMN sys_person_ext.social_check_date IS '社保核对日期（留痕）';
+COMMENT ON COLUMN sys_person_ext.create_time   IS '创建时间';
+COMMENT ON COLUMN sys_person_ext.update_time   IS '更新时间';
 
 -- ------------------------------------------------------------
 -- 2. 建筑档案（物理资产/固定资产，非部门）
@@ -282,11 +334,20 @@ CREATE TABLE IF NOT EXISTS sys_building (
 
 COMMENT ON TABLE  sys_building            IS '建筑档案（物理资产/固定资产；厂房/行政楼/宿舍楼等独立楼宇；仓库是建筑内区域不在此列）';
 COMMENT ON COLUMN sys_building.building_type IS '用途类别 厂房/行政楼/宿舍楼';
+COMMENT ON COLUMN sys_building.plant_id    IS '建筑ID（主键，列名沿用 plant_id）';
 COMMENT ON COLUMN sys_building.plant_code   IS '建筑编号（如 P1/P2/P3）';
 COMMENT ON COLUMN sys_building.floor_info   IS '楼层情况（单层/双层/三层…）';
 COMMENT ON COLUMN sys_building.land_area    IS '占地面积 ㎡';
 COMMENT ON COLUMN sys_building.building_area IS '建筑面积 ㎡';
+COMMENT ON COLUMN sys_building.address      IS '地址';
+COMMENT ON COLUMN sys_building.built_year  IS '建成年份';
 COMMENT ON COLUMN sys_building.status       IS '状态 0在用 1闲置 2维修';
+COMMENT ON COLUMN sys_building.remark      IS '备注';
+COMMENT ON COLUMN sys_building.del_flag    IS '删除标志：0存在/1删除';
+COMMENT ON COLUMN sys_building.create_by   IS '创建者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_building.create_time IS '创建时间';
+COMMENT ON COLUMN sys_building.update_by   IS '更新者（→ sys_user.user_id）';
+COMMENT ON COLUMN sys_building.update_time IS '更新时间';
 
 COMMIT;
 
