@@ -4,9 +4,11 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.crypto.digest.BCrypt;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
+import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.satoken.utils.LoginHelper;
+import org.dromara.system.event.OnlineUserCleanEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -434,6 +436,42 @@ public class PersonController {
         }
         jdbcTemplate.update(
             "UPDATE sys_user SET del_flag='0', status='0', update_time=now() WHERE user_id=?", userId);
+        return R.ok();
+    }
+
+    /**
+     * 彻底删除人员（物理删除）：仅限已软删（del_flag='1'）的人员。
+     * 清掉账号与全部关联（角色/岗位/工作台配置/菜单配置/待办/社会登录/扩展表），
+     * 释放"角色已分配"占用——人员彻底删除后，其占用的角色即可在角色管理里删除。
+     * 超管账号禁止；审计留痕（各表 create_by）与登录日志不清理。
+     */
+    @SaCheckPermission("system:person:remove")
+    @Log(title = "人员信息", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{userId}/permanent")
+    public R<Void> removePermanent(@PathVariable Long userId) {
+        if (LoginHelper.isSuperAdmin(userId)) {
+            return R.fail("超级管理员账号不允许彻底删除");
+        }
+        Map<String, Object> row;
+        try {
+            row = jdbcTemplate.queryForMap("SELECT user_name, del_flag FROM sys_user WHERE user_id=?", userId);
+        } catch (Exception e) {
+            return R.fail("人员不存在");
+        }
+        if (!"1".equals(str(row.get("del_flag")))) {
+            return R.fail("该人员尚未删除，请先删除（软删）再彻底删除");
+        }
+        // 先清关联行（含角色占用），再删本体
+        jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_user_post WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_user_menu_config WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_user_workbench WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_todo WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_social WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_person_ext WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_user WHERE user_id=?", userId);
+        // 踢掉该用户仍在线的会话（权限/身份已失效）
+        SpringUtils.context().publishEvent(OnlineUserCleanEvent.byUsers(java.util.List.of(userId)));
         return R.ok();
     }
 

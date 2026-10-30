@@ -579,6 +579,22 @@ function restorePerson(row: any) {
   })
 }
 
+// 彻底删除已删除人员（物理删，不可恢复；释放其占用的角色，之后角色管理里可删角色）
+function permanentDeletePerson(row: any) {
+  Modal.confirm({
+    title: '彻底删除人员',
+    content: `确认彻底删除「${row.nick_name || row.name}（工号 ${row.job_no}）」？` +
+      `将物理清除该账号及全部关联（角色/岗位/工作台/待办等），不可恢复；` +
+      `其占用的角色将一并释放，之后可在角色管理里删除该角色。`,
+    okText: '彻底删除', okType: 'danger', cancelText: '取消',
+    onOk: async () => {
+      const res: any = await api.delete(`/system/person/${row.user_id}/permanent`)
+      if (res.code === 200) { message.success('已彻底删除'); loadList() }
+      else message.error(res.msg || '彻底删除失败')
+    },
+  })
+}
+
 function resetFilter() {
   keyword.value = ''; empStatus.value = undefined; orgId.value = undefined
   gender.value = undefined; postsFilter.value = ''; rolesFilter.value = ''; orderBy.value = ''
@@ -705,9 +721,12 @@ function resetFilter() {
           <a-tag :color="statusColor[record.emp_status]">{{ record.emp_status || '-' }}</a-tag>
         </template>
         <template v-else-if="column.key === 'ops'">
-          <!-- 查看已删除时：只给"恢复"；正常列表：编辑/重置密码/删除 -->
+          <!-- 查看已删除时：恢复 + 彻底删除（物理删，释放角色占用）；正常列表：编辑/重置密码/删除 -->
           <div class="ops-btns">
-            <a-button v-if="showDeleted" type="primary" size="small" @click="restorePerson(record)">恢复</a-button>
+            <template v-if="showDeleted">
+              <a-button type="primary" size="small" @click="restorePerson(record)">恢复</a-button>
+              <a-button danger size="small" @click="permanentDeletePerson(record)">彻底删除</a-button>
+            </template>
             <template v-else>
               <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
               <a-button size="small" @click="resetPwd(record)">重置密码</a-button>
