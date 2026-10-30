@@ -7,6 +7,9 @@
 -- 关联：组织树数据预置见 sql/迁移_组织树服装厂.sql + sql/迁移_组织树按厂房重建.sql（厂→车间[厂房]→区域[工序]→小组，dept_category 区分；仓走库存模块不进组织树）
 -- 执行：psql -U zhizhun -d zhizhun_erp -f sql/主建表.sql
 -- 更新：2026-10-24
+-- 更新：2026-10-30（与线上库对齐：create_dept→create_org；sys_role.data_scope_dept_ids→data_scope_org_ids；
+--       补 sys_company.name_color、sys_user_menu_config.locked、新增 sys_org_manage 节；
+--       全部列注释补全，另见 sql/补齐注释_20261030.sql）
 -- ============================================================
 
 BEGIN;
@@ -21,7 +24,7 @@ CREATE TABLE IF NOT EXISTS sys_post_role (
     post_id     bigint       NOT NULL,                -- 岗位ID（→ sys_post.post_id）
     role_id     bigint       NOT NULL,                -- 角色ID（→ sys_role.role_id）
     sort        integer      NOT NULL DEFAULT 0,       -- 排序（同岗位多角色时带出顺序）
-    create_dept bigint,                                -- 创建部门
+    create_org  bigint,                                -- 创建部门（dept→org 全局改名后为 create_org）
     create_by   bigint,                                -- 创建者
     create_time timestamp    DEFAULT CURRENT_TIMESTAMP,
     update_by   bigint,                                -- 更新者
@@ -38,7 +41,7 @@ COMMENT ON TABLE  sys_post_role                IS '岗位默认角色关联表�
 COMMENT ON COLUMN sys_post_role.post_id        IS '岗位ID';
 COMMENT ON COLUMN sys_post_role.role_id        IS '角色ID';
 COMMENT ON COLUMN sys_post_role.sort           IS '同岗位多角色带出顺序';
-COMMENT ON COLUMN sys_post_role.create_dept    IS '创建部门（→ sys_org.org_id）';
+COMMENT ON COLUMN sys_post_role.create_org     IS '创建部门（→ sys_org.org_id）';
 COMMENT ON COLUMN sys_post_role.create_by      IS '创建者（→ sys_user.user_id）';
 COMMENT ON COLUMN sys_post_role.create_time    IS '创建时间';
 COMMENT ON COLUMN sys_post_role.update_by      IS '更新者（→ sys_user.user_id）';
@@ -51,10 +54,11 @@ CREATE INDEX IF NOT EXISTS idx_sys_post_role_role_id ON sys_post_role (role_id);
 -- 2. sys_role 扩展：数据范围支持"指定节点集合"（权限地基 2.2 第 3 种）
 --    RuoYi 内置 data_scope 取值：1全数据 2本部门 3本部门及以下 4仅本人 5自定义
 --    织云扩展第 6 种：6指定节点集合（跨部门协作，如总监/计划部跨车间排产）
---    data_scope=6 时，本列存逗号分隔的 sys_dept.dept_id 集合
+--    data_scope=6 时，本列存逗号分隔的 sys_org.org_id 集合
+--    （2026-10-30 同步：dept→org 全局改名后，线上列为 data_scope_org_ids）
 -- ------------------------------------------------------------
-ALTER TABLE sys_role ADD COLUMN IF NOT EXISTS data_scope_dept_ids varchar(2000) DEFAULT '';
-COMMENT ON COLUMN sys_role.data_scope_dept_ids IS '数据范围=6(指定节点集合)时的部门ID集合，逗号分隔，→ sys_dept.dept_id';
+ALTER TABLE sys_role ADD COLUMN IF NOT EXISTS data_scope_org_ids varchar(2000) DEFAULT '';
+COMMENT ON COLUMN sys_role.data_scope_org_ids IS '数据范围=6(指定节点集合)时的组织节点ID集合，逗号分隔，→ sys_org.org_id';
 
 -- ------------------------------------------------------------
 -- 3. 内置敏感数据权限点（权限地基 3.4.2）
@@ -63,7 +67,7 @@ COMMENT ON COLUMN sys_role.data_scope_dept_ids IS '数据范围=6(指定节点�
 --    sys_menu：RuoYi 权限码表（菜单/按钮/接口），type=M菜单 F按钮 C列权限
 -- ------------------------------------------------------------
 -- 3.1 归属"系统管理"一级菜单下（若不存在则建）
-INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_dept, create_by, create_time, update_by, update_time, remark)
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_org, create_by, create_time, update_by, update_time, remark)
 SELECT 1762300000000000001, '敏感人事数据', 5, 99, '', NULL, '', 1, 0, 'F', '1', '0', 'system:user:sensitive', '#', 1761000000000000003, 1761100000000000001, now(), NULL, NULL, '权限地基3.4：勾选=可看身份证/手机号/银行卡/工资明文，未勾=后端脱敏(权限点不参与并集)'
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:user:sensitive');
 
@@ -95,12 +99,13 @@ CREATE TABLE IF NOT EXISTS sys_company (
     login_bg_mode    char(1)       NOT NULL DEFAULT 'A',    -- A=铺满左侧品牌区 / B=铺满整页
     status           char(1)       NOT NULL DEFAULT '0',    -- 0正常 1停用
     del_flag         char(1)       DEFAULT '0',
-    create_dept      bigint,
+    create_org       bigint,
     create_by        bigint,
     create_time      timestamp     DEFAULT CURRENT_TIMESTAMP,
     update_by        bigint,
     update_time      timestamp,
     remark           varchar(500),
+    name_color       varchar(20)   DEFAULT '#FFFFFF',       -- 公司名文本颜色（hex 色值，登录页/首页展示用）
     CONSTRAINT sys_company_pk PRIMARY KEY (company_id),
     CONSTRAINT sys_company_logo_fk FOREIGN KEY (logo_oss_id)
         REFERENCES sys_oss (oss_id) ON DELETE SET NULL,
@@ -119,12 +124,13 @@ COMMENT ON COLUMN sys_company.slogan       IS '登录页宣传语（暂可空，
 COMMENT ON COLUMN sys_company.login_bg_mode IS '登录背景显示模式：A=铺满左侧品牌区叠加公司名(默认) / B=铺满整页登录卡片悬浮';
 COMMENT ON COLUMN sys_company.status       IS '状态：0正常/1停用';
 COMMENT ON COLUMN sys_company.del_flag     IS '删除标志：0存在/1删除';
-COMMENT ON COLUMN sys_company.create_dept  IS '创建部门（→ sys_org.org_id）';
+COMMENT ON COLUMN sys_company.create_org   IS '创建部门（→ sys_org.org_id）';
 COMMENT ON COLUMN sys_company.create_by    IS '创建者（→ sys_user.user_id）';
 COMMENT ON COLUMN sys_company.create_time  IS '创建时间';
 COMMENT ON COLUMN sys_company.update_by    IS '更新者（→ sys_user.user_id）';
 COMMENT ON COLUMN sys_company.update_time  IS '更新时间';
 COMMENT ON COLUMN sys_company.remark       IS '备注';
+COMMENT ON COLUMN sys_company.name_color   IS '公司名文本颜色（hex 色值，如 #FFFFFF，登录页/首页展示用）';
 
 -- 默认只允许一家默认展示公司（部分唯一索引，status=0 且 del_flag=0 生效）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_company_default
@@ -153,6 +159,7 @@ CREATE TABLE IF NOT EXISTS sys_user_menu_config (
     icon_size   int          NOT NULL DEFAULT 160,     -- 兼容旧列（=card_w），勿直接使用
     is_top      char(1)      NOT NULL DEFAULT '0',     -- 是否置顶 0否 1是
     in_workbench char(1)     NOT NULL DEFAULT '0',     -- 是否加入工作台 0否 1是
+    locked      char(1)      DEFAULT '1',              -- 卡片等比锁定 1锁定(正方形档位) 0解锁(可长方形)
     create_time timestamp    DEFAULT CURRENT_TIMESTAMP,
     update_time timestamp,
     CONSTRAINT sys_user_menu_config_pk PRIMARY KEY (user_id, menu_key)
@@ -167,6 +174,7 @@ COMMENT ON COLUMN sys_user_menu_config.card_h   IS '卡片高度（自由拉伸�
 COMMENT ON COLUMN sys_user_menu_config.icon_size IS '兼容旧列（=card_w）';
 COMMENT ON COLUMN sys_user_menu_config.is_top   IS '置顶 0否1是';
 COMMENT ON COLUMN sys_user_menu_config.in_workbench IS '加入工作台 0否1是';
+COMMENT ON COLUMN sys_user_menu_config.locked    IS '卡片等比锁定 1锁定(正方形档位) 0解锁(可长方形)';
 COMMENT ON COLUMN sys_user_menu_config.create_time  IS '创建时间';
 COMMENT ON COLUMN sys_user_menu_config.update_time  IS '更新时间';
 
@@ -245,7 +253,7 @@ CREATE TABLE IF NOT EXISTS sys_person_ext (
     -- 任职信息（车间=sys_user.dept_id；岗位/角色走 sys_user_post/sys_user_role）
     hire_date          date,                            -- 入职日期（必填）
     group_name         varchar(50),                     -- 小组名（文本冗余，展示/兼容用；权威关联看 group_id）
-    group_id           bigint,                          -- 小组关联=sys_dept.dept_id(dept_category='小组'，组织树厂→车间→区域→小组)
+    group_id           bigint,                          -- 小组关联=sys_org.org_id(org_category='小组'，组织树厂→车间→区域→小组)
     emp_type           varchar(20),                     -- 员工性质 正式/临时/劳务
     leave_date         date,                            -- 离职日期
     card_no            varchar(30),                     -- 员工卡（工牌号）
@@ -275,7 +283,7 @@ COMMENT ON COLUMN sys_person_ext.user_id      IS '主键=sys_user.user_id（员�
 COMMENT ON COLUMN sys_person_ext.cert_no      IS '证件号码（敏感，脱敏展示）';
 COMMENT ON COLUMN sys_person_ext.hire_date    IS '入职日期（必填）';
 COMMENT ON COLUMN sys_person_ext.group_name   IS '小组名（文本冗余，展示/兼容用）';
-COMMENT ON COLUMN sys_person_ext.group_id     IS '小组关联=sys_dept.dept_id（dept_category=小组；组织树 厂→车间→区域→小组，仓走库存模块不进组织树）';
+COMMENT ON COLUMN sys_person_ext.group_id     IS '小组关联（→ sys_org.org_id，org_category=小组；组织树 厂→车间→区域→小组，仓走库存模块不进组织树）';
 COMMENT ON COLUMN sys_person_ext.emp_status   IS '在职状态 试用/在职/离职/长假（状态机）';
 COMMENT ON COLUMN sys_person_ext.bank_card_no IS '银行卡号（敏感，脱敏展示）';
 COMMENT ON COLUMN sys_person_ext.has_social   IS '是否缴纳社保 0否1是（临工可0）';
@@ -310,7 +318,7 @@ COMMENT ON COLUMN sys_person_ext.update_time   IS '更新时间';
 --    部门(车间/组)=管人的组织，是"人"，坐落在建筑里。
 --    用途类别：厂房/行政楼/宿舍楼（**仓库是建筑内区域，不在此列**）。
 --    厂房一建筑=一一车间（一号厂房=一号车间，物理/管理两种称谓）。
---    关联：sys_dept 车间节点加 building_id 指向本表（只车间层关联，下面区域/组继承）。
+--    关联：sys_org 车间节点加 building_id 指向本表（只车间层关联，下面区域/组继承）。
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sys_building (
     plant_id       bigint       NOT NULL,                -- 建筑ID（列名沿用 plant_id）
@@ -349,6 +357,24 @@ COMMENT ON COLUMN sys_building.create_time IS '创建时间';
 COMMENT ON COLUMN sys_building.update_by   IS '更新者（→ sys_user.user_id）';
 COMMENT ON COLUMN sys_building.update_time IS '更新时间';
 
+-- ------------------------------------------------------------
+-- 11. 组织架构业务管辖表（2026-10-30 并入：线上已有，文件此前遗漏）
+--     管理部门与被管部门的多对多关联，表达"谁管谁"（如 生产部 管 一号车间），
+--     与组织树层级（厂→车间→区域→小组）无关。
+--     注：主键约束名沿用改名前 pk_sys_dept_manage（dept→org 全局改名时未重建约束名）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_org_manage (
+    manage_org_id  bigint       NOT NULL,                -- 管辖方部门ID（如生产部，→ sys_org.org_id）
+    managed_org_id bigint       NOT NULL,                -- 被管部门ID（如一号车间，→ sys_org.org_id）
+    create_time    timestamp,                             -- 创建时间
+    CONSTRAINT pk_sys_dept_manage PRIMARY KEY (manage_org_id, managed_org_id)
+);
+
+COMMENT ON TABLE  sys_org_manage              IS '组织架构业务管辖关联（管理部门与被管部门，多对多；与组织树层级无关，表达谁管谁）';
+COMMENT ON COLUMN sys_org_manage.manage_org_id   IS '管辖方部门ID（如生产部，→ sys_org.org_id）';
+COMMENT ON COLUMN sys_org_manage.managed_org_id  IS '被管部门ID（如一号车间，→ sys_org.org_id）';
+COMMENT ON COLUMN sys_org_manage.create_time     IS '创建时间';
+
 COMMIT;
 
 -- ============================================================
@@ -356,6 +382,6 @@ COMMIT;
 --   1. \d sys_post_role          -- 表已建
 --   2. SELECT perms FROM sys_menu WHERE perms='system:user:sensitive';  -- 1 行
 --   3. SELECT column_name FROM information_schema.columns
---      WHERE table_name='sys_role' AND column_name='data_scope_dept_ids';  -- 1 行
---   4. \d sys_user_menu_config / sys_user_workbench / sys_todo / sys_person_ext  -- 4 张新表
+--      WHERE table_name='sys_role' AND column_name='data_scope_org_ids';  -- 1 行
+--   4. \d sys_user_menu_config / sys_user_workbench / sys_todo / sys_person_ext / sys_org_manage  -- 5 张新表
 -- ============================================================
