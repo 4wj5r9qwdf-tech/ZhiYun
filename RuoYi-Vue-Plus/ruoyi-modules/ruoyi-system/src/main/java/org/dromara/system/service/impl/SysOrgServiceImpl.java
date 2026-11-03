@@ -317,7 +317,9 @@ public class SysOrgServiceImpl implements ISysOrgService, OrgService {
         if (parentId == null || parentId == 0L) {
             org.setParentId(0L);
             org.setAncestors("0");
-            return orgMapper.insert(org);
+            int inserted = orgMapper.insert(org);
+            bo.setOrgId(org.getOrgId());
+            return inserted;
         }
         SysOrg info = orgMapper.selectById(parentId);
         // 如果父节点不存在或不为正常状态,则不允许新增子节点
@@ -328,7 +330,9 @@ public class SysOrgServiceImpl implements ISysOrgService, OrgService {
             throw new ServiceException("部门停用，不允许新增");
         }
         org.setAncestors(info.getAncestors() + StringUtils.SEPARATOR + org.getParentId());
-        return orgMapper.insert(org);
+        int inserted = orgMapper.insert(org);
+        bo.setOrgId(org.getOrgId());
+        return inserted;
     }
 
     /**

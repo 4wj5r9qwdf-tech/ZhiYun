@@ -379,6 +379,118 @@ COMMENT ON COLUMN sys_org_manage.manage_org_id   IS '管辖方部门ID（如生�
 COMMENT ON COLUMN sys_org_manage.managed_org_id  IS '被管部门ID（如一号车间，→ sys_org.org_id）';
 COMMENT ON COLUMN sys_org_manage.create_time     IS '创建时间';
 
+-- ------------------------------------------------------------
+-- 15. 通用属性标签档案与业务记录关联
+--     模块隔离：同名标签可在不同模块分别存在
+--     不预置业务模块或标签；业务内首次输入标签时动态登记模块归属
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sys_tag_module (
+    module_key   varchar(50)   NOT NULL,
+    module_name  varchar(100)  NOT NULL,
+    create_by    bigint,
+    create_time  timestamp     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by    bigint,
+    update_time  timestamp,
+    CONSTRAINT sys_tag_module_pk PRIMARY KEY (module_key)
+);
+
+COMMENT ON TABLE sys_tag_module IS '动态标签归属模块目录；仅业务功能首次添加标签时自动登记，不预置空模块';
+COMMENT ON COLUMN sys_tag_module.module_key IS '业务功能提供的稳定模块标识';
+COMMENT ON COLUMN sys_tag_module.module_name IS '标签管理页面显示的业务模块名称';
+COMMENT ON COLUMN sys_tag_module.create_by IS '首次登记模块的操作人用户ID';
+COMMENT ON COLUMN sys_tag_module.create_time IS '模块归属首次登记时间';
+COMMENT ON COLUMN sys_tag_module.update_by IS '最后修改模块名称的操作人用户ID';
+COMMENT ON COLUMN sys_tag_module.update_time IS '模块归属最后修改时间';
+
+CREATE SEQUENCE IF NOT EXISTS sys_tag_id_seq;
+COMMENT ON SEQUENCE sys_tag_id_seq IS '通用标签档案主键序列';
+
+CREATE TABLE IF NOT EXISTS sys_tag (
+    tag_id       bigint        NOT NULL DEFAULT nextval('sys_tag_id_seq'),
+    module_key   varchar(50)   NOT NULL,
+    tag_name     varchar(100)  NOT NULL,
+    is_common    char(1)       NOT NULL DEFAULT '0',
+    status       char(1)       NOT NULL DEFAULT '0',
+    create_by    bigint,
+    create_time  timestamp     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by    bigint,
+    update_time  timestamp,
+    remark       varchar(500),
+    CONSTRAINT sys_tag_pk PRIMARY KEY (tag_id),
+    CONSTRAINT sys_tag_module_fk FOREIGN KEY (module_key)
+        REFERENCES sys_tag_module (module_key)
+);
+DO $$
+DECLARE
+    tag_table_owner text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO tag_table_owner
+    FROM pg_class WHERE oid = 'sys_tag'::regclass;
+    EXECUTE format('ALTER SEQUENCE sys_tag_id_seq OWNER TO %I', tag_table_owner);
+END $$;
+ALTER SEQUENCE sys_tag_id_seq OWNED BY sys_tag.tag_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_tag_module_name
+    ON sys_tag (module_key, lower(tag_name));
+CREATE INDEX IF NOT EXISTS idx_sys_tag_module_status
+    ON sys_tag (module_key, status, is_common);
+
+COMMENT ON TABLE sys_tag IS '通用属性标签档案；按模块命名空间隔离';
+COMMENT ON COLUMN sys_tag.tag_id IS '标签档案主键，由 PostgreSQL 序列生成';
+COMMENT ON COLUMN sys_tag.module_key IS '标签命名空间模块标识';
+COMMENT ON COLUMN sys_tag.tag_name IS '标签名称；所属模块名称通过 module_key 关联 sys_tag_module 获取';
+COMMENT ON COLUMN sys_tag.is_common IS '是否作为常用提示：0否/1是';
+COMMENT ON COLUMN sys_tag.status IS '状态：0正常/1停用';
+COMMENT ON COLUMN sys_tag.create_by IS '创建人用户ID';
+COMMENT ON COLUMN sys_tag.create_time IS '创建时间';
+COMMENT ON COLUMN sys_tag.update_by IS '最后修改人用户ID';
+COMMENT ON COLUMN sys_tag.update_time IS '最后修改时间';
+COMMENT ON COLUMN sys_tag.remark IS '标签维护备注';
+
+CREATE TABLE IF NOT EXISTS sys_tag_relation (
+    module_key   varchar(50) NOT NULL,
+    record_id    bigint      NOT NULL,
+    tag_id       bigint      NOT NULL,
+    create_by    bigint,
+    create_time  timestamp   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT sys_tag_relation_pk PRIMARY KEY (module_key, record_id, tag_id),
+    CONSTRAINT sys_tag_relation_tag_fk FOREIGN KEY (tag_id)
+        REFERENCES sys_tag (tag_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sys_tag_relation_tag
+    ON sys_tag_relation (module_key, tag_id);
+COMMENT ON TABLE sys_tag_relation IS '通用属性标签与业务记录关联；业务表由module_key区分';
+COMMENT ON COLUMN sys_tag_relation.record_id IS '业务记录ID';
+COMMENT ON COLUMN sys_tag_relation.module_key IS '业务模块命名空间';
+COMMENT ON COLUMN sys_tag_relation.tag_id IS '标签档案ID';
+COMMENT ON COLUMN sys_tag_relation.create_by IS '建立关联的操作人用户ID';
+COMMENT ON COLUMN sys_tag_relation.create_time IS '标签与业务记录建立关联的时间';
+
+-- 兼容重复执行主建表脚本以及从旧版毫秒ID迁移的数据库；新标签从当前最大ID之后取值。
+SELECT setval(
+    'sys_tag_id_seq',
+    GREATEST(
+        COALESCE((SELECT MAX(tag_id) FROM sys_tag), 0) + 1,
+        (SELECT last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM sys_tag_id_seq)
+    ),
+    false
+);
+
+-- 标签管理权限点，挂系统管理一级菜单
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_org, create_by, create_time, update_by, update_time, remark)
+SELECT 1762400000000000101, '标签查询', 5, 100, '#', '', '', 'N', 'Y', 'F', '0', '0', 'system:tag:list', '#', 1761000000000000003, 1761100000000000001, now(), NULL, NULL, '通用标签档案查询'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:list');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_org, create_by, create_time, update_by, update_time, remark)
+SELECT 1762400000000000102, '标签新增', 5, 101, '#', '', '', 'N', 'Y', 'F', '0', '0', 'system:tag:add', '#', 1761000000000000003, 1761100000000000001, now(), NULL, NULL, '通用标签档案新增'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:add');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_org, create_by, create_time, update_by, update_time, remark)
+SELECT 1762400000000000103, '标签修改', 5, 102, '#', '', '', 'N', 'Y', 'F', '0', '0', 'system:tag:edit', '#', 1761000000000000003, 1761100000000000001, now(), NULL, NULL, '通用标签档案修改'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:edit');
+INSERT INTO sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query_param, is_frame, is_cache, menu_type, visible, status, perms, icon, create_org, create_by, create_time, update_by, update_time, remark)
+SELECT 1762400000000000104, '标签停用', 5, 103, '#', '', '', 'N', 'Y', 'F', '0', '0', 'system:tag:remove', '#', 1761000000000000003, 1761100000000000001, now(), NULL, NULL, '通用标签停用（软停用）'
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:remove');
+
 COMMIT;
 
 -- ============================================================
@@ -389,3 +501,546 @@ COMMIT;
 --      WHERE table_name='sys_role' AND column_name='data_scope_org_ids';  -- 1 行
 --   4. \d sys_user_menu_config / sys_user_workbench / sys_todo / sys_person_ext / sys_org_manage  -- 5 张新表
 -- ============================================================
+
+
+-- 客户档案一期增量迁移。使用序列生成稳定客户编号，不删除历史记录。
+BEGIN;
+CREATE SEQUENCE IF NOT EXISTS customer_code_seq;
+CREATE TABLE IF NOT EXISTS customer_master (
+ customer_id bigserial PRIMARY KEY,
+ customer_code varchar(50) NOT NULL UNIQUE DEFAULT ('KH' || lpad(nextval('customer_code_seq')::text,8,'0')),
+ customer_name varchar(200) NOT NULL,
+ unified_social_credit_code varchar(18),
+ customer_short_name varchar(100),
+ country_region varchar(100),
+ sales_representative_id bigint NOT NULL,
+ status char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1')),
+ remark varchar(2000),
+ create_by bigint,
+ create_time timestamp NOT NULL DEFAULT now(),
+ update_by bigint,
+ update_time timestamp
+);
+COMMENT ON TABLE customer_master IS '客户档案；供订单及样衣引用，停用不改变历史单据';
+COMMENT ON COLUMN customer_master.customer_id IS '客户主键';
+COMMENT ON COLUMN customer_master.customer_code IS '系统自动生成的稳定客户编号';
+COMMENT ON COLUMN customer_master.customer_name IS '客户名称；允许同名，保存前提醒';
+COMMENT ON COLUMN customer_master.unified_social_credit_code IS '统一社会信用代码；境外客户可空';
+COMMENT ON COLUMN customer_master.customer_short_name IS '客户简称';
+COMMENT ON COLUMN customer_master.country_region IS '国家地区，手动录入';
+COMMENT ON COLUMN customer_master.sales_representative_id IS '业务员，关联人员信息，不校验特定岗位';
+COMMENT ON COLUMN customer_master.status IS '状态：0启用，1停用；停用仅禁止新增业务引用';
+COMMENT ON COLUMN customer_master.remark IS '备注';
+COMMENT ON COLUMN customer_master.create_by IS '创建人用户ID';
+COMMENT ON COLUMN customer_master.create_time IS '创建时间';
+COMMENT ON COLUMN customer_master.update_by IS '更新人用户ID';
+COMMENT ON COLUMN customer_master.update_time IS '更新时间';
+CREATE INDEX IF NOT EXISTS idx_customer_master_name ON customer_master(lower(customer_name));
+CREATE TABLE IF NOT EXISTS customer_contact (
+ contact_id bigserial PRIMARY KEY,
+ customer_id bigint NOT NULL REFERENCES customer_master(customer_id),
+ contact_name varchar(100) NOT NULL,
+ contact_title varchar(100),
+ phone_number varchar(100),
+ email varchar(200),
+ contact_role varchar(100),
+ is_primary boolean NOT NULL DEFAULT false
+);
+COMMENT ON TABLE customer_contact IS '客户多联系人';
+COMMENT ON COLUMN customer_contact.contact_id IS '联系人主键';
+COMMENT ON COLUMN customer_contact.customer_id IS '所属客户ID';
+COMMENT ON COLUMN customer_contact.contact_name IS '联系人姓名';
+COMMENT ON COLUMN customer_contact.contact_title IS '联系人职务';
+COMMENT ON COLUMN customer_contact.phone_number IS '联系电话或手机';
+COMMENT ON COLUMN customer_contact.email IS '电子邮箱';
+COMMENT ON COLUMN customer_contact.contact_role IS '联系人用途，手动填写';
+COMMENT ON COLUMN customer_contact.is_primary IS '是否默认联系人，每客户最多一位';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_primary_contact ON customer_contact(customer_id) WHERE is_primary;
+CREATE TABLE IF NOT EXISTS customer_address (
+ address_id bigserial PRIMARY KEY,
+ customer_id bigint NOT NULL REFERENCES customer_master(customer_id),
+ address_type varchar(100) NOT NULL,
+ recipient_name varchar(100),
+ recipient_phone varchar(100),
+ country_region varchar(100),
+ province varchar(100),
+ city varchar(100),
+ district varchar(100),
+ address_line varchar(500),
+ postal_code varchar(30),
+ is_default boolean NOT NULL DEFAULT false
+);
+COMMENT ON TABLE customer_address IS '客户多地址，地区和地址手工录入';
+COMMENT ON COLUMN customer_address.address_id IS '地址主键';
+COMMENT ON COLUMN customer_address.customer_id IS '所属客户ID';
+COMMENT ON COLUMN customer_address.address_type IS '地址用途';
+COMMENT ON COLUMN customer_address.recipient_name IS '收件人';
+COMMENT ON COLUMN customer_address.recipient_phone IS '收件电话';
+COMMENT ON COLUMN customer_address.country_region IS '国家地区';
+COMMENT ON COLUMN customer_address.province IS '省或州';
+COMMENT ON COLUMN customer_address.city IS '城市';
+COMMENT ON COLUMN customer_address.district IS '区县';
+COMMENT ON COLUMN customer_address.address_line IS '详细地址';
+COMMENT ON COLUMN customer_address.postal_code IS '邮政编码';
+COMMENT ON COLUMN customer_address.is_default IS '是否该用途的默认地址';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_default_address ON customer_address(customer_id,address_type) WHERE is_default;
+-- 独立权限条目供角色管理勾选；不自动向现有普通角色授予客户权限。
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000201,'客户查询',5,110,'#','','N','Y','F','0','0','system:customer:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:customer:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000202,'客户新增',5,111,'#','','N','Y','F','0','0','system:customer:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:customer:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000203,'客户修改与启停',5,112,'#','','N','Y','F','0','0','system:customer:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:customer:edit');
+COMMIT;
+
+-- 国家/地区基础资料及客户档案地区编码迁移。
+-- 基础名称取自本机 iso-codes 的 ISO 3166-1 两位编码和中文翻译；可在系统中维护。
+-- 保留客户/地址原手填文本；仅对名称或编码唯一匹配的数据填写标准编码。
+BEGIN;
+CREATE TABLE IF NOT EXISTS sys_country_region (
+ country_code varchar(12) PRIMARY KEY,
+ name_zh varchar(100) NOT NULL,
+ name_en varchar(200) NOT NULL DEFAULT '',
+ status char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1')),
+ create_by bigint,
+ create_time timestamp NOT NULL DEFAULT now(),
+ update_by bigint,
+ update_time timestamp,
+ CONSTRAINT ck_country_region_code CHECK (country_code ~ '^[A-Z][A-Z0-9_-]{1,11}$')
+);
+COMMENT ON TABLE sys_country_region IS '国家和地区基础资料：编码稳定，供客户、订单目的地和发货目的地分别引用';
+COMMENT ON COLUMN sys_country_region.country_code IS '国家或地区稳定编码；初始数据使用 ISO 3166-1 两位编码，新增后不可修改';
+COMMENT ON COLUMN sys_country_region.name_zh IS '国家或地区中文显示名称';
+COMMENT ON COLUMN sys_country_region.name_en IS '国家或地区英文名称，用于显示与检索';
+COMMENT ON COLUMN sys_country_region.status IS '状态：0启用、1停用；停用不改变历史引用';
+COMMENT ON COLUMN sys_country_region.create_by IS '创建人用户ID';
+COMMENT ON COLUMN sys_country_region.create_time IS '创建时间';
+COMMENT ON COLUMN sys_country_region.update_by IS '最后修改人用户ID';
+COMMENT ON COLUMN sys_country_region.update_time IS '最后修改时间';
+
+INSERT INTO sys_country_region(country_code,name_zh,name_en) VALUES
+  ('AD','安道尔','Andorra'),
+  ('AE','阿联酋','United Arab Emirates'),
+  ('AF','阿富汗','Afghanistan'),
+  ('AG','安提瓜和巴布达','Antigua and Barbuda'),
+  ('AI','安圭拉','Anguilla'),
+  ('AL','阿尔巴尼亚','Albania'),
+  ('AM','亚美尼亚','Armenia'),
+  ('AO','安哥拉','Angola'),
+  ('AQ','南极洲','Antarctica'),
+  ('AR','阿根廷','Argentina'),
+  ('AS','美属萨摩亚','American Samoa'),
+  ('AT','奥地利','Austria'),
+  ('AU','澳大利亚','Australia'),
+  ('AW','阿鲁巴','Aruba'),
+  ('AX','奥兰群岛','Åland Islands'),
+  ('AZ','阿塞拜疆','Azerbaijan'),
+  ('BA','波斯尼亚和黑塞哥维那','Bosnia and Herzegovina'),
+  ('BB','巴巴多斯','Barbados'),
+  ('BD','孟加拉','Bangladesh'),
+  ('BE','比利时','Belgium'),
+  ('BF','布基纳法索','Burkina Faso'),
+  ('BG','保加利亚','Bulgaria'),
+  ('BH','巴林','Bahrain'),
+  ('BI','布隆迪','Burundi'),
+  ('BJ','贝宁','Benin'),
+  ('BL','圣巴泰勒米岛','Saint Barthélemy'),
+  ('BM','百慕大','Bermuda'),
+  ('BN','文莱','Brunei Darussalam'),
+  ('BO','玻利维亚共和国','Bolivia, Plurinational State of'),
+  ('BQ','博奈尔、圣尤斯特歇斯岛和萨巴','Bonaire, Sint Eustatius and Saba'),
+  ('BR','巴西','Brazil'),
+  ('BS','巴哈马','Bahamas'),
+  ('BT','不丹','Bhutan'),
+  ('BV','布维群岛','Bouvet Island'),
+  ('BW','博兹瓦那','Botswana'),
+  ('BY','白俄罗斯','Belarus'),
+  ('BZ','伯利兹','Belize'),
+  ('CA','加拿大','Canada'),
+  ('CC','科科斯群岛','Cocos (Keeling) Islands'),
+  ('CD','刚果民主共和国','Congo, The Democratic Republic of the'),
+  ('CF','中非','Central African Republic'),
+  ('CG','刚果','Congo'),
+  ('CH','瑞士','Switzerland'),
+  ('CI','科特迪瓦','Côte d''Ivoire'),
+  ('CK','库克群岛','Cook Islands'),
+  ('CL','智利','Chile'),
+  ('CM','喀麦隆','Cameroon'),
+  ('CN','中国','China'),
+  ('CO','哥伦比亚','Colombia'),
+  ('CR','哥斯达黎加','Costa Rica'),
+  ('CU','古巴','Cuba'),
+  ('CV','佛得角','Cabo Verde'),
+  ('CW','库拉索','Curaçao'),
+  ('CX','圣诞岛','Christmas Island'),
+  ('CY','塞浦路斯','Cyprus'),
+  ('CZ','捷克','Czechia'),
+  ('DE','德国','Germany'),
+  ('DJ','吉布提','Djibouti'),
+  ('DK','丹麦','Denmark'),
+  ('DM','多米尼克','Dominica'),
+  ('DO','多米尼加共和国','Dominican Republic'),
+  ('DZ','阿尔及利亚','Algeria'),
+  ('EC','厄瓜多尔','Ecuador'),
+  ('EE','爱沙尼亚','Estonia'),
+  ('EG','埃及','Egypt'),
+  ('EH','西撒哈拉','Western Sahara'),
+  ('ER','厄立特里亚','Eritrea'),
+  ('ES','西班牙','Spain'),
+  ('ET','埃塞俄比亚','Ethiopia'),
+  ('FI','芬兰','Finland'),
+  ('FJ','斐济','Fiji'),
+  ('FK','福克兰群岛(马尔维纳斯)','Falkland Islands (Malvinas)'),
+  ('FM','密克罗尼西亚','Micronesia, Federated States of'),
+  ('FO','法罗群岛','Faroe Islands'),
+  ('FR','法国','France'),
+  ('GA','加蓬','Gabon'),
+  ('GB','英国','United Kingdom'),
+  ('GD','格林纳达','Grenada'),
+  ('GE','格鲁吉亚','Georgia'),
+  ('GF','法属圭亚那','French Guiana'),
+  ('GG','根西岛','Guernsey'),
+  ('GH','加纳','Ghana'),
+  ('GI','直布罗陀','Gibraltar'),
+  ('GL','格陵兰','Greenland'),
+  ('GM','冈比亚','Gambia'),
+  ('GN','几内亚','Guinea'),
+  ('GP','瓜德罗普','Guadeloupe'),
+  ('GQ','赤道几内亚','Equatorial Guinea'),
+  ('GR','希腊','Greece'),
+  ('GS','南乔治亚岛和南桑德韦奇岛','South Georgia and the South Sandwich Islands'),
+  ('GT','瓜地马拉','Guatemala'),
+  ('GU','关岛','Guam'),
+  ('GW','几内亚比绍','Guinea-Bissau'),
+  ('GY','圭亚那','Guyana'),
+  ('HK','香港','Hong Kong'),
+  ('HM','赫德岛与麦克唐纳群岛','Heard Island and McDonald Islands'),
+  ('HN','洪都拉斯','Honduras'),
+  ('HR','克罗地亚','Croatia'),
+  ('HT','海地','Haiti'),
+  ('HU','匈牙利','Hungary'),
+  ('ID','印度尼西亚','Indonesia'),
+  ('IE','爱尔兰','Ireland'),
+  ('IL','以色列','Israel'),
+  ('IM','曼岛','Isle of Man'),
+  ('IN','印度','India'),
+  ('IO','英属印度洋领地','British Indian Ocean Territory'),
+  ('IQ','伊拉克','Iraq'),
+  ('IR','伊朗伊斯兰共和国','Iran, Islamic Republic of'),
+  ('IS','冰岛','Iceland'),
+  ('IT','意大利','Italy'),
+  ('JE','泽西岛','Jersey'),
+  ('JM','牙买加','Jamaica'),
+  ('JO','约旦','Jordan'),
+  ('JP','日本','Japan'),
+  ('KE','肯尼亚','Kenya'),
+  ('KG','吉尔吉斯坦','Kyrgyzstan'),
+  ('KH','柬埔塞','Cambodia'),
+  ('KI','基里巴斯','Kiribati'),
+  ('KM','科摩罗','Comoros'),
+  ('KN','圣基茨和尼维斯','Saint Kitts and Nevis'),
+  ('KP','朝鲜民主主义人民共和国','Korea, Democratic People''s Republic of'),
+  ('KR','大韩民国','Korea, Republic of'),
+  ('KW','科威特','Kuwait'),
+  ('KY','开曼群岛','Cayman Islands'),
+  ('KZ','哈萨克斯坦','Kazakhstan'),
+  ('LA','老挝人民民主共和国','Lao People''s Democratic Republic'),
+  ('LB','黎巴嫩','Lebanon'),
+  ('LC','圣路西亚','Saint Lucia'),
+  ('LI','列支敦士登','Liechtenstein'),
+  ('LK','斯里兰卡','Sri Lanka'),
+  ('LR','利比里亚','Liberia'),
+  ('LS','莱索托','Lesotho'),
+  ('LT','立陶宛','Lithuania'),
+  ('LU','卢森堡','Luxembourg'),
+  ('LV','拉脱维亚','Latvia'),
+  ('LY','利比亚','Libya'),
+  ('MA','摩洛哥','Morocco'),
+  ('MC','摩纳哥','Monaco'),
+  ('MD','摩尔多瓦共和国','Moldova, Republic of'),
+  ('ME','黑山','Montenegro'),
+  ('MF','法属圣马丁','Saint Martin (French part)'),
+  ('MG','马达加斯加','Madagascar'),
+  ('MH','马绍尔群岛','Marshall Islands'),
+  ('MK','北马其顿','North Macedonia'),
+  ('ML','马里','Mali'),
+  ('MM','缅甸','Myanmar'),
+  ('MN','蒙古','Mongolia'),
+  ('MO','澳门','Macao'),
+  ('MP','北马里亚纳群岛','Northern Mariana Islands'),
+  ('MQ','马提尼克','Martinique'),
+  ('MR','毛里塔尼亚','Mauritania'),
+  ('MS','蒙塞拉特岛','Montserrat'),
+  ('MT','马尔他','Malta'),
+  ('MU','毛里求斯','Mauritius'),
+  ('MV','马尔代夫','Maldives'),
+  ('MW','马拉维','Malawi'),
+  ('MX','墨西哥','Mexico'),
+  ('MY','马来西亚','Malaysia'),
+  ('MZ','莫桑比克','Mozambique'),
+  ('NA','纳米比亚','Namibia'),
+  ('NC','新喀里多尼亚','New Caledonia'),
+  ('NE','尼日尔','Niger'),
+  ('NF','诺福克岛','Norfolk Island'),
+  ('NG','尼日利亚','Nigeria'),
+  ('NI','尼加拉瓜','Nicaragua'),
+  ('NL','荷兰','Netherlands'),
+  ('NO','挪威','Norway'),
+  ('NP','尼泊尔','Nepal'),
+  ('NR','瑙鲁','Nauru'),
+  ('NU','纽埃','Niue'),
+  ('NZ','新西兰','New Zealand'),
+  ('OM','阿曼','Oman'),
+  ('PA','巴拿马','Panama'),
+  ('PE','秘鲁','Peru'),
+  ('PF','法属玻利尼西亚','French Polynesia'),
+  ('PG','巴布亚新几内亚','Papua New Guinea'),
+  ('PH','菲律宾','Philippines'),
+  ('PK','巴基斯坦','Pakistan'),
+  ('PL','波兰','Poland'),
+  ('PM','圣皮埃尔和密克隆','Saint Pierre and Miquelon'),
+  ('PN','皮特克恩','Pitcairn'),
+  ('PR','波多黎各','Puerto Rico'),
+  ('PS','巴勒斯坦','Palestine, State of'),
+  ('PT','葡萄牙','Portugal'),
+  ('PW','帕劳','Palau'),
+  ('PY','巴拉圭','Paraguay'),
+  ('QA','卡塔尔','Qatar'),
+  ('RE','留尼汪','Réunion'),
+  ('RO','罗马尼亚','Romania'),
+  ('RS','塞尔维亚','Serbia'),
+  ('RU','俄罗斯','Russian Federation'),
+  ('RW','卢旺达','Rwanda'),
+  ('SA','沙特阿拉伯','Saudi Arabia'),
+  ('SB','所罗门群岛','Solomon Islands'),
+  ('SC','塞舌尔','Seychelles'),
+  ('SD','苏丹','Sudan'),
+  ('SE','瑞典','Sweden'),
+  ('SG','新加坡','Singapore'),
+  ('SH','圣赫勒拿-阿森松-特里斯坦达库尼亚','Saint Helena, Ascension and Tristan da Cunha'),
+  ('SI','斯洛文尼亚','Slovenia'),
+  ('SJ','斯瓦尔巴特和扬马延岛','Svalbard and Jan Mayen'),
+  ('SK','斯洛伐克','Slovakia'),
+  ('SL','塞拉利昂','Sierra Leone'),
+  ('SM','圣马力诺市','San Marino'),
+  ('SN','塞内加尔','Senegal'),
+  ('SO','索马里','Somalia'),
+  ('SR','苏里南','Suriname'),
+  ('SS','南苏丹','South Sudan'),
+  ('ST','圣多美和普林西比','Sao Tome and Principe'),
+  ('SV','萨尔瓦多','El Salvador'),
+  ('SX','荷属圣马丁','Sint Maarten (Dutch part)'),
+  ('SY','阿拉伯叙利亚共和国','Syrian Arab Republic'),
+  ('SZ','斯威士兰','Eswatini'),
+  ('TC','特克斯和凯科斯群岛','Turks and Caicos Islands'),
+  ('TD','乍得','Chad'),
+  ('TF','法属南半球领地','French Southern Territories'),
+  ('TG','多哥','Togo'),
+  ('TH','泰国','Thailand'),
+  ('TJ','塔吉克斯坦','Tajikistan'),
+  ('TK','托克劳','Tokelau'),
+  ('TL','东帝汶','Timor-Leste'),
+  ('TM','土库曼斯坦','Turkmenistan'),
+  ('TN','突尼斯','Tunisia'),
+  ('TO','汤加','Tonga'),
+  ('TR','土耳其','Türkiye'),
+  ('TT','特里尼达和多巴哥','Trinidad and Tobago'),
+  ('TV','图瓦卢','Tuvalu'),
+  ('TW','中国台湾省','Taiwan, Province of China'),
+  ('TZ','坦桑尼亚','Tanzania, United Republic of'),
+  ('UA','乌克兰','Ukraine'),
+  ('UG','乌干达','Uganda'),
+  ('UM','美国本土外小岛屿','United States Minor Outlying Islands'),
+  ('US','美国','United States'),
+  ('UY','乌拉圭','Uruguay'),
+  ('UZ','乌兹别克斯坦','Uzbekistan'),
+  ('VA','梵地冈','Holy See (Vatican City State)'),
+  ('VC','圣文森特和格林纳丁斯','Saint Vincent and the Grenadines'),
+  ('VE','委内瑞拉玻利瓦尔共和国','Venezuela, Bolivarian Republic of'),
+  ('VG','英属维尔京群岛','Virgin Islands, British'),
+  ('VI','美属维尔京群岛','Virgin Islands, U.S.'),
+  ('VN','越南','Viet Nam'),
+  ('VU','瓦努阿图','Vanuatu'),
+  ('WF','瓦利斯和富图纳','Wallis and Futuna'),
+  ('WS','萨摩亚','Samoa'),
+  ('YE','也门','Yemen'),
+  ('YT','马约特','Mayotte'),
+  ('ZA','南非','South Africa'),
+  ('ZM','赞比亚','Zambia'),
+  ('ZW','津巴布韦','Zimbabwe')
+ON CONFLICT (country_code) DO NOTHING;
+
+ALTER TABLE customer_master ADD COLUMN IF NOT EXISTS country_region_code varchar(12);
+ALTER TABLE customer_address ADD COLUMN IF NOT EXISTS country_region_code varchar(12);
+COMMENT ON COLUMN customer_master.country_region_code IS '客户所在国家/地区编码，关联 sys_country_region；与订单目的地分开';
+COMMENT ON COLUMN customer_address.country_region_code IS '该地址的国家/地区编码，关联 sys_country_region；与订单目的地分开';
+COMMENT ON COLUMN customer_master.country_region IS '客户所在国家/地区名称快照及历史手填值；无法唯一匹配时保留原文';
+COMMENT ON COLUMN customer_address.country_region IS '地址国家/地区名称快照及历史手填值；无法唯一匹配时保留原文';
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='customer_master'::regclass AND conname='fk_customer_country_region') THEN
+   ALTER TABLE customer_master ADD CONSTRAINT fk_customer_country_region FOREIGN KEY (country_region_code) REFERENCES sys_country_region(country_code);
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='customer_address'::regclass AND conname='fk_customer_address_country_region') THEN
+   ALTER TABLE customer_address ADD CONSTRAINT fk_customer_address_country_region FOREIGN KEY (country_region_code) REFERENCES sys_country_region(country_code);
+ END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_customer_country_region ON customer_master(country_region_code);
+CREATE INDEX IF NOT EXISTS idx_customer_address_country_region ON customer_address(country_region_code);
+
+-- 只匹配唯一的中文名、英文名或编码；不确定的旧值继续保留，交由用户在编辑时选择。
+WITH matches AS (
+ SELECT c.customer_id, min(r.country_code) AS code FROM customer_master c
+ JOIN sys_country_region r ON lower(trim(c.country_region)) IN (lower(r.name_zh),lower(r.name_en),lower(r.country_code))
+ WHERE c.country_region_code IS NULL AND nullif(trim(c.country_region),'') IS NOT NULL
+ GROUP BY c.customer_id HAVING count(*)=1
+) UPDATE customer_master c SET country_region_code=m.code FROM matches m WHERE c.customer_id=m.customer_id;
+WITH matches AS (
+ SELECT a.address_id, min(r.country_code) AS code FROM customer_address a
+ JOIN sys_country_region r ON lower(trim(a.country_region)) IN (lower(r.name_zh),lower(r.name_en),lower(r.country_code))
+ WHERE a.country_region_code IS NULL AND nullif(trim(a.country_region),'') IS NOT NULL
+ GROUP BY a.address_id HAVING count(*)=1
+) UPDATE customer_address a SET country_region_code=m.code FROM matches m WHERE a.address_id=m.address_id;
+
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000301,'国家地区查询',5,120,'#','','N','Y','F','0','0','system:country:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:country:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000302,'国家地区新增',5,121,'#','','N','Y','F','0','0','system:country:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:country:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000303,'国家地区修改与启停',5,122,'#','','N','Y','F','0','0','system:country:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:country:edit');
+COMMIT;
+
+-- 客户删除权限，单独授予角色。
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000204,'客户删除',5,113,'#','','N','Y','F','0','0','system:customer:remove','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:customer:remove');
+
+CREATE TABLE IF NOT EXISTS sys_size (
+ id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ code varchar(40) NOT NULL UNIQUE DEFAULT ('SZ' || replace(gen_random_uuid()::text,'-','')),
+ name varchar(100) NOT NULL CHECK(length(trim(name))>0),
+ name_en varchar(200) NOT NULL DEFAULT '',
+ sort_order integer NOT NULL DEFAULT 0,
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(2000) NOT NULL DEFAULT '',
+ create_by bigint, create_time timestamptz NOT NULL DEFAULT now(),
+ update_by bigint, update_time timestamptz
+);
+COMMENT ON TABLE sys_size IS '尺码基础档案，停用保留历史引用';
+COMMENT ON COLUMN sys_size.id IS '稳定主键';
+COMMENT ON COLUMN sys_size.code IS '系统生成的稳定编号';
+COMMENT ON COLUMN sys_size.name IS '尺码名称';
+COMMENT ON COLUMN sys_size.name_en IS '英文名称';
+COMMENT ON COLUMN sys_size.sort_order IS '显示排序';
+COMMENT ON COLUMN sys_size.status IS '状态：0启用，1停用';
+COMMENT ON COLUMN sys_size.remark IS '备注';
+COMMENT ON COLUMN sys_size.create_by IS '创建人用户ID';
+COMMENT ON COLUMN sys_size.create_time IS '创建时间';
+COMMENT ON COLUMN sys_size.update_by IS '更新人用户ID';
+COMMENT ON COLUMN sys_size.update_time IS '更新时间';
+CREATE TABLE IF NOT EXISTS sys_size_group (
+ id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ code varchar(40) NOT NULL UNIQUE DEFAULT ('SG' || replace(gen_random_uuid()::text,'-','')),
+ name varchar(100) NOT NULL CHECK(length(trim(name))>0),
+ name_en varchar(200) NOT NULL DEFAULT '',
+ sort_order integer NOT NULL DEFAULT 0,
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(2000) NOT NULL DEFAULT '',
+ create_by bigint, create_time timestamptz NOT NULL DEFAULT now(),
+ update_by bigint, update_time timestamptz
+);
+COMMENT ON TABLE sys_size_group IS '尺码组基础档案，停用保留历史引用';
+COMMENT ON COLUMN sys_size_group.id IS '稳定主键';
+COMMENT ON COLUMN sys_size_group.code IS '系统生成的稳定编号';
+COMMENT ON COLUMN sys_size_group.name IS '尺码组名称';
+COMMENT ON COLUMN sys_size_group.name_en IS '英文名称';
+COMMENT ON COLUMN sys_size_group.sort_order IS '显示排序';
+COMMENT ON COLUMN sys_size_group.status IS '状态：0启用，1停用';
+COMMENT ON COLUMN sys_size_group.remark IS '备注';
+COMMENT ON COLUMN sys_size_group.create_by IS '创建人用户ID';
+COMMENT ON COLUMN sys_size_group.create_time IS '创建时间';
+COMMENT ON COLUMN sys_size_group.update_by IS '更新人用户ID';
+COMMENT ON COLUMN sys_size_group.update_time IS '更新时间';
+CREATE TABLE IF NOT EXISTS sys_size_group_item (
+ group_id bigint NOT NULL REFERENCES sys_size_group(id),
+ size_id bigint NOT NULL REFERENCES sys_size(id),
+ sort_order integer NOT NULL,
+ PRIMARY KEY(group_id,size_id),
+ UNIQUE(group_id,sort_order)
+);
+COMMENT ON TABLE sys_size_group_item IS '尺码组有序尺码明细，同组禁止重复尺码';
+COMMENT ON COLUMN sys_size_group_item.group_id IS '所属尺码组ID';
+COMMENT ON COLUMN sys_size_group_item.size_id IS '尺码档案ID';
+COMMENT ON COLUMN sys_size_group_item.sort_order IS '组内排序，与尺码档案默认排序独立';
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000401,'尺码查询',5,130,'#','','N','Y','F','0','0','system:size:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000402,'尺码新增',5,131,'#','','N','Y','F','0','0','system:size:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000403,'尺码修改与启停',5,132,'#','','N','Y','F','0','0','system:size:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:edit');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000411,'尺码组查询',5,140,'#','','N','Y','F','0','0','system:size-group:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000412,'尺码组新增',5,141,'#','','N','Y','F','0','0','system:size-group:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000413,'尺码组修改与启停',5,142,'#','','N','Y','F','0','0','system:size-group:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:edit');
+
+-- 权限树整合：保留既有ID与角色关联，停用未接入的框架菜单，不删除记录。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000001,0,'订单',10,'order','','N','Y','M','0','0','','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000002,1761600000000000002,'系统维护权限（底座接口）',10,'maintenance','','N','Y','M','0','0','','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000010,1761600000000000002,'标签管理',10,'tag','','N','Y','C','0','0','system:tag:list','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000011,1761600000000000002,'国家/地区',10,'country-region','','N','Y','C','0','0','system:country:list','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000012,1761600000000000002,'尺码管理',10,'size','','N','Y','C','0','0','system:size:list','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000013,1761600000000000002,'尺码组管理',10,'size-group','','N','Y','C','0','0','system:size-group:list','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762500000000000014,1762500000000000001,'客户档案',10,'customer','','N','Y','C','0','0','system:customer:list','#',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,status='0';
+UPDATE sys_menu SET parent_id=1762500000000000010 WHERE perms LIKE 'system:tag:%' AND menu_id<>1762500000000000010;
+UPDATE sys_menu SET parent_id=1762500000000000011 WHERE perms LIKE 'system:country:%' AND menu_id<>1762500000000000011;
+UPDATE sys_menu SET parent_id=1762500000000000012 WHERE perms LIKE 'system:size:%' AND menu_id<>1762500000000000012;
+UPDATE sys_menu SET parent_id=1762500000000000013 WHERE perms LIKE 'system:size-group:%' AND menu_id<>1762500000000000013;
+UPDATE sys_menu SET parent_id=1762500000000000014 WHERE perms LIKE 'system:customer:%' AND menu_id<>1762500000000000014;
+UPDATE sys_menu SET parent_id=1762500000000000002 WHERE menu_id IN (1761400000000000102,1761400000000000105,1761400000000000106,1761400000000000108,1761400000000000118,1761400000000000133,1761400000000000123,1761400000000000109,1761400000000000113);
+-- 重复的文件配置入口合并到文件配置管理节点，保留操作权限ID。
+UPDATE sys_menu SET parent_id=1761400000000000133 WHERE parent_id=1761400000000000118 AND perms LIKE 'system:ossConfig:%';
+UPDATE sys_menu SET menu_name='人员信息' WHERE perms='system:person:list';
+UPDATE sys_menu SET menu_name='建筑档案' WHERE perms='system:building:list';
+WITH RECURSIVE retired AS (SELECT menu_id FROM sys_menu WHERE menu_id IN (1761400000000000001,1761400000000000002,1761400000000000003,1761400000000000004,1761400000000000005,1761400000000000006,1761400000000011616,1761400000000011618) UNION ALL SELECT m.menu_id FROM sys_menu m JOIN retired p ON m.parent_id=p.menu_id) UPDATE sys_menu SET status='1',visible='1' WHERE menu_id IN (SELECT menu_id FROM retired);
+-- 已有授权仍可到达合并后的父目录；不授予额外按钮权限。
+WITH RECURSIVE ancestors AS (
+ SELECT rm.role_id,m.parent_id AS menu_id FROM sys_role_menu rm JOIN sys_menu m ON m.menu_id=rm.menu_id WHERE m.status='0' AND m.parent_id<>0
+ UNION
+ SELECT a.role_id,m.parent_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE m.status='0' AND m.parent_id<>0
+)
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT a.role_id,a.menu_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id AND m.status='0'
+WHERE NOT EXISTS(SELECT 1 FROM sys_role_menu x WHERE x.role_id=a.role_id AND x.menu_id=a.menu_id);
+
+UPDATE sys_menu SET status='0',visible='0' WHERE menu_id=1761400000000000001; UPDATE sys_menu SET parent_id=1761400000000000001 WHERE parent_id=1761600000000000002; INSERT INTO sys_role_menu(role_id,menu_id) SELECT role_id,1761400000000000001 FROM sys_role_menu WHERE menu_id=1761600000000000002 ON CONFLICT DO NOTHING; UPDATE sys_menu SET status='1',visible='1' WHERE menu_id=1761600000000000002;
+
+-- 系统管理直接承载启用的维护功能。
+UPDATE sys_menu SET parent_id=1761400000000000001 WHERE parent_id=1762500000000000002;
+UPDATE sys_menu SET status='1',visible='1' WHERE menu_id=1762500000000000002;

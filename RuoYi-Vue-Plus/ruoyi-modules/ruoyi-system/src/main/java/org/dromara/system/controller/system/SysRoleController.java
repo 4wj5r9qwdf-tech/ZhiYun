@@ -40,6 +40,7 @@ import java.util.List;
 @RequestMapping("/system/role")
 public class SysRoleController extends BaseController {
 
+    private final org.springframework.jdbc.core.JdbcTemplate auditJdbc;
     private final ISysRoleService roleService;
     private final ISysUserService userService;
     private final ISysOrgService orgService;
@@ -92,6 +93,7 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:add")
     @Log(title = "角色管理", businessType = BusinessType.INSERT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PostMapping
     public R<Void> add(@Validated @RequestBody SysRoleBo role) {
@@ -101,7 +103,9 @@ public class SysRoleController extends BaseController {
         } else if (!roleService.checkRoleKeyUnique(role)) {
             return R.fail("新增角色'" + role.getRoleName() + "'失败，角色权限已存在");
         }
-        return toAjax(roleService.insertRole(role));
+        int auditResult = roleService.insertRole(role);
+        if (auditResult > 0) BusinessAudit.record("新增角色",role.getRoleId(),"名称",java.util.Map.of(),auditSnapshot(role.getRoleId(),false));
+        return toAjax(auditResult);
 
     }
 
@@ -113,6 +117,7 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping
     public R<Void> edit(@Validated @RequestBody SysRoleBo role) {
@@ -124,8 +129,10 @@ public class SysRoleController extends BaseController {
             return R.fail("修改角色'" + role.getRoleName() + "'失败，角色权限已存在");
         }
 
+        var auditBefore = auditSnapshot(role.getRoleId(),true);
         if (roleService.updateRoleBaseInfo(role) > 0) {
             SpringUtils.context().publishEvent(OnlineUserCleanEvent.byRole(role.getRoleId()));
+            BusinessAudit.record("修改角色",role.getRoleId(),"名称",auditBefore,auditSnapshot(role.getRoleId(),false));
             return R.ok();
         }
         return R.fail("修改角色'" + role.getRoleName() + "'失败，请联系管理员");
@@ -139,13 +146,16 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/permission")
     public R<Void> editPermission(@RequestBody SysRoleBo role) {
         roleService.checkRoleAllowed(role);
         roleService.checkRoleDataScope(role.getRoleId());
+        var auditBefore = auditSnapshot(role.getRoleId(),true);
         if (roleService.updateRolePermission(role) > 0) {
             SpringUtils.context().publishEvent(OnlineUserCleanEvent.byRole(role.getRoleId()));
+            BusinessAudit.record("调整角色权限",role.getRoleId(),"名称",auditBefore,auditSnapshot(role.getRoleId(),false));
             return R.ok();
         }
         return R.fail("修改角色'" + role.getRoleName() + "'权限失败，请联系管理员");
@@ -159,13 +169,16 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/changeStatus")
     public R<Void> changeStatus(@RequestBody SysRoleBo role) {
         roleService.checkRoleAllowed(role);
         roleService.checkRoleDataScope(role.getRoleId());
+        var auditBefore = auditSnapshot(role.getRoleId(),true);
         if (roleService.updateRoleStatus(role.getRoleId(), role.getStatus()) > 0) {
             SpringUtils.context().publishEvent(OnlineUserCleanEvent.byRole(role.getRoleId()));
+            BusinessAudit.record("变更角色状态",role.getRoleId(),"名称",auditBefore,auditSnapshot(role.getRoleId(),false));
             return R.ok();
         }
         return R.fail("修改角色'" + role.getRoleName() + "'状态失败，请联系管理员");
@@ -179,9 +192,24 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:remove")
     @Log(title = "角色管理", businessType = BusinessType.DELETE)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{roleIds}")
     public R<Void> remove(@PathVariable Long[] roleIds) {
-        return toAjax(roleService.deleteRoleByIds(List.of(roleIds)));
+        var before = new java.util.LinkedHashMap<String,Object>();
+        for (Long id : java.util.Arrays.stream(roleIds).distinct().sorted().toList()) {
+            var row = auditSnapshot(id,true);
+            if (!row.isEmpty()) before.put(id.toString(),row);
+        }
+        int affected = roleService.deleteRoleByIds(List.of(roleIds));
+        if (affected > 0) {
+            var after = new java.util.LinkedHashMap<String,Object>();
+            for (Long id : roleIds) {
+                var row = auditSnapshot(id,false);
+                if (!row.isEmpty()) after.put(id.toString(),row);
+            }
+            BusinessAudit.record("删除角色",before.keySet(),"名称",before,after);
+        }
+        return toAjax(affected);
     }
 
     /**
@@ -230,10 +258,14 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.GRANT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/authUser/cancel")
     public R<Void> cancelAuthUser(@RequestBody SysUserRole userRole) {
-        return toAjax(roleService.deleteAuthUser(userRole));
+        var before = auditSnapshot(userRole.getRoleId(),true);
+        int affected = roleService.deleteAuthUser(userRole);
+        if (affected > 0) BusinessAudit.record("取消人员授权",userRole.getRoleId(),"名称",before,auditSnapshot(userRole.getRoleId(),false));
+        return toAjax(affected);
     }
 
     /**
@@ -245,10 +277,14 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.GRANT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/authUser/cancelAll")
     public R<Void> cancelAuthUserAll(Long roleId, Long[] userIds) {
-        return toAjax(roleService.deleteAuthUsers(roleId, List.of(userIds)));
+        var before = auditSnapshot(roleId,true);
+        int affected = roleService.deleteAuthUsers(roleId, List.of(userIds));
+        if (affected > 0) BusinessAudit.record("批量取消人员授权",roleId,"名称",before,auditSnapshot(roleId,false));
+        return toAjax(affected);
     }
 
     /**
@@ -260,11 +296,15 @@ public class SysRoleController extends BaseController {
      */
     @SaCheckPermission("system:role:edit")
     @Log(title = "角色管理", businessType = BusinessType.GRANT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/authUser/selectAll")
     public R<Void> selectAuthUserAll(Long roleId, Long[] userIds) {
         roleService.checkRoleDataScope(roleId);
-        return toAjax(roleService.insertAuthUsers(roleId, List.of(userIds)));
+        var before = auditSnapshot(roleId,true);
+        int affected = roleService.insertAuthUsers(roleId, List.of(userIds));
+        if (affected > 0) BusinessAudit.record("批量授予人员角色",roleId,"名称",before,auditSnapshot(roleId,false));
+        return toAjax(affected);
     }
 
     /**
@@ -291,4 +331,11 @@ public class SysRoleController extends BaseController {
     public record OrgTreeSelectVo(Collection<Long> checkedKeys, List<Tree<Long>> orgs) {
     }
 
+    private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
+        var row = BusinessAudit.snapshot(auditJdbc,"SELECT role_name AS \"名称\", role_key AS \"角色编码\", role_sort AS \"排序\", data_scope AS \"数据范围\", menu_check_strictly AS \"菜单联动\", org_check_strictly AS \"组织联动\", status AS \"状态\", del_flag AS \"删除标记\", remark AS \"备注\" FROM sys_role WHERE role_id=?"+(lock ? " FOR UPDATE" : ""),id);
+        if (!row.isEmpty()) row.put("菜单权限 ID",auditJdbc.queryForList("SELECT menu_id::text FROM sys_role_menu WHERE role_id=? ORDER BY menu_id",String.class,id));
+        if (!row.isEmpty()) row.put("数据范围组织 ID",auditJdbc.queryForList("SELECT org_id::text FROM sys_role_org WHERE role_id=? ORDER BY org_id",String.class,id));
+        if (!row.isEmpty()) row.put("授权人员 ID",auditJdbc.queryForList("SELECT user_id::text FROM sys_user_role WHERE role_id=? ORDER BY user_id",String.class,id));
+        return row;
+    }
 }

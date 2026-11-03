@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '../assets/standard-list-fill.css'
 /**
  * 组织架构（人员模块）——原部门管理，万物皆部门后统一管理组织节点（部门/科室/小组）—— ant-design-vue：左树 + 右表分栏
  * - 左侧组织树（点节点→右侧只显示该节点及下级）
@@ -6,7 +7,7 @@
  * - a-table 树形展开表 + 列设置 + 列宽拖拽（对齐人员信息标准布局）
  * - 操作：编辑 / 新增下级 / 删除；位置(楼/层/房间)渐进式；业务管辖关联
  */
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import { SHOW_PARENT } from 'ant-design-vue/es/vc-tree-select'
@@ -71,17 +72,21 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
+// 自动模式不持久化计算宽度，仅在用户拖动后记录个人列宽。
+const manualWidths = ref(false)
+let widthObserver: ResizeObserver | undefined
 const colStoreKey = computed(() => `org_list:${localStorage.getItem('userId') || 'anon'}`)
 const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 200)  // 操作列宽可拖拽并持久化
 
 function loadColState() {
+  manualWidths.value = localStorage.getItem(`${colStoreKey.value}:manual_widths`) === '1'
   try {
     const raw = localStorage.getItem(colStoreKey.value)
     if (raw) {
       const saved: ColState[] = JSON.parse(raw)
       const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
       const ordered: ColState[] = []
-      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const item of saved) if (curKeys.has(item.key)) { ordered.push(manualWidths.value ? item : { key: item.key, visible: item.visible }); curKeys.delete(item.key) }
       for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
       colState.value = ordered
       return
@@ -89,53 +94,43 @@ function loadColState() {
   } catch { /* ignore */ }
   colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
 }
-function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
-function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
-function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
-async function autoFitCols() {
-  // 1) 操作列：实测当前渲染的按钮组最宽一行 + 单元格内边距（内容真实宽，不拍脑袋）
-  let opsW = 200
-  const wraps = document.querySelectorAll('.ops-btns')
-  if (wraps.length) {
-    // 量按钮两端（.ops-btns 是 flex 容器会拉伸填满单元格，直接量容器宽会把摊派宽度当成内容宽）
-    const maxContent = Math.max(...[...wraps].map(w => {
-      const bs = [...w.querySelectorAll('button')]
-      if (!bs.length) return 0
-      return Math.max(...bs.map(b => b.getBoundingClientRect().right)) - Math.min(...bs.map(b => b.getBoundingClientRect().left))
-    }))
-    const td = wraps[0].closest('td')
-    const cs = td ? getComputedStyle(td) : null
-    const pad = cs ? Math.round(parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 16
-    opsW = Math.max(120, Math.round(maxContent + pad + 2))
-  }
-  // 2) 各普通列按列名给足最小宽（空数据列也放得下表头）
-  const mins = new Map<string, number>()
-  let visibleSum = 64  // 序号列固定
-  for (const c of colState.value) {
-    const t = ALL_COLUMNS.find(a => a.key === c.key)?.title || c.key
-    const w = Math.max(90, String(t).length * 16 + 48)
-    mins.set(c.key, w)
-    if (c.visible) visibleSum += w
-  }
-  visibleSum += opsW
-  // 3) 剩余空间（容器宽 - 列总宽）均分给可见普通列：列总宽=容器宽后 antd 不再摊派，
-  //    操作列保持实测贴合值（这是"自己按内容适配"而不是让表格暗中摊宽）
-  const container = document.querySelector('.ant-table-container')
-  const cw = container ? Math.round(container.clientWidth) : 0
-  const visibleCount = colState.value.filter(c => c.visible).length
-  if (cw > visibleSum + 10 && visibleCount > 0) {
-    const extra = Math.floor((cw - visibleSum) / visibleCount)
-    for (const c of colState.value) {
-      if (c.visible) mins.set(c.key, (mins.get(c.key) || 90) + extra)
-    }
-  }
-  for (const c of colState.value) {
-    ;(c as any).width = mins.get(c.key)
-  }
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(manualWidths.value ? colState.value : colState.value.map(({ key, visible }) => ({ key, visible })))) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState(); void scheduleAutoFit() } }
+function showAllCols() {
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+  manualWidths.value = false
+  try { localStorage.removeItem(`${colStoreKey.value}:manual_widths`); localStorage.removeItem(`${colStoreKey.value}:ops_w`) } catch { /* ignore */ }
   saveColState()
-  opsWidth.value = opsW
-  try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
+  void scheduleAutoFit()
 }
+/** 自动列宽按表头及可用空间分配，空间不足时保留横向滚动。 */
+async function scheduleAutoFit() {
+  await nextTick()
+  if (manualWidths.value) return
+  const body = document.querySelector<HTMLElement>('.org-table .ant-table-body')
+  const container = document.querySelector<HTMLElement>('.org-table .ant-table-container')
+  const available = Math.max(0, (body?.clientWidth || container?.clientWidth || 0) - 2)
+  if (!available) return
+  opsWidth.value = 200
+  const visible = colState.value.filter(c => c.visible)
+  let required = 48 + 64 + opsWidth.value
+  for (const col of colState.value) {
+    col.width = Math.max(90, Array.from(String(ALL_COLUMNS.find(c => c.key === col.key)?.title || col.key)).length * 16 + 48)
+    if (col.visible) required += col.width
+  }
+  const extra = visible.length ? Math.max(0, Math.floor((available - required) / visible.length)) : 0
+  for (const col of visible) col.width = (col.width || 90) + extra
+}
+onMounted(() => {
+  void scheduleAutoFit()
+  widthObserver = new ResizeObserver(() => { void scheduleAutoFit() })
+  nextTick(() => {
+    const container = document.querySelector<HTMLElement>('.org-table .ant-table-container')
+    if (container) widthObserver?.observe(container)
+  })
+})
+onBeforeUnmount(() => widthObserver?.disconnect())
+
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {
   const arr = colState.value
@@ -147,7 +142,9 @@ function moveCol(index: number, dir: -1 | 1) {
 
 // 列宽拖拽：改 colState 里对应列的 width 并持久化
 function onColResize(key: string, w: number) {
-  if (key === 'ops') { opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
+  manualWidths.value = true
+  try { localStorage.setItem(`${colStoreKey.value}:manual_widths`, '1') } catch { /* ignore */ }
+  if (key === 'ops') { saveColState(); opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -207,6 +204,8 @@ function onHeaderClick(e: MouseEvent) {
 
 // 按 colState 顺序+显隐生成实际列（操作列固定最后、不可隐藏）
 // 每列加 customHeaderCell → 原生 th 绑 mousedown（右缘拖拽改宽），th 由 antd 布局保证与数据对齐
+const autoScrollWidth = computed(() => 48 + 64 + opsWidth.value + colState.value.filter(c => c.visible).reduce((sum, c) => sum + (c.width || 120), 0))
+
 const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
@@ -545,7 +544,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </script>
 
 <template>
-  <div class="org-page">
+  <div class="org-page zy-list-page">
     <!-- 页头行：← 组织架构 + 查询条件（搜索/类型/状态） -->
     <div class="page-header">
       <div class="head-filters">
@@ -584,7 +583,7 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
             <a-divider style="margin: 6px 0" />
             <div class="col-set-foot">
               <a size="small" @click="showAllCols">恢复默认</a>
-              <a size="small" @click="autoFitCols">自适应列宽</a>
+
               <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
             </div>
           </a-card>
@@ -636,11 +635,11 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       children-column-name="_flat_"
       :loading="loading"
       :pagination="{ total: orgRows.length, current: orgPage, pageSize: orgPageSize, showSizeChanger: true, showQuickJumper: true, showTotal: (t: number) => `共 ${t} 个组织`, onChange: (p: number, ps: number) => { orgPage = p; orgPageSize = ps } }"
-      :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+      :scroll="{ x: autoScrollWidth, y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
       row-key="orgId"
       size="middle"
-      class="org-table"
+      class="org-table zy-fill-table"
     >
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'index'">
@@ -805,6 +804,9 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </template>
 
 <style scoped>
+.zy-list-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.org-body { flex: 1 1 0; min-height: 0 !important; }
+.org-main { display: flex; flex-direction: column; min-height: 0; }
 .page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
 .head-left { display: flex; align-items: center; gap: 6px; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

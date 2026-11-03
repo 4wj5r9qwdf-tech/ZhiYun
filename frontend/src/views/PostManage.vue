@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import '../assets/standard-list-fill.css'
 /**
  * 岗位管理（人员模块）—— 对齐列表页标准 B.5.1.1（基准 Person.vue）：
  * - 标题行：← 返回（PersonIndex）+ 标题，无操作按钮
@@ -8,12 +9,13 @@
  * - a-form + a-modal：新增/编辑（编码、名称、排序、状态、备注）
  * - 后端：RuoYi 自带 /system/post 接口（list/{id}/POST/PUT/DELETE/{postIds}）
  */
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { pinyin } from 'pinyin-pro'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
+import { can } from '../utils/perms'
 
 
 // ===== 列表 =====
@@ -79,17 +81,21 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
+// 自动模式不持久化计算宽度，仅在用户拖动后记录个人列宽。
+const manualWidths = ref(false)
+let widthObserver: ResizeObserver | undefined
 // v1：2026-10-26 列顺序调整（岗位名称提首位），升版让新默认顺序对已存 colState 的用户立即生效
 const colStoreKey = computed(() => `post_list_v1:${localStorage.getItem('userId') || 'anon'}`)
 const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 140)  // 操作列宽可拖拽并持久化
 function loadColState() {
+  manualWidths.value = localStorage.getItem(`${colStoreKey.value}:manual_widths`) === '1'
   try {
     const raw = localStorage.getItem(colStoreKey.value)
     if (raw) {
       const saved: ColState[] = JSON.parse(raw)
       const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
       const ordered: ColState[] = []
-      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const item of saved) if (curKeys.has(item.key)) { ordered.push(manualWidths.value ? item : { key: item.key, visible: item.visible }); curKeys.delete(item.key) }
       for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
       colState.value = ordered
       return
@@ -97,53 +103,43 @@ function loadColState() {
   } catch { /* ignore */ }
   colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
 }
-function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
-function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
-function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
-async function autoFitCols() {
-  // 1) 操作列：实测当前渲染的按钮组最宽一行 + 单元格内边距（内容真实宽，不拍脑袋）
-  let opsW = 120
-  const wraps = document.querySelectorAll('.ops-btns')
-  if (wraps.length) {
-    // 量按钮两端（.ops-btns 是 flex 容器会拉伸填满单元格，直接量容器宽会把摊派宽度当成内容宽）
-    const maxContent = Math.max(...[...wraps].map(w => {
-      const bs = [...w.querySelectorAll('button')]
-      if (!bs.length) return 0
-      return Math.max(...bs.map(b => b.getBoundingClientRect().right)) - Math.min(...bs.map(b => b.getBoundingClientRect().left))
-    }))
-    const td = wraps[0].closest('td')
-    const cs = td ? getComputedStyle(td) : null
-    const pad = cs ? Math.round(parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 16
-    opsW = Math.max(120, Math.round(maxContent + pad + 2))
-  }
-  // 2) 各普通列按列名给足最小宽（空数据列也放得下表头）
-  const mins = new Map<string, number>()
-  let visibleSum = 64  // 序号列固定
-  for (const c of colState.value) {
-    const t = ALL_COLUMNS.find(a => a.key === c.key)?.title || c.key
-    const w = Math.max(90, String(t).length * 16 + 48)
-    mins.set(c.key, w)
-    if (c.visible) visibleSum += w
-  }
-  visibleSum += opsW
-  // 3) 剩余空间（容器宽 - 列总宽）均分给可见普通列：列总宽=容器宽后 antd 不再摊派，
-  //    操作列保持实测贴合值（这是"自己按内容适配"而不是让表格暗中摊宽）
-  const container = document.querySelector('.ant-table-container')
-  const cw = container ? Math.round(container.clientWidth) : 0
-  const visibleCount = colState.value.filter(c => c.visible).length
-  if (cw > visibleSum + 10 && visibleCount > 0) {
-    const extra = Math.floor((cw - visibleSum) / visibleCount)
-    for (const c of colState.value) {
-      if (c.visible) mins.set(c.key, (mins.get(c.key) || 90) + extra)
-    }
-  }
-  for (const c of colState.value) {
-    ;(c as any).width = mins.get(c.key)
-  }
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(manualWidths.value ? colState.value : colState.value.map(({ key, visible }) => ({ key, visible })))) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState(); void scheduleAutoFit() } }
+function showAllCols() {
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+  manualWidths.value = false
+  try { localStorage.removeItem(`${colStoreKey.value}:manual_widths`); localStorage.removeItem(`${colStoreKey.value}:ops_w`) } catch { /* ignore */ }
   saveColState()
-  opsWidth.value = opsW
-  try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
+  void scheduleAutoFit()
 }
+/** 自动列宽按表头及可用空间分配，空间不足时保留横向滚动。 */
+async function scheduleAutoFit() {
+  await nextTick()
+  if (manualWidths.value) return
+  const body = document.querySelector<HTMLElement>('.post-table .ant-table-body')
+  const container = document.querySelector<HTMLElement>('.post-table .ant-table-container')
+  const available = Math.max(0, (body?.clientWidth || container?.clientWidth || 0) - 2)
+  if (!available) return
+  opsWidth.value = 140
+  const visible = colState.value.filter(c => c.visible)
+  let required = 48 + 64 + opsWidth.value
+  for (const col of colState.value) {
+    col.width = Math.max(90, Array.from(String(ALL_COLUMNS.find(c => c.key === col.key)?.title || col.key)).length * 16 + 48)
+    if (col.visible) required += col.width
+  }
+  const extra = visible.length ? Math.max(0, Math.floor((available - required) / visible.length)) : 0
+  for (const col of visible) col.width = (col.width || 90) + extra
+}
+onMounted(() => {
+  void scheduleAutoFit()
+  widthObserver = new ResizeObserver(() => { void scheduleAutoFit() })
+  nextTick(() => {
+    const container = document.querySelector<HTMLElement>('.post-table .ant-table-container')
+    if (container) widthObserver?.observe(container)
+  })
+})
+onBeforeUnmount(() => widthObserver?.disconnect())
+
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {
   const arr = colState.value
@@ -154,6 +150,8 @@ function moveCol(index: number, dir: -1 | 1) {
 }
 
 // 按 colState 顺序+显隐生成列（操作列固定最后；customHeaderCell 绑拖拽）
+const autoScrollWidth = computed(() => 48 + 64 + opsWidth.value + colState.value.filter(c => c.visible).reduce((sum, c) => sum + (c.width || 120), 0))
+
 const columns = computed(() => {
   // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
@@ -170,7 +168,9 @@ const columns = computed(() => {
 // ===== 列宽拖拽（原生表头 + customHeaderCell） =====
 let suppressHeaderClickUntil = 0
 function onColResize(key: string, w: number) {
-  if (key === 'ops') { opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
+  manualWidths.value = true
+  try { localStorage.setItem(`${colStoreKey.value}:manual_widths`, '1') } catch { /* ignore */ }
+  if (key === 'ops') { saveColState(); opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -232,7 +232,6 @@ const emptyForm = () => ({
   postId: null as number | null,
   postCode: '', postName: '',
   postSort: 0,
-  status: '0',   // 0 启用 / 1 停用（RuoYi 约定）
   remark: '',
 })
 const form = ref(emptyForm())
@@ -261,9 +260,26 @@ watch(() => form.value.postName, (v) => {
   }
 })
 
-// 状态开关：checked(true)=启用(status='0')
-function onStatusChange(v: any) {
-  form.value.status = v ? '0' : '1'
+function changePostStatus(row: { postId: string | number; postName: string }, checked: unknown) {
+  const enabled = checked === true
+  const action = enabled ? '启用' : '停用'
+  Modal.confirm({
+    title: `确认${action}岗位「${row.postName}」？`,
+    content: enabled ? '启用后可再次分配此岗位。' : '已分配人员的岗位不能停用。',
+    okText: '确认',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const res: any = await api.put(`/system/post/${row.postId}/status`, { status: enabled ? '0' : '1' })
+        if (res.code !== 200) throw new Error(res.msg || `${action}失败`)
+        message.success(`已${action}`)
+        await loadList()
+      } catch (error: any) {
+        message.error(error?.response?.data?.msg || error?.message || `${action}失败`)
+        throw error
+      }
+    },
+  })
 }
 
 function openAdd() {
@@ -287,7 +303,6 @@ async function openEdit(row: any) {
     postId: d.postId,
     postCode: d.postCode || '', postName: d.postName || '',
     postSort: d.postSort ?? 0,
-    status: d.status || '0',
     remark: d.remark || '',
   }
   showDlg.value = true
@@ -299,10 +314,11 @@ async function save() {
   try {
     const payload: any = {
       postCode: form.value.postCode, postName: form.value.postName,
-      postSort: form.value.postSort ?? 0, status: form.value.status, remark: form.value.remark,
+      postSort: form.value.postSort ?? 0, remark: form.value.remark,
       orgId: rootOrgId.value ?? undefined,   // 岗位归属部门（全厂通用→厂区根节点）
     }
     if (isEdit.value) payload.postId = form.value.postId
+    else payload.status = '0'
     const res: any = isEdit.value
       ? await api.put('/system/post', payload)
       : await api.post('/system/post', payload)
@@ -362,7 +378,7 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 </script>
 
 <template>
-  <div>
+  <div class="zy-list-page">
     <!-- 页头行：查询条件左置（对齐组织架构定版布局，无标题无返回） -->
     <div class="page-header">
       <div class="head-filters">
@@ -395,7 +411,7 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
             <a-divider style="margin: 6px 0" />
             <div class="col-set-foot">
               <a size="small" @click="showAllCols">恢复默认</a>
-              <a size="small" @click="autoFitCols">自适应列宽</a>
+
               <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
             </div>
           </a-card>
@@ -417,18 +433,19 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
         onChange: onPageChange,
       }"
       table-layout="fixed"
-      :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+      :scroll="{ x: autoScrollWidth, y: 'calc(100vh - 360px)' }"
       :row-selection="rowSelection"
       row-key="postId"
       size="middle"
-      class="post-table"
+      class="post-table zy-fill-table"
     >
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'index'">
           {{ (pageNum - 1) * pageSize + index + 1 }}
         </template>
         <template v-if="column.key === 'status'">
-          <a-tag :color="record.status === '0' ? 'green' : 'red'">{{ record.status === '0' ? '启用' : '停用' }}</a-tag>
+          <a-switch :checked="record.status === '0'" :disabled="!can('system:post:edit')"
+            checked-children="启用" un-checked-children="停用" @change="value => changePostStatus({ postId: record.postId, postName: record.postName }, value)" />
         </template>
         <template v-else-if="column.key === 'ops'">
           <div class="ops-btns">
@@ -461,14 +478,6 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
         <a-form-item label="排序" name="postSort">
           <a-input-number v-model:value="form.postSort" :min="0" style="width: 100%" placeholder="数字越小越靠前" />
         </a-form-item>
-        <a-form-item label="状态">
-          <!-- a-switch checked = 启用（status='0'），即 checked 对应 0 -->
-          <a-switch
-            :checked="form.status === '0'"
-            checked-children="启用" un-checked-children="停用"
-            @change="onStatusChange"
-          />
-        </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="form.remark" :rows="3" :maxlength="200" placeholder="选填" />
         </a-form-item>
@@ -478,6 +487,7 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 </template>
 
 <style scoped>
+.zy-list-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .head-left { display: flex; align-items: center; gap: 6px; }
 .back { color: #4E5969; cursor: pointer; font-size: 18px; text-decoration: none; }

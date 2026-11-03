@@ -249,7 +249,9 @@ public class SysPostServiceImpl implements ISysPostService, PostService {
     @Override
     public int insertPost(SysPostBo bo) {
         SysPost post = MapstructUtils.convert(bo, SysPost.class);
-        return postMapper.insert(post);
+        int inserted = postMapper.insert(post);
+        bo.setPostId(post.getPostId());
+        return inserted;
     }
 
     /**

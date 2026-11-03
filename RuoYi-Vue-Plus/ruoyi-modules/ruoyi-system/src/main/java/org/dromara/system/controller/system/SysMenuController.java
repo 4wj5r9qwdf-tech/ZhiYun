@@ -100,7 +100,10 @@ public class SysMenuController extends BaseController {
     @SaCheckPermission("system:menu:query")
     @GetMapping(value = "/roleMenuTreeselect/{roleId}")
     public R<MenuTreeSelectVo> roleMenuTreeselect(@PathVariable("roleId") Long roleId) {
-        List<SysMenuVo> menus = menuService.selectMenuList(LoginHelper.getUserId());
+        // 角色分配仅展示启用权限；菜单维护接口仍可查看停用项以供恢复。
+        SysMenuBo enabled = new SysMenuBo();
+        enabled.setStatus(SystemConstants.NORMAL);
+        List<SysMenuVo> menus = menuService.selectMenuList(enabled, LoginHelper.getUserId());
         MenuTreeSelectVo selectVo = new MenuTreeSelectVo(
             menuService.selectMenuListByRoleId(roleId),
             menuService.buildMenuTreeSelect(menus));

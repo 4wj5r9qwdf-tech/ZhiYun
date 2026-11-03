@@ -1,4 +1,5 @@
-import { ensurePerms, can } from '../utils/perms'
+import { canOpenFunction } from '../config/modules'
+import { ensurePerms } from '../utils/perms'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useTabsStore } from '../store/tabs'
 
@@ -14,12 +15,27 @@ const router = createRouter({
       path: '/system',
       component: () => import('../views/Home.vue'),
       children: [
-        { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统' } },
+        { path: 'online', name: 'OnlineUsers', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'online' }, meta: { title: '在线用户', tab: true } },
+        { path: 'operlog', name: 'OperationLogs', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'logs' }, meta: { title: '系统日志', tab: true } },
+        { path: 'loginInfo', redirect: { name: 'OperationLogs' } },
+        { path: 'menu-directory', name: 'MenuDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'menu-directory' }, meta: { title: '菜单管理', tab: true } },
+        { path: 'cache-overview', name: 'CacheOverview', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'cache-overview' }, meta: { title: '缓存监控', tab: true } },
+        { path: 'dictionary', name: 'DictionaryDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'dictionary' }, meta: { title: '字典管理', tab: true } },
+        { path: 'parameters', name: 'ParameterDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'parameters' }, meta: { title: '参数设置', tab: true } },
+        { path: 'files', name: 'FileDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'files' }, meta: { title: '文件管理', tab: true } },
+        { path: 'storage-config', name: 'StorageDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'storage-config' }, meta: { title: '文件配置管理', tab: true } },
+        { path: 'clients', name: 'ClientDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'clients' }, meta: { title: '客户端管理', tab: true } },
+        { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统管理' } },
         { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案', tab: true } },
         { path: 'role', name: 'RoleManage', component: () => import('../views/RoleManage.vue'), meta: { title: '角色管理', tab: true } },
         { path: 'template', name: 'SystemTemplate', component: () => import('../views/SystemTemplate.vue'), meta: { title: '功能模板', tab: true } },
+        { path: 'tag', name: 'TagManage', component: () => import('../views/TagManage.vue'), meta: { title: '标签管理', tab: true } },
+        { path: 'size', name: 'SizeManage', component: () => import('../views/SizeManage.vue'), meta: { title: '尺码管理', tab: true } },
+        { path: 'size-group', name: 'SizeGroupManage', component: () => import('../views/SizeGroupManage.vue'), meta: { title: '尺码组管理', tab: true } },
+        { path: 'country-region', name: 'CountryRegionManage', component: () => import('../views/CountryRegionManage.vue'), meta: { title: '国家/地区', tab: true } },
       ],
     },
+    { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }] },
     // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
     //   '' → PersonIndex（人员模块功能卡片：人员信息等）
     //   'person-info' → Person（人员信息列表，功能页）
@@ -50,11 +66,21 @@ const router = createRouter({
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
 // 路由级权限映射：无权限直接访问 URL 也拦（卡片显隐只是第一层）
 const ROUTE_PERMS: Record<string, string> = {
+  ClientDirectory: 'system:client:list',
+  StorageDirectory: 'system:ossConfig:list',
+  FileDirectory: 'system:oss:list',
+  ParameterDirectory: 'system:config:list',
+  DictionaryDirectory: 'system:dict:list',
+  CacheOverview: 'monitor:cache:list',
+  MenuDirectory: 'system:menu:list',
+  OperationLogs: 'system-logs',
+  OnlineUsers: 'monitor:online:list',
   Person: 'system:person:list', OrgManage: 'system:org:list',
-  PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', BuildingManage: 'system:building:list',
-  Company: 'system:company:list',
+  PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', TagManage: 'system:tag:list', BuildingManage: 'system:building:list',
+  SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list',
+  Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
+const needAuth = ['ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
 router.beforeEach(async (to) => {
   const token = localStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
@@ -65,7 +91,7 @@ router.beforeEach(async (to) => {
     await ensurePerms()
   }
   const need = ROUTE_PERMS[to.name as string]
-  if (need && token && !can(need)) {
+  if (need && token && !canOpenFunction(need)) {
     return { name: 'Workbench' }
   }
   // 浏览器标签标题：织云 ERP - <页面标题>

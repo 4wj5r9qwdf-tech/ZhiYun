@@ -1,5 +1,7 @@
 package org.dromara.web.controller;
 
+import org.dromara.system.controller.system.BusinessAudit;
+
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
@@ -75,6 +77,7 @@ public class BuildingController {
      */
     @SaCheckPermission("system:building:add")
     @Log(title = "建筑档案", businessType = BusinessType.INSERT)
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping
     public R<Void> add(@RequestBody Map<String, Object> body) {
         String name = str(body.get("plantName"));
@@ -89,6 +92,7 @@ public class BuildingController {
             plantId, str(body.getOrDefault("buildingType", "厂房")), str(body.get("plantCode")), name, str(body.get("floorInfo")),
             body.get("landArea"), body.get("buildingArea"), str(body.get("address")),
             body.get("builtYear"), str(body.getOrDefault("status", "0")), str(body.get("remark")));
+        BusinessAudit.record("新增建筑",plantId,"名称",java.util.Map.of(),auditSnapshot(plantId,false));
         return R.ok();
     }
 
@@ -97,6 +101,7 @@ public class BuildingController {
      */
     @SaCheckPermission("system:building:edit")
     @Log(title = "建筑档案", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping
     public R<Void> edit(@RequestBody Map<String, Object> body) {
         Object idRaw = body.get("plantId");
@@ -108,12 +113,14 @@ public class BuildingController {
         if (name == null || name.isBlank()) {
             return R.fail("建筑名称不能为空");
         }
+        var auditBefore = auditSnapshot(plantId,true);
         jdbcTemplate.update(
             "UPDATE sys_building SET building_type=?, plant_code=?, plant_name=?, floor_info=?, land_area=?, building_area=?, " +
             "  address=?, built_year=?::int, status=?, remark=?, update_time=now() WHERE plant_id=?",
             str(body.getOrDefault("buildingType", "厂房")), str(body.get("plantCode")), name, str(body.get("floorInfo")),
             body.get("landArea"), body.get("buildingArea"), str(body.get("address")),
             body.get("builtYear"), str(body.getOrDefault("status", "0")), str(body.get("remark")), plantId);
+        BusinessAudit.record("修改建筑",plantId,"名称",auditBefore,auditSnapshot(plantId,false));
         return R.ok();
     }
 
@@ -122,6 +129,7 @@ public class BuildingController {
      */
     @SaCheckPermission("system:building:remove")
     @Log(title = "建筑档案", businessType = BusinessType.DELETE)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{plantId}")
     public R<Void> remove(@PathVariable Long plantId) {
         Long used = jdbcTemplate.queryForObject(
@@ -129,7 +137,9 @@ public class BuildingController {
         if (used != null && used > 0) {
             return R.fail("该建筑下还关联着车间/部门，先解除关联再删除");
         }
+        var auditBefore = auditSnapshot(plantId,true);
         jdbcTemplate.update("UPDATE sys_building SET del_flag='1', update_time=now() WHERE plant_id=?", plantId);
+        BusinessAudit.record("删除建筑",plantId,"名称",auditBefore,auditSnapshot(plantId,false));
         return R.ok();
     }
 
@@ -137,5 +147,9 @@ public class BuildingController {
     private String str(Object o) {
         if (o == null) return null;
         return o instanceof Number ? o.toString() : String.valueOf(o);
+    }
+    private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
+        var row = BusinessAudit.snapshot(jdbcTemplate,"SELECT plant_name AS \"名称\", building_type AS \"建筑类型\", plant_code AS \"建筑编码\", floor_info AS \"楼层\", land_area AS \"占地面积\", building_area AS \"建筑面积\", address AS \"地址\", built_year AS \"建成年份\", status AS \"状态\", remark AS \"备注\", del_flag AS \"删除标记\" FROM sys_building WHERE plant_id=?"+(lock ? " FOR UPDATE" : ""),id);
+        return row;
     }
 }

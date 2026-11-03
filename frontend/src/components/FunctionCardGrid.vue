@@ -33,6 +33,19 @@ const props = withDefaults(defineProps<{
   todo?: Record<string, number>  // 功能级待办数（key→count），无待办不显示红点
 }>(), { readonly: false })
 
+const cardPalette = [
+  { start: '#fbfdff', end: '#dfeafb', accent: '#3864b8', chip: '#d9e7fa' },
+  { start: '#fbfefd', end: '#dcefeb', accent: '#287e75', chip: '#d2eae4' },
+  { start: '#fdfcff', end: '#eae4f7', accent: '#745da7', chip: '#e4dbf3' },
+  { start: '#fffdf9', end: '#f4eadc', accent: '#9a7041', chip: '#f0e3d1' },
+]
+function cardColors(key: string) {
+  let hash = 0
+  for (const char of key) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  const color = cardPalette[hash % cardPalette.length]!
+  return { '--card-start': color.start, '--card-end': color.end, '--card-accent': color.accent, '--card-chip': color.chip }
+}
+
 const router = useRouter()
 
 // icon 字段兼容两种：antd 图标组件名字符串（如 'TeamOutlined'）→ 渲染组件；否则当 emoji/字符显示
@@ -43,8 +56,9 @@ function resolveIcon(name?: string) {
 }
 
 // 卡片运行态（配置）：宽高独立（自由拉伸，非等比）
-type CardState = Card & { sort: number; cardW: number; cardH: number; isTop: boolean; inWorkbench: boolean; locked: boolean }
+type CardState = Card & { sort: number; cardW: number; cardH: number; isTop: boolean; inWorkbench: boolean }
 const state = ref<CardState[]>([])
+const openMenu = ref<string>()
 
 // 拖拽排序
 const dragIndex = ref(-1)
@@ -57,7 +71,6 @@ let resizeStartW = 0
 let resizeStartH = 0
 
 // 等比锁定：每张卡各自独立（默认锁定=正方形档位；点该卡的锁解开成长方形档位）
-const LOCK_DEFAULT = true
 
 // ===== 卡片尺寸：档位制（对齐安卓小组件，不做任意像素，保证网格整齐）=====
 // 单元 = UNIT（卡片内容）+ GAP（间距）构成一个网格格子；卡片尺寸只能取「格子数」的整数倍。
@@ -82,7 +95,7 @@ const DEFAULT_W = colsToW(1), DEFAULT_H = rowsToH(1) // 默认 = 1×1 正方形�
 
 onMounted(async () => {
   state.value = props.cards.map((c, i) => ({
-    ...c, sort: i, cardW: DEFAULT_W, cardH: DEFAULT_H, isTop: false, inWorkbench: false, locked: LOCK_DEFAULT,
+    ...c, sort: i, cardW: DEFAULT_W, cardH: DEFAULT_H, isTop: false, inWorkbench: false,
   }))
   await loadConfig()
   bindResize()
@@ -103,7 +116,6 @@ async function loadConfig() {
           c.sort = m.sort
           c.isTop = m.is_top === '1'
           c.inWorkbench = m.in_workbench === '1'
-          c.locked = m.locked !== '0'   // 默认锁定；'0'=解锁
           // 宽高独立（新）；兼容旧单值 icon_size（沿用为宽，高按比例）
           if (m.card_w && m.card_h) { c.cardW = m.card_w; c.cardH = m.card_h }
           else if (m.icon_size) { c.cardW = m.icon_size; c.cardH = Math.round(m.icon_size * 0.65) }
@@ -128,14 +140,13 @@ async function saveCard(c: CardState) {
   try {
     await api.put('/system/profile/menu-config', {
       menuKey: c.key, sort: c.sort, cardW: c.cardW, cardH: c.cardH,
-      isTop: c.isTop ? '1' : '0', inWorkbench: c.inWorkbench ? '1' : '0', locked: c.locked ? '1' : '0',
+      isTop: c.isTop ? '1' : '0', inWorkbench: c.inWorkbench ? '1' : '0', locked: '0',
     })
   } catch { /* ignore */ }
 }
 
 function toggleTop(c: CardState) { c.isTop = !c.isTop; saveCard(c) }
 function toggleWorkbench(c: CardState) { c.inWorkbench = !c.inWorkbench; saveCard(c) }
-function toggleLock(c: CardState) { c.locked = !c.locked; saveCard(c) }
 
 // ===== 拖拽排序 =====
 function onDragStart(i: number, e: DragEvent) { dragIndex.value = i; e.dataTransfer?.setData('text/plain', String(i)) }
@@ -169,21 +180,12 @@ function onResizeMove(e: MouseEvent) {
   const c = state.value.find(x => x.key === resizing.value!.key)
   if (!c) return
   const { axis } = resizing.value
-  if (c.locked) {
-    // 等比（正方形档位）：宽=高，取 1×1 / 2×2 / 3×3
-    const delta = axis === 'h' ? (e.clientY - resizeStartY) : (e.clientX - resizeStartX)
-    const startSide = Math.max(resizeStartW, resizeStartH)
-    const n = Math.max(MIN_COLS, Math.min(MAX_COLS, wToCols(startSide + delta)))
-    c.cardW = colsToW(n)
-    c.cardH = rowsToH(n)
-  } else {
-    // 自由（成长方形档位）：宽高各自取最近档（如 2×1、1×2、3×2）
-    if (axis === 'w' || axis === 'wh') {
-      c.cardW = colsToW(wToCols(resizeStartW + (e.clientX - resizeStartX)))
-    }
-    if (axis === 'h' || axis === 'wh') {
-      c.cardH = rowsToH(hToRows(resizeStartH + (e.clientY - resizeStartY)))
-    }
+  // 自由（成长方形档位）：宽高各自取最近档（如 2×1、1×2、3×2）
+  if (axis === 'w' || axis === 'wh') {
+    c.cardW = colsToW(wToCols(resizeStartW + (e.clientX - resizeStartX)))
+  }
+  if (axis === 'h' || axis === 'wh') {
+    c.cardH = rowsToH(hToRows(resizeStartH + (e.clientY - resizeStartY)))
   }
 }
 function endResize() {
@@ -210,14 +212,15 @@ function openCard(c: CardState) {
       v-for="(c, i) in sorted"
       :key="c.key"
       class="fc-card"
-      :class="{ top: c.isTop, dragging: dragIndex === i, over: overIndex === i && dragIndex !== i, readonly, resizing: resizing?.key === c.key }"
-      :style="{ gridColumn: 'span ' + spanCols(c), gridRow: 'span ' + spanRows(c) }"
+      :class="{ top: c.isTop, dragging: dragIndex === i, over: overIndex === i && dragIndex !== i, readonly, mini: spanCols(c) === 1 && spanRows(c) === 1, widget: spanCols(c) > 1 || spanRows(c) > 1, resizing: resizing?.key === c.key }"
+      :style="{ ...cardColors(c.key), gridColumn: 'span ' + spanCols(c), gridRow: 'span ' + spanRows(c) }"
       :draggable="!readonly"
       @dragstart="onDragStart(i, $event)"
       @dragover="onDragOver(i, $event)"
       @drop="onDrop(i)"
       @dragend="resetDrag"
       @click="openCard(c)"
+      @contextmenu.prevent="!readonly && (openMenu = c.key)"
     >
       <i v-if="(props.todo?.[c.key] || 0) > 0" class="fc-todo">{{ props.todo![c.key] }}</i>
       <span v-if="c.isTop" class="fc-top-tag">置顶</span>
@@ -230,14 +233,20 @@ function openCard(c: CardState) {
       </div>
       <div class="fc-body">
         <div class="fc-title" :title="c.title">{{ c.title }}</div>
+        <div v-if="c.desc" class="fc-desc" :title="c.desc">{{ c.desc }}</div>
 
-        <div v-if="!readonly" class="fc-actions">
-          <button class="fc-act" :class="{ on: c.isTop }" :title="c.isTop ? '取消置顶' : '置顶'" @click.stop="toggleTop(c)">⤒</button>
-          <button class="fc-act" :class="{ on: c.inWorkbench }" :title="c.inWorkbench ? '移出工作台' : '加入工作台'" @click.stop="toggleWorkbench(c)">★</button>
-          <button class="fc-act" :class="{ on: c.locked }" :title="c.locked ? '解锁：本卡可自由拉宽高(长方形)' : '锁定：本卡等比缩放(正方形)'" @click.stop="toggleLock(c)">{{ c.locked ? '🔒' : '🔓' }}</button>
-        </div>
+
       </div>
 
+      <a-dropdown v-if="!readonly" :open="openMenu === c.key" :trigger="['click']" @openChange="openMenu = $event ? c.key : undefined">
+        <button class="fc-more" title="卡片设置" @click.stop>⋯</button>
+        <template #overlay>
+          <a-menu @click="openMenu = undefined">
+            <a-menu-item @click.stop="toggleTop(c)">{{ c.isTop ? '取消置顶' : '置顶' }}</a-menu-item>
+            <a-menu-item @click.stop="toggleWorkbench(c)">{{ c.inWorkbench ? '移出工作台' : '加入工作台' }}</a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
       <!-- 三个拉伸手柄：右=宽，下=高，右下角=宽高（自由拉伸，非等比） -->
       <div v-if="!readonly" class="fc-resize fc-resize-w" @mousedown="startResize(c, 'w', $event)"></div>
       <div v-if="!readonly" class="fc-resize fc-resize-h" @mousedown="startResize(c, 'h', $event)"></div>
@@ -279,4 +288,26 @@ function openCard(c: CardState) {
 .fc-resize-h { left: 20%; right: 20%; bottom: 0; height: 8px; cursor: ns-resize; }
 .fc-resize-wh { right: 4px; bottom: 4px; width: 16px; height: 16px; cursor: nwse-resize; color: #C9CDD4; font-size: 12px; display: flex; align-items: center; justify-content: center; }
 .fc-resize-w:hover, .fc-resize-h:hover, .fc-resize-wh:hover { color: #1E5EFF; }
+/* 最小图标和放大后的小组件共用已保存的网格尺寸 */
+.fc-card.mini { background: transparent; border: 0; box-shadow: none; padding: 12px 12px 8px; align-items: center; overflow: visible; }
+.fc-card.mini:hover { box-shadow: none; transform: translateY(-2px); }
+.mini .fc-ico { flex: none; width: 88px; height: 88px; border-radius: 23px; background: linear-gradient(145deg, var(--card-start), var(--card-end)); box-shadow: 0 3px 10px rgba(44,61,87,.08), inset 0 1px 0 rgba(255,255,255,.85); }
+.mini .fc-ico-comp, .mini .fc-ico-txt { font-size: 39px !important; color: var(--card-accent); }
+.mini .fc-body { width: 100%; background: transparent; border: 0; padding: 8px 0 0; text-align: center; }
+.mini .fc-title { font-size: 14px; }
+.mini .fc-desc { display: none; }
+.fc-card.widget { padding: 22px; border: 1px solid #dae5f8; border-radius: 20px; background: linear-gradient(145deg,var(--card-start),var(--card-end)); box-shadow: 0 3px 10px rgba(44,61,87,.08), inset 0 1px 0 rgba(255,255,255,.85); }
+.widget .fc-ico { flex: none; width: 48px; height: 48px; border-radius: 14px; background: var(--card-chip); }
+.widget .fc-ico-comp, .widget .fc-ico-txt { font-size: 25px !important; }
+.widget .fc-body { background: transparent; border: 0; padding: 10px 0 0; }
+.widget .fc-ico-comp, .widget .fc-ico-txt { color: var(--card-accent); }
+.widget .fc-title { color: #1d2129; }
+.widget .fc-desc { color: #74839b; }
+.widget .fc-resize-wh { color: #9baac2; }
+.fc-desc { color: #74839b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-more { position: absolute; top: 6px; right: 6px; z-index: 5; border: 0; border-radius: 50%; width: 25px; height: 25px; background: rgba(255,255,255,.9); color: #53647f; cursor: pointer; opacity: 0; }
+.fc-card:hover .fc-more, .fc-more:focus { opacity: 1; }
+.fc-card.mini.top { border: 0; }
+.fc-resize-wh { opacity: 0; }
+.fc-card:hover .fc-resize-wh { opacity: 1; }
 </style>

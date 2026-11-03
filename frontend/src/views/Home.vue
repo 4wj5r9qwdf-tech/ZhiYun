@@ -23,6 +23,7 @@ const modules = visibleModules()
 const Icon = (name: string) => (AntIcons as any)[name]
 
 const activeModule = computed(() => {
+  if (route.path.startsWith('/order')) return 'order'
   if (route.path.startsWith('/person')) return 'person'
   if (route.path.startsWith('/property')) return 'property'
   return 'system'
@@ -32,6 +33,7 @@ function navModule(key: string) {
   if (key === 'workbench') router.push({ name: 'Workbench' })
   else if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
+  else if (key === 'order') router.push({ name: 'OrderIndex' })
   else if (key === 'property') router.push({ name: 'PropertyIndex' })
   else {
     const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
@@ -59,6 +61,7 @@ function closeTab(name: string) {
 
 // 当前所在模块的首页路由（关完所有 tab 回这里）
 const moduleHomeRoute = computed(() => {
+  if (route.path.startsWith('/order')) return 'OrderIndex'
   if (route.path.startsWith('/person')) return 'PersonIndex'
   if (route.path.startsWith('/property')) return 'PropertyIndex'
   return 'SystemIndex'

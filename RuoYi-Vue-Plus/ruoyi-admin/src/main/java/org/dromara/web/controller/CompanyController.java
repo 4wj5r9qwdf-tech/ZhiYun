@@ -1,5 +1,7 @@
 package org.dromara.web.controller;
 
+import org.dromara.system.controller.system.BusinessAudit;
+
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.PageResult;
@@ -30,6 +32,20 @@ import java.util.Map;
 public class CompanyController {
 
     private final JdbcTemplate jdbcTemplate;
+
+    @SaCheckPermission("system:company:list")
+    @GetMapping("/file-usage/{ids}")
+    public R<java.util.List<Map<String, Object>>> fileUsage(@PathVariable Long[] ids) {
+        if (ids.length == 0 || ids.length > 100) {
+            return R.fail("文件数量无效");
+        }
+        String marks = String.join(",", java.util.Collections.nCopies(ids.length, "?"));
+        return R.ok(jdbcTemplate.queryForList(
+            "SELECT company_name, logo_oss_id::text AS logo_oss_id, login_bg_oss_id::text AS login_bg_oss_id " +
+            "FROM sys_company WHERE del_flag='0' AND (logo_oss_id IN (" + marks +
+            ") OR login_bg_oss_id IN (" + marks + ")) ORDER BY company_id",
+            java.util.stream.Stream.concat(java.util.Arrays.stream(ids), java.util.Arrays.stream(ids)).toArray()));
+    }
 
     /**
      * 查询公司列表（分页）。
@@ -74,9 +90,12 @@ public class CompanyController {
      */
     @SaCheckPermission("system:company:add")
     @Log(title = "公司档案", businessType = BusinessType.INSERT)
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping
     public R<Void> add(@RequestBody Map<String, Object> body) {
-        Long companyId = System.currentTimeMillis();
+        boolean makeDefault = "1".equals(body.get("isDefault"));
+        if (makeDefault) lockDefaultSwitch();
+        var previousDefaults = makeDefault ? defaultCompanies() : null;        Long companyId = System.currentTimeMillis();
         jdbcTemplate.update(
             "INSERT INTO sys_company (company_id, company_name, logo_oss_id, login_bg_oss_id, " +
             "  slogan, login_bg_mode, name_color, is_default, theme, status, del_flag, create_time) " +
@@ -85,9 +104,10 @@ public class CompanyController {
             toLong(body.get("loginBgOssId")), body.get("slogan"),
             body.getOrDefault("loginBgMode", "A"), body.getOrDefault("nameColor", "#FFFFFF"), body.get("theme"));
         // 若设为默认，取消其他默认
-        if ("1".equals(body.get("isDefault"))) {
-            setDefault(companyId);
+        if (makeDefault) {
+            applyDefault(companyId);
         }
+        BusinessAudit.record("新增公司",companyId,"名称",withPreviousDefault(java.util.Map.of(),previousDefaults),withDefaultChange(auditSnapshot(companyId,false),previousDefaults));
         return R.ok();
     }
 
@@ -96,9 +116,14 @@ public class CompanyController {
      */
     @SaCheckPermission("system:company:edit")
     @Log(title = "公司档案", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping
     public R<Void> edit(@RequestBody Map<String, Object> body) {
-        Long companyId = Long.valueOf(body.get("companyId").toString());
+        boolean makeDefault = "1".equals(body.get("isDefault"));
+        if (makeDefault) lockDefaultSwitch();
+        var previousDefaults = makeDefault ? defaultCompanies() : null;        Long companyId = Long.valueOf(body.get("companyId").toString());
+        var auditBefore = auditSnapshot(companyId,true);
+        if (auditBefore.isEmpty() || "1".equals(auditBefore.get("删除标记"))) return R.fail("公司不存在");
         jdbcTemplate.update(
             "UPDATE sys_company SET company_name=?, logo_oss_id=?, login_bg_oss_id=?, " +
             "  slogan=?, login_bg_mode=?, name_color=?, theme=?, status=?, update_time=now() " +
@@ -107,9 +132,10 @@ public class CompanyController {
             body.get("slogan"), body.getOrDefault("loginBgMode", "A"),
             body.getOrDefault("nameColor", "#FFFFFF"),
             body.get("theme"), body.getOrDefault("status", "0"), companyId);
-        if ("1".equals(body.get("isDefault"))) {
-            setDefault(companyId);
+        if (makeDefault) {
+            applyDefault(companyId);
         }
+        BusinessAudit.record("修改公司",companyId,"名称",withPreviousDefault(auditBefore,previousDefaults),withDefaultChange(auditSnapshot(companyId,false),previousDefaults));
         return R.ok();
     }
 
@@ -128,9 +154,12 @@ public class CompanyController {
      */
     @SaCheckPermission("system:company:remove")
     @Log(title = "公司档案", businessType = BusinessType.DELETE)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{companyId}")
     public R<Void> remove(@PathVariable Long companyId) {
+        var auditBefore = auditSnapshot(companyId,true);
         jdbcTemplate.update("UPDATE sys_company SET del_flag='1', update_time=now() WHERE company_id=?", companyId);
+        BusinessAudit.record("删除公司",companyId,"名称",auditBefore,auditSnapshot(companyId,false));
         return R.ok();
     }
 
@@ -139,10 +168,46 @@ public class CompanyController {
      */
     @SaCheckPermission("system:company:edit")
     @Log(title = "公司档案", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/default/{companyId}")
     public R<Void> setDefault(@PathVariable Long companyId) {
-        jdbcTemplate.update("UPDATE sys_company SET is_default='0' WHERE is_default='1'");
-        jdbcTemplate.update("UPDATE sys_company SET is_default='1', update_time=now() WHERE company_id=?", companyId);
+        lockDefaultSwitch();
+        var before = auditSnapshot(companyId,true);
+        if (before.isEmpty() || "1".equals(before.get("删除标记"))) return R.fail("公司不存在");
+        var previous = defaultCompanies();
+        applyDefault(companyId);
+        BusinessAudit.record("设置默认公司",companyId,"名称",withPreviousDefault(before,previous),
+            withDefaultChange(auditSnapshot(companyId,false),previous));
         return R.ok();
+    }
+
+    private void lockDefaultSwitch() {
+        jdbcTemplate.execute("LOCK TABLE sys_company IN SHARE ROW EXCLUSIVE MODE");
+    }
+
+    private void applyDefault(Long companyId) {
+        jdbcTemplate.update("UPDATE sys_company SET is_default='0', update_time=now() WHERE is_default='1' AND company_id<>?",companyId);
+        jdbcTemplate.update("UPDATE sys_company SET is_default='1', update_time=now() WHERE company_id=? AND is_default IS DISTINCT FROM '1'",companyId);
+    }
+
+    private java.util.List<String> defaultCompanies() {
+        return jdbcTemplate.queryForList(
+            "SELECT company_name||' / ID '||company_id FROM sys_company WHERE is_default='1' ORDER BY company_id",String.class);
+    }
+
+    private Map<String,Object> withPreviousDefault(Map<String,Object> snapshot,java.util.List<String> defaults) {
+        if (defaults == null) return snapshot;
+        var result = new java.util.LinkedHashMap<>(snapshot);
+        result.put("默认公司名单",defaults);
+        return result;
+    }
+
+    private Map<String,Object> withDefaultChange(Map<String,Object> snapshot,java.util.List<String> previous) {
+        return withPreviousDefault(snapshot,previous == null ? null : defaultCompanies());
+    }
+
+    private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
+        var row = BusinessAudit.snapshot(jdbcTemplate,"SELECT company_name AS \"名称\", logo_oss_id::text AS \"标志文件\", login_bg_oss_id::text AS \"登录背景文件\", slogan AS \"标语\", login_bg_mode AS \"背景模式\", name_color AS \"名称颜色\", is_default AS \"默认公司\", theme AS \"主题\", status AS \"状态\", del_flag AS \"删除标记\" FROM sys_company WHERE company_id=?"+(lock ? " FOR UPDATE" : ""),id);
+        return row;
     }
 }

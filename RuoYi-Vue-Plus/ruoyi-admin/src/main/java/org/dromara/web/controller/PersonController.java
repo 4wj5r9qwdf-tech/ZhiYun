@@ -169,7 +169,7 @@ public class PersonController {
         java.util.Set<Long> nodes = new java.util.LinkedHashSet<>();
         for (Long roleId : roleIds) {
             String scope = jdbcTemplate.query(
-                "SELECT data_scope FROM sys_role WHERE role_id=?", rs -> rs.next() ? rs.getString(1) : null, roleId);
+                "SELECT data_scope FROM sys_role WHERE role_id=? AND status='0'", rs -> rs.next() ? rs.getString(1) : null, roleId);
             if (scope == null) continue;
             switch (scope) {
                 case "2" -> jdbcTemplate.queryForList(                       // 自定义组织节点
@@ -210,8 +210,12 @@ public class PersonController {
     @SaCheckPermission("system:person:query")
     @GetMapping("/org-counts")
     public R<Map<String, Long>> orgCounts() {
+        // 人数角标与人员列表使用同一数据范围和系统账号过滤。
+        StringBuilder countWhere = new StringBuilder(" WHERE u.del_flag='0' AND u.user_name<>'admin'");
+        java.util.List<Object> countArgs = new java.util.ArrayList<>();
+        applyDataScope(countWhere, countArgs);
         List<Map<String, Object>> people = jdbcTemplate.queryForList(
-            "SELECT org_id FROM sys_user WHERE del_flag='0'");
+            "SELECT u.org_id FROM sys_user u" + countWhere, countArgs.toArray());
         List<Map<String, Object>> orgs = jdbcTemplate.queryForList(
             "SELECT org_id, ancestors FROM sys_org");
         java.util.Map<Long, String> ancMap = new java.util.HashMap<>();
@@ -311,8 +315,16 @@ public class PersonController {
     @SaCheckPermission("system:person:query")
     @GetMapping("/{userId}")
     public R<Map<String, Object>> getInfo(@PathVariable Long userId) {
-        Map<String, Object> row = jdbcTemplate.queryForMap(
-            "SELECT u.*, e.* FROM sys_user u LEFT JOIN sys_person_ext e ON u.user_id=e.user_id WHERE u.user_id=?", userId);
+        // 详情不能绕过列表的数据范围，密码散列也不应返回给前端。
+        StringBuilder detailWhere = new StringBuilder(" WHERE u.user_id=?");
+        java.util.List<Object> detailArgs = new java.util.ArrayList<>();
+        detailArgs.add(userId);
+        applyDataScope(detailWhere, detailArgs);
+        List<Map<String, Object>> matches = jdbcTemplate.queryForList(
+            "SELECT u.*, e.* FROM sys_user u LEFT JOIN sys_person_ext e ON u.user_id=e.user_id" + detailWhere, detailArgs.toArray());
+        if (matches.isEmpty()) return R.fail("人员不存在或无权查看");
+        Map<String, Object> row = matches.get(0);
+        row.remove("password");
         List<Long> postIds = jdbcTemplate.queryForList(
             "SELECT post_id FROM sys_user_post WHERE user_id=?", Long.class, userId);
         List<Long> roleIds = jdbcTemplate.queryForList(
@@ -328,7 +340,8 @@ public class PersonController {
      *   postIds[]、roleIds[]、ext{...}。
      */
     @SaCheckPermission("system:person:add")
-    @Log(title = "人员信息", businessType = BusinessType.INSERT)
+    @Log(title = "人员信息", businessType = BusinessType.INSERT, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping
     public R<Void> add(@RequestBody Map<String, Object> body) {
         String jobNo = str(body.get("jobNo"));
@@ -352,6 +365,7 @@ public class PersonController {
             BCrypt.hashpw(password), str(body.getOrDefault("status", "0")), str(body.get("remark")));
         saveExt(userId, body);
         saveRelations(userId, body);
+        recordPersonAudit(userId, "新增人员", java.util.Map.of(), personAuditSnapshot(userId), false);
         return R.ok();
     }
 
@@ -359,10 +373,15 @@ public class PersonController {
      * 编辑人员（不改工号/密码；工号变更走单独接口）。
      */
     @SaCheckPermission("system:person:edit")
-    @Log(title = "人员信息", businessType = BusinessType.UPDATE)
+    @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping
     public R<Void> edit(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(str(body.get("userId")));
+        var auditRows = jdbcTemplate.queryForList(
+            "SELECT u.nick_name, e.emp_status FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id WHERE u.user_id=? FOR UPDATE OF u", userId);
+        if (auditRows.isEmpty()) return R.fail("人员不存在");
+        Map<String,Object> before = personAuditSnapshot(userId);
         String pwd = str(body.get("password"));
         // 密码：填了就重置（BCrypt），不填不动
         if (pwd != null && !pwd.isBlank()) {
@@ -381,6 +400,7 @@ public class PersonController {
         }
         saveExt(userId, body);
         saveRelations(userId, body);
+        recordPersonAudit(userId, "修改人员", before, personAuditSnapshot(userId), pwd != null && !pwd.isBlank());
         return R.ok();
     }
 
@@ -388,11 +408,15 @@ public class PersonController {
      * 重置密码为默认 123456。
      */
     @SaCheckPermission("system:person:resetPwd")
-    @Log(title = "人员信息", businessType = BusinessType.UPDATE)
+    @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/{userId}/reset-password")
     public R<Void> resetPassword(@PathVariable Long userId) {
+        if (!lockPersonForAudit(userId)) return R.fail("人员不存在");
+        Map<String,Object> before = personAuditSnapshot(userId);
         jdbcTemplate.update("UPDATE sys_user SET password=?, update_time=now() WHERE user_id=?",
             BCrypt.hashpw(DEFAULT_PASSWORD), userId);
+        recordPersonAudit(userId, "重置密码", before, personAuditSnapshot(userId), true);
         return R.ok();
     }
 
@@ -401,15 +425,19 @@ public class PersonController {
      * 人员是登录账号，软删保留历史关联、可恢复，不做物理删。
      */
     @SaCheckPermission("system:person:remove")
-    @Log(title = "人员信息", businessType = BusinessType.DELETE)
+    @Log(title = "人员信息", businessType = BusinessType.DELETE, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{userId}")
     public R<Void> remove(@PathVariable Long userId) {
         // 不允许删超管（user_id 由 .env 配置的超管身份载体，删了登录会出问题）
         if (LoginHelper.isSuperAdmin(userId)) {
             return R.fail("超级管理员账号不允许删除");
         }
+        if (!lockPersonForAudit(userId)) return R.fail("人员不存在");
+        Map<String,Object> before = personAuditSnapshot(userId);
         jdbcTemplate.update(
             "UPDATE sys_user SET del_flag='1', status='1', update_time=now() WHERE user_id=?", userId);
+        recordPersonAudit(userId, "删除人员", before, personAuditSnapshot(userId), false);
         return R.ok();
     }
 
@@ -418,9 +446,12 @@ public class PersonController {
      * 已删人员工号不占用，恢复前需确认该工号未被新人占用。
      */
     @SaCheckPermission("system:person:edit")
-    @Log(title = "人员信息", businessType = BusinessType.UPDATE)
+    @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/{userId}/restore")
     public R<Void> restore(@PathVariable Long userId) {
+        if (!lockPersonForAudit(userId)) return R.fail("人员不存在");
+        Map<String,Object> before = personAuditSnapshot(userId);
         Map<String, Object> row = jdbcTemplate.queryForMap(
             "SELECT user_name, del_flag FROM sys_user WHERE user_id=?", userId);
         if (!"1".equals(str(row.get("del_flag")))) {
@@ -436,6 +467,7 @@ public class PersonController {
         }
         jdbcTemplate.update(
             "UPDATE sys_user SET del_flag='0', status='0', update_time=now() WHERE user_id=?", userId);
+        recordPersonAudit(userId, "恢复人员", before, personAuditSnapshot(userId), false);
         return R.ok();
     }
 
@@ -446,12 +478,15 @@ public class PersonController {
      * 超管账号禁止；审计留痕（各表 create_by）与登录日志不清理。
      */
     @SaCheckPermission("system:person:remove")
-    @Log(title = "人员信息", businessType = BusinessType.DELETE)
+    @Log(title = "人员信息", businessType = BusinessType.DELETE, isSaveRequestData = false)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{userId}/permanent")
     public R<Void> removePermanent(@PathVariable Long userId) {
         if (LoginHelper.isSuperAdmin(userId)) {
             return R.fail("超级管理员账号不允许彻底删除");
         }
+        if (!lockPersonForAudit(userId)) return R.fail("人员不存在");
+        Map<String,Object> before = personAuditSnapshot(userId);
         Map<String, Object> row;
         try {
             row = jdbcTemplate.queryForMap("SELECT user_name, del_flag FROM sys_user WHERE user_id=?", userId);
@@ -472,12 +507,61 @@ public class PersonController {
         jdbcTemplate.update("DELETE FROM sys_user WHERE user_id=?", userId);
         // 踢掉该用户仍在线的会话（权限/身份已失效）
         SpringUtils.context().publishEvent(OnlineUserCleanEvent.byUsers(java.util.List.of(userId)));
+        recordPersonAudit(userId, "永久删除人员", before, java.util.Map.of(), false);
         return R.ok();
     }
 
     // ===== 内部 =====
 
     /** 保存扩展表（upsert）。 */
+    private boolean lockPersonForAudit(Long userId) {
+        return !jdbcTemplate.queryForList("SELECT user_id FROM sys_user WHERE user_id=? FOR UPDATE",Long.class,userId).isEmpty();
+    }
+
+    private void recordPersonAudit(Long userId,String action,Map<String,Object> before,
+                                   Map<String,Object> after,boolean passwordReset) {
+        var changes = new java.util.LinkedHashMap<String,Object>();
+        var fields = new java.util.LinkedHashSet<String>(before.keySet());
+        fields.addAll(after.keySet());
+        var privateFields = java.util.Set.of("电话","邮箱","证件号码","银行卡号","卡号","住址","社保金额","社保补贴");
+        for (String field : fields) {
+            Object oldValue = before.get(field);
+            Object newValue = after.get(field);
+            if (java.util.Objects.equals(oldValue,newValue)) continue;
+            changes.put(field,privateFields.contains(field)
+                ? java.util.Arrays.asList(oldValue == null ? null : "已填写",newValue == null ? null : "已变更")
+                : java.util.Arrays.asList(oldValue,newValue));
+        }
+        if (passwordReset) changes.put("登录密码",java.util.Arrays.asList(null,"已重置"));
+        Object name = after.isEmpty() ? before.get("姓名") : after.get("姓名");
+        org.dromara.common.core.utils.ServletUtils.getRequest().setAttribute("zhiyun.audit",
+            java.util.Map.of("id",userId.toString(),"name",java.util.Objects.toString(name,""),"action",action,"changes",changes));
+    }
+
+    private Map<String,Object> personAuditSnapshot(Long userId) {
+        var snapshot = jdbcTemplate.queryForMap("""
+            SELECT u.nick_name AS "姓名",u.org_id::text AS "组织 ID",u.email AS "邮箱",
+                   u.user_name AS "工号",u.del_flag AS "删除标记",u.phone_number AS "电话",u.gender AS "性别",u.status AS "账号状态",u.remark AS "备注",
+                   e.marital_status AS "婚姻状况",e.cert_type AS "证件类型",e.cert_no AS "证件号码",
+                   e.nation AS "民族",e.education AS "学历",e.birth_date::text AS "出生日期",
+                   e.graduate_school AS "毕业学校",e.native_place AS "籍贯",e.address AS "住址",
+                   e.cert_expire_date::text AS "证件有效期",e.hire_date::text AS "入职日期",
+                   e.group_name AS "小组名称",e.group_id::text AS "小组 ID",e.emp_type AS "用工类型",
+                   e.leave_date::text AS "离职日期",e.card_no AS "卡号",e.emp_status AS "在职状态",
+                   e.bank_card_no AS "银行卡号",e.sign_entity AS "签约主体",e.contract_years AS "合同年限",
+                   e.contract_start::text AS "合同开始日期",e.contract_end::text AS "合同结束日期",
+                   e.has_social AS "是否参保",e.social_amount AS "社保金额",e.social_subsidy AS "社保补贴",
+                   e.has_commercial AS "是否有商业保险",e.commercial_type AS "商业保险类型",
+                   e.social_check_date::text AS "社保核查日期",e.is_dorm AS "是否住宿"
+            FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id WHERE u.user_id=?
+            """,userId);
+        snapshot.put("岗位 ID",jdbcTemplate.queryForList(
+            "SELECT post_id::text FROM sys_user_post WHERE user_id=? ORDER BY post_id",String.class,userId));
+        snapshot.put("角色 ID",jdbcTemplate.queryForList(
+            "SELECT role_id::text FROM sys_user_role WHERE user_id=? ORDER BY role_id",String.class,userId));
+        return snapshot;
+    }
+
     private void saveExt(Long userId, Map<String, Object> body) {
         @SuppressWarnings("unchecked")
         Map<String, Object> ext = body.get("ext") instanceof Map ? (Map<String, Object>) body.get("ext") : java.util.Map.of();

@@ -39,6 +39,7 @@ import java.util.List;
 @RequestMapping("/system/post")
 public class SysPostController extends BaseController {
 
+    private final org.springframework.jdbc.core.JdbcTemplate auditJdbc;
     private final ISysPostService postService;
     private final ISysOrgService orgService;
 
@@ -94,6 +95,7 @@ public class SysPostController extends BaseController {
      */
     @SaCheckPermission("system:post:add")
     @Log(title = "岗位管理", businessType = BusinessType.INSERT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PostMapping
     public R<Void> add(@Validated @RequestBody SysPostBo post) {
@@ -102,7 +104,9 @@ public class SysPostController extends BaseController {
         } else if (!postService.checkPostCodeUnique(post)) {
             return R.fail("新增岗位'" + post.getPostName() + "'失败，岗位编码已存在");
         }
-        return toAjax(postService.insertPost(post));
+        int auditResult = postService.insertPost(post);
+        if (auditResult > 0) BusinessAudit.record("新增岗位",post.getPostId(),"名称",java.util.Map.of(),auditSnapshot(post.getPostId(),false));
+        return toAjax(auditResult);
     }
 
     /**
@@ -113,6 +117,7 @@ public class SysPostController extends BaseController {
      */
     @SaCheckPermission("system:post:edit")
     @Log(title = "岗位管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping
     public R<Void> edit(@Validated @RequestBody SysPostBo post) {
@@ -124,7 +129,36 @@ public class SysPostController extends BaseController {
             && postService.countUserPostById(post.getPostId()) > 0) {
             return R.fail("该岗位下存在已分配用户，不能禁用!");
         }
-        return toAjax(postService.updatePost(post));
+        var auditBefore = auditSnapshot(post.getPostId(),true);
+        int auditResult = postService.updatePost(post);
+        if (auditResult > 0) BusinessAudit.record("修改岗位",post.getPostId(),"名称",auditBefore,auditSnapshot(post.getPostId(),false));
+        return toAjax(auditResult);
+    }
+
+    @SaCheckPermission("system:post:edit")
+    @Log(title = "岗位管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
+    @PutMapping("/{postId}/status")
+    public R<Void> changeStatus(@PathVariable Long postId, @RequestBody java.util.Map<String,String> body) {
+        String status = body.get("status");
+        if (!SystemConstants.NORMAL.equals(status) && !SystemConstants.DISABLE.equals(status)) {
+            return R.fail("岗位状态无效");
+        }
+        var before = auditSnapshot(postId,true);
+        if (before.isEmpty() || "1".equals(before.get("删除标记"))) return R.fail("岗位不存在");
+        if (status.equals(before.get("状态"))) return R.ok();
+        if (SystemConstants.DISABLE.equals(status) && postService.countUserPostById(postId) > 0) {
+            return R.fail("该岗位下存在已分配用户，不能停用");
+        }
+        var update = new SysPostBo();
+        update.setPostId(postId);
+        update.setStatus(status);
+        int affected = postService.updatePost(update);
+        if (affected > 0) {
+            BusinessAudit.record(SystemConstants.NORMAL.equals(status) ? "启用岗位" : "停用岗位",
+                postId,"名称",before,auditSnapshot(postId,false));
+        }
+        return toAjax(affected);
     }
 
     /**
@@ -135,9 +169,24 @@ public class SysPostController extends BaseController {
      */
     @SaCheckPermission("system:post:remove")
     @Log(title = "岗位管理", businessType = BusinessType.DELETE)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{postIds}")
     public R<Void> remove(@PathVariable Long[] postIds) {
-        return toAjax(postService.deletePostByIds(Arrays.asList(postIds)));
+        var before = new java.util.LinkedHashMap<String,Object>();
+        for (Long id : java.util.Arrays.stream(postIds).distinct().sorted().toList()) {
+            var row = auditSnapshot(id,true);
+            if (!row.isEmpty()) before.put(id.toString(),row);
+        }
+        int affected = postService.deletePostByIds(Arrays.asList(postIds));
+        if (affected > 0) {
+            var after = new java.util.LinkedHashMap<String,Object>();
+            for (Long id : postIds) {
+                var row = auditSnapshot(id,false);
+                if (!row.isEmpty()) after.put(id.toString(),row);
+            }
+            BusinessAudit.record("删除岗位",before.keySet(),"名称",before,after);
+        }
+        return toAjax(affected);
     }
 
     /**
@@ -174,4 +223,8 @@ public class SysPostController extends BaseController {
     }
 
 
+    private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
+        var row = BusinessAudit.snapshot(auditJdbc,"SELECT post_name AS \"名称\", org_id::text AS \"归属组织\", post_code AS \"岗位编码\", post_category AS \"岗位类别\", post_sort AS \"排序\", status AS \"状态\", del_flag AS \"删除标记\", remark AS \"备注\" FROM sys_post WHERE post_id=?"+(lock ? " FOR UPDATE" : ""),id);
+        return row;
+    }
 }
