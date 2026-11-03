@@ -39,6 +39,8 @@ public interface SysMenuMapper extends BaseMapperPlus<SysMenu, SysMenuVo>, MPJBa
             .leftJoin(SysRole.class, "sr", SysRole::getRoleId, SysRoleMenu::getRoleId)
             .eq("sur", SysUserRole::getUserId, userId)
             .eq("sr", SysRole::getStatus, SystemConstants.NORMAL)
+            // 停用菜单不再产生接口权限，避免仅隐藏权限树而保留实际授权。
+            .eq("m", SysMenu::getStatus, SystemConstants.NORMAL)
             .isNotNull("m", SysMenu::getPerms)
             .build());
         return new HashSet<>(StreamUtils.filter(StreamUtils.toList(list, SysMenu::getPerms), StringUtils::isNotBlank));
@@ -58,6 +60,8 @@ public interface SysMenuMapper extends BaseMapperPlus<SysMenu, SysMenuVo>, MPJBa
             .leftJoin(SysRole.class, "sr", SysRole::getRoleId, SysRoleMenu::getRoleId)
             .eq("srm", SysRoleMenu::getRoleId, roleId)
             .eq("sr", SysRole::getStatus, SystemConstants.NORMAL)
+            // 停用菜单不再产生接口权限，避免仅隐藏权限树而保留实际授权。
+            .eq("m", SysMenu::getStatus, SystemConstants.NORMAL)
             .isNotNull("m", SysMenu::getPerms)
             .build());
         return new HashSet<>(StreamUtils.filter(StreamUtils.toList(list, SysMenu::getPerms), StringUtils::isNotBlank));
@@ -81,6 +85,8 @@ public interface SysMenuMapper extends BaseMapperPlus<SysMenu, SysMenuVo>, MPJBa
             .leftJoin(SysRole.class, "sr", SysRole::getRoleId, SysRoleMenu::getRoleId)
             .in("srm", SysRoleMenu::getRoleId, roleIds)
             .eq("sr", SysRole::getStatus, SystemConstants.NORMAL)
+            // 停用菜单不再产生接口权限，避免仅隐藏权限树而保留实际授权。
+            .eq("m", SysMenu::getStatus, SystemConstants.NORMAL)
             .isNotNull("m", SysMenu::getPerms)
             .build());
         Map<Long, Set<String>> result = new LinkedHashMap<>();

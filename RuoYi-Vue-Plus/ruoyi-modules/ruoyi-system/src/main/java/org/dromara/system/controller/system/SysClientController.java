@@ -47,7 +47,11 @@ public class SysClientController extends BaseController {
     @SaCheckPermission("system:client:list")
     @GetMapping("/list")
     public R<PageResult<SysClientVo>> list(SysClientBo bo, PageQuery pageQuery) {
-        return R.ok(sysClientService.queryPageList(bo, pageQuery));
+        var page = sysClientService.queryPageList(bo, pageQuery);
+        page.getRows().forEach(row -> {
+            row.setClientSecret(null);
+        });
+        return R.ok(page);
     }
 
     /**

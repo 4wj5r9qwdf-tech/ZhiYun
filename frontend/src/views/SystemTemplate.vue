@@ -15,14 +15,19 @@
   演示数据：纯前端内存生成, 不入库不内置——刷新即重置
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import '../assets/standard-list-fill.css'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
+import StandardPicker from '../components/StandardPicker.vue'
+import ImportResultTable from '../components/ImportResultTable.vue'
+import BatchResultModal from '../components/BatchResultModal.vue'
+import StandardListLayout from '../components/StandardListLayout.vue'
 
 // ===== 演示数据（内存生成，不入库） =====
 type DemoNode = { orgId: string; orgName: string; orgCategory: string; children?: DemoNode[] }
-type DemoRow = { id: string; code: string; name: string; orgId: string; type: string; status: string; amount: number; owner: string; remark: string }
+type DemoRow = { id: string; code: string; name: string; orgId: string; type: string; status: string; amount: number; owner: string; remark: string; reviewStatus?: 'pending' | 'approved' }
 
 const demoTree: DemoNode[] = [
   { orgId: 'd1', orgName: '总部', orgCategory: '部门', children: [
@@ -51,6 +56,7 @@ const demoRows = ref<DemoRow[]>(Array.from({ length: 23 }, (_, i) => ({
   amount: 1000 + i * 37,
   owner: ['张三', '李四', '王五'][i % 3],
   remark: i % 3 === 0 ? '' : '备注' + i,
+  reviewStatus: 'pending',
 })))
 
 // ===== 左树面板：点节点筛该节点及下级；再点取消 =====
@@ -58,6 +64,10 @@ const treeCollapsed = ref(false)
 const selectedOrgId = ref<string | null>(null)
 function onTreeSelect(keys: any[]) { selectedOrgId.value = keys.length ? String(keys[0]) : null }
 function walkIds(ns: DemoNode[]): string[] { return ns.flatMap(n => [n.orgId, ...(n.children ? walkIds(n.children) : [])]) }
+/** 找到实际选择的节点，筛选时只包含该节点及其下级。 */
+function findNode(ns: DemoNode[], id: string): DemoNode | undefined {
+  for (const node of ns) { if (node.orgId === id) return node; const found = findNode(node.children || [], id); if (found) return found }
+}
 const orgCountMap = computed(() => {
   const m: Record<string, number> = {}
   const walk = (ns: DemoNode[]) => ns.forEach(n => {
@@ -81,15 +91,17 @@ const pageNum = ref(1)
 const pageSize = ref(20)
 const loading = ref(false)
 function loadList() { loading.value = true; setTimeout(() => { loading.value = false }, 150) }
-watch([keyword, fType, fStatus, selectedOrgId], () => { pageNum.value = 1 })
+watch([keyword, fType, fStatus, selectedOrgId], () => { pageNum.value = 1; selectedRowKeys.value = [] })
 function resetFilters() {
   keyword.value = ''; fType.value = undefined; fStatus.value = undefined
-  selectedOrgId.value = null; treeCollapsed.value = false; pageNum.value = 1
+  selectedOrgId.value = null; treeCollapsed.value = false; pageNum.value = 1; colFilters.value = {}; selectedRowKeys.value = []
 }
+function runSearch() { pageNum.value = 1; colFilters.value = {}; selectedRowKeys.value = []; loadList() }
 
 // ===== 列表数据：树选节点及下级 + 关键词/类型/状态 过滤（后端分页项目换成接口；此处演示为前端切片） =====
 const filteredRows = computed(() => {
-  const ids = selectedOrgId.value ? walkIds(demoTree.filter(n => walkIds([n]).includes(selectedOrgId.value!))) : null
+  const selected = selectedOrgId.value ? findNode(demoTree, selectedOrgId.value) : undefined
+  const ids = selected ? walkIds([selected]) : null
   return demoRows.value.filter(r =>
     (!ids || ids.includes(r.orgId))
     && (!keyword.value.trim() || (r.name + r.code + r.owner).includes(keyword.value.trim()))
@@ -113,15 +125,23 @@ const summary = computed(() => ({
 
 // ===== 行选择框（批量操作按需显隐；跨页保持勾选） =====
 const selectedRowKeys = ref<string[]>([])
+const batchResultOpen = ref(false)
+const batchResultTitle = ref('批量操作结果')
+const batchSucceeded = ref(0)
+const batchFailures = ref<{ name: string; reason: string }[]>([])
+function showBatchResult(title: string, succeeded: number, failures: { name: string; reason: string }[] = []) {
+  batchResultTitle.value = title; batchSucceeded.value = succeeded; batchFailures.value = failures; batchResultOpen.value = true
+}
 const hasSelection = computed(() => selectedRowKeys.value.length > 0)
 function removeBatch() {
   Modal.confirm({
     title: `删除选中 ${selectedRowKeys.value.length} 条？`,
     content: '演示操作：仅内存生效，刷新即恢复',
     onOk: () => {
+      const count = demoRows.value.filter(r => selectedRowKeys.value.includes(r.id)).length
       demoRows.value = demoRows.value.filter(r => !selectedRowKeys.value.includes(r.id))
       selectedRowKeys.value = []
-      message.success('已删除（内存演示）')
+      showBatchResult('批量删除结果（内存演示）', count)
     },
   })
 }
@@ -133,6 +153,7 @@ const ALL_COLUMNS = [
   { title: '所属组织', key: 'orgId', width: 130 },
   { title: '类型', key: 'type', width: 90 },
   { title: '状态', key: 'status', width: 100 },
+  { title: '审核状态', key: 'reviewStatus', width: 110 },
   { title: '金额', key: 'amount', width: 110, sorter: true },
   // 列筛选（报表场景标准件）：主查询圈范围 → 列内切片（如产量报表里筛某员工）；
   // 本演示为前端全量内存数据直接过滤；后端分页项目请把 filters 值作为查询参数上送接口，
@@ -143,17 +164,21 @@ const ALL_COLUMNS = [
 type ColState = { key: string; visible: boolean; width?: number }
 const colState = ref<ColState[]>([])
 const colSetOpen = ref(false)
+// 仅用户拖动列宽后保存固定宽度；自动计算结果不写入个人设置。
+const manualWidths = ref(false)
+let widthObserver: ResizeObserver | undefined
 const colStoreKey = computed(() => `tpl_list:${localStorage.getItem('userId') || 'anon'}`)
 const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 200)
 
 function loadColState() {
+  manualWidths.value = localStorage.getItem(`${colStoreKey.value}:manual_widths`) === '1'
   try {
     const raw = localStorage.getItem(colStoreKey.value)
     if (raw) {
       const saved: ColState[] = JSON.parse(raw)
       const curKeys = new Set(ALL_COLUMNS.map(c => c.key))
       const ordered: ColState[] = []
-      for (const s of saved) if (curKeys.has(s.key)) { ordered.push(s); curKeys.delete(s.key) }
+      for (const item of saved) if (curKeys.has(item.key)) { ordered.push(manualWidths.value ? item : { key: item.key, visible: item.visible }); curKeys.delete(item.key) }
       for (const c of ALL_COLUMNS) if (curKeys.has(c.key)) ordered.push({ key: c.key, visible: true })
       colState.value = ordered
       return
@@ -161,9 +186,15 @@ function loadColState() {
   } catch { /* ignore */ }
   colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
 }
-function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(colState.value)) } catch { /* ignore */ } }
-function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState() } }
-function showAllCols() { colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true })); saveColState() }
+function saveColState() { try { localStorage.setItem(colStoreKey.value, JSON.stringify(manualWidths.value ? colState.value : colState.value.map(({ key, visible }) => ({ key, visible })))) } catch { /* ignore */ } }
+function toggleCol(key: string) { const s = colState.value.find(c => c.key === key); if (s) { s.visible = !s.visible; saveColState(); void scheduleAutoFit() } }
+function showAllCols() {
+  colState.value = ALL_COLUMNS.map(c => ({ key: c.key, visible: true }))
+  manualWidths.value = false
+  try { localStorage.removeItem(`${colStoreKey.value}:manual_widths`); localStorage.removeItem(`${colStoreKey.value}:ops_w`) } catch { /* ignore */ }
+  saveColState()
+  void scheduleAutoFit()
+}
 function colTitle(key: string) { return ALL_COLUMNS.find(c => c.key === key)?.title || key }
 function moveCol(index: number, dir: -1 | 1) {
   const arr = colState.value
@@ -173,42 +204,37 @@ function moveCol(index: number, dir: -1 | 1) {
   arr.splice(target, 0, item)
   saveColState()
 }
-async function autoFitCols() {
-  let opsW = 200
-  const wraps = document.querySelectorAll('.ops-btns')
-  if (wraps.length) {
-    const maxContent = Math.max(...[...wraps].map(w => {
-      const bs = [...w.querySelectorAll('button')]
-      if (!bs.length) return 0
-      return Math.max(...bs.map(b => b.getBoundingClientRect().right)) - Math.min(...bs.map(b => b.getBoundingClientRect().left))
-    }))
-    const td = wraps[0].closest('td')
-    const cs = td ? getComputedStyle(td) : null
-    const pad = cs ? Math.round(parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)) : 16
-    opsW = Math.max(120, Math.round(maxContent + pad + 2))
+/**
+ * 自动列宽根据表头文字及容器宽度计算，窄屏不足时允许横向滚动。
+ * 自动计算不持久化；手动拖动后才记录个人列宽。
+ */
+async function scheduleAutoFit() {
+  await nextTick()
+  if (!manualWidths.value) await autoFitCols(false)
+}
+async function autoFitCols(resetManual = true) {
+  if (resetManual) {
+    manualWidths.value = false
+    try { localStorage.removeItem(`${colStoreKey.value}:manual_widths`); localStorage.removeItem(`${colStoreKey.value}:ops_w`) } catch { /* ignore */ }
   }
-  const mins = new Map<string, number>()
-  let visibleSum = 64 + 48  // 序号列 + 选择框列
-  for (const c of colState.value) {
-    const t = ALL_COLUMNS.find(a => a.key === c.key)?.title || c.key
-    const w = Math.max(90, String(t).length * 16 + 48)
-    mins.set(c.key, w)
-    if (c.visible) visibleSum += w
+  const body = document.querySelector<HTMLElement>('.tpl-table .ant-table-body')
+  const container = document.querySelector<HTMLElement>('.tpl-table .ant-table-container')
+  const available = Math.max(0, (body?.clientWidth || container?.clientWidth || 0) - 2)
+  if (!available) return
+  const operation = 120
+  const widths = new Map<string, number>()
+  let required = 48 + 64 + operation
+  for (const col of colState.value) {
+    const title = ALL_COLUMNS.find(item => item.key === col.key)?.title || col.key
+    const min = Math.max(90, Array.from(String(title)).length * 16 + 48)
+    widths.set(col.key, min)
+    if (col.visible) required += min
   }
-  visibleSum += opsW
-  const container = document.querySelector('.ant-table-container')
-  const cw = container ? Math.round(container.clientWidth) : 0
-  const visibleCount = colState.value.filter(c => c.visible).length
-  if (cw > visibleSum + 10 && visibleCount > 0) {
-    const extra = Math.floor((cw - visibleSum) / visibleCount)
-    for (const c of colState.value) {
-      if (c.visible) mins.set(c.key, (mins.get(c.key) || 90) + extra)
-    }
-  }
-  for (const c of colState.value) { (c as any).width = mins.get(c.key) }
-  saveColState()
-  opsWidth.value = opsW
-  try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ }
+  const visible = colState.value.filter(col => col.visible)
+  const extra = visible.length ? Math.max(0, Math.floor((available - required) / visible.length)) : 0
+  for (const col of colState.value) col.width = (widths.get(col.key) || 90) + (col.visible ? extra : 0)
+  opsWidth.value = operation
+  if (resetManual) saveColState()
 }
 
 // 列排序：antd sorter（本地演示）；后端分页项目请用 sortable→orderBy 白名单（见 Person.vue）
@@ -232,7 +258,9 @@ function onTableChange(_pagination: any, filters: any, sorter: any) {
 
 // ===== 列宽拖拽（B.5.1.1：th 右缘 14px 起拖；操作列左/右缘 16px 均可） =====
 function onColResize(key: string, w: number) {
-  if (key === 'ops') { opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
+  manualWidths.value = true
+  try { localStorage.setItem(`${colStoreKey.value}:manual_widths`, '1') } catch { /* ignore */ }
+  if (key === 'ops') { saveColState(); opsWidth.value = Math.max(120, Math.round(w)); try { localStorage.setItem(`${colStoreKey.value}:ops_w`, String(opsWidth.value)) } catch { /* ignore */ } return }
   const s = colState.value.find(c => c.key === key)
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
@@ -293,20 +321,22 @@ const columns = computed(() => {
     .filter(c => c.visible)
     .map(c => ({
       ...ALL_COLUMNS.find(a => a.key === c.key)!,
-      width: c.width,
+      dataIndex: c.key,
+      width: c.width ?? ALL_COLUMNS.find(a => a.key === c.key)!.width,
       ...(ALL_COLUMNS.find(a => a.key === c.key)!.sorter ? { sorter: true } : {}),
       ...(colFilters.value[c.key] ? { filteredValue: colFilters.value[c.key] } : {}),
       customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }),
     }))
-  const sel = { key: 'selection', width: 48, fixed: 'left' as const, customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
-  return [idx, sel, ...list, ops]
+  return [idx, ...list, ops]
 })
+const scrollWidth = computed(() => 48 + 64 + opsWidth.value + colState.value.filter(c => c.visible).reduce((sum, c) => sum + (c.width ?? ALL_COLUMNS.find(a => a.key === c.key)?.width ?? 100), 0))
 
 // ===== 演示弹窗（B.5.1.2：mask-closable=false / keyboard=false / 保存校验） =====
 const showDlg = ref(false)
 const isEdit = ref(false)
 const saving = ref(false)
 const formRef = ref()
+const initialForm = ref('')
 const emptyForm = () => ({ id: null as string | null, code: '', name: '', orgId: undefined as string | undefined, type: '部门', status: '0', amount: undefined as number | undefined, owner: '', remark: '' })
 const form = ref(emptyForm())
 const rules: any = {
@@ -314,12 +344,19 @@ const rules: any = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   orgId: [{ required: true, message: '请选择所属组织', trigger: 'change' }],
 }
-function openAdd() { isEdit.value = false; form.value = emptyForm(); showDlg.value = true }
-function openEdit(row: any) { isEdit.value = true; form.value = { ...row } as any; showDlg.value = true }
+function openAdd() { isEdit.value = false; form.value = emptyForm(); initialForm.value = JSON.stringify(form.value); showDlg.value = true }
+function openEdit(row: any) { isEdit.value = true; form.value = { ...row } as any; initialForm.value = JSON.stringify(form.value); showDlg.value = true }
+/** 保留用户未保存的输入；保存进行时不能关闭，避免重复提交。 */
+function closeForm() {
+  if (saving.value) return
+  if (JSON.stringify(form.value) === initialForm.value) { showDlg.value = false; return }
+  Modal.confirm({ title: '放弃未保存的修改？', content: '关闭后，本次输入不会保存。', okText: '放弃修改', cancelText: '继续编辑', onOk: () => { showDlg.value = false } })
+}
 async function saveRow() {
+  if (saving.value) return
   try {
     await formRef.value?.validate()
-  } catch { return }
+  } catch (error: any) { const name = error?.errorFields?.[0]?.name; if (name) formRef.value?.scrollToField(name); return }
   saving.value = true
   setTimeout(() => {
     if (isEdit.value && form.value.id) {
@@ -341,33 +378,146 @@ function removeOne(row: any) {
   })
 }
 function toggleStatus(row: any, checked: any) {
-  row.status = checked ? '0' : '1'
-  message.success(checked ? '已启用（内存演示）' : '已停用（内存演示）')
+  Modal.confirm({ title: checked ? '启用该记录？' : '停用该记录？', content: checked ? '启用后可再次用于新业务。' : '停用后不能新建引用，已有业务继续执行。', okText: '确认', cancelText: '取消', onOk: () => { row.status = checked ? '0' : '1'; message.success(checked ? '已启用（内存演示）' : '已停用（内存演示）') } })
+}
+
+// 以下为可选标准能力的演示；不连接业务接口，也不预设实际模块的审核、导入或删除规则。
+// 批量启停共用一个入口；演示仅修改内存数据，不代表业务接口规则。
+const batchStatusVisible = ref(false)
+const batchStatusTarget = ref<string>()
+function openBatchStatus() { batchStatusTarget.value = undefined; batchStatusVisible.value = true }
+function applyBatchStatus() {
+  if (batchStatusTarget.value !== '0' && batchStatusTarget.value !== '1') { message.warning('请选择启用或停用'); return }
+  const selected = demoRows.value.filter(row => selectedRowKeys.value.includes(row.id))
+  const changed = selected.filter(row => row.status !== batchStatusTarget.value)
+  const skipped = selected.length - changed.length
+  for (const row of changed) row.status = batchStatusTarget.value
+  batchStatusVisible.value = false
+  selectedRowKeys.value = []
+  message.success(`成功 ${changed.length} 条，跳过 ${skipped} 条，失败 0 条（内存演示）`)
+}
+const batchVisible = ref(false)
+const batchType = ref<string>()
+function batchEdit() { batchType.value = undefined; batchVisible.value = true }
+function applyBatchEdit() {
+  if (!batchType.value) { message.warning('请选择需要修改的类型'); return }
+  const type = batchType.value
+  Modal.confirm({ title: `批量修改 ${selectedRowKeys.value.length} 条？`, content: `仅修改类型为「${type}」，其他字段保持原值。`, onOk: () => {
+    let count = 0
+    for (const row of demoRows.value) if (selectedRowKeys.value.includes(row.id)) { row.type = type; count++ }
+    batchVisible.value = false; selectedRowKeys.value = []; showBatchResult('批量修改结果（内存演示）', count)
+  } })
+}
+function batchAudit() {
+  const selected = demoRows.value.filter(row => selectedRowKeys.value.includes(row.id))
+  const ready = selected.filter(row => row.reviewStatus !== 'approved')
+  Modal.confirm({ title: `批量审核 ${selected.length} 条？`, content: `可审核 ${ready.length} 条，已审核 ${selected.length - ready.length} 条将跳过。`, onOk: () => {
+    ready.forEach(row => { row.reviewStatus = 'approved' }); selectedRowKeys.value = []
+    showBatchResult('批量审核结果（内存演示）', ready.length, selected.filter(row => !ready.includes(row)).map(row => ({ name: row.name, reason: '已审核，跳过' })))
+  } })
+}
+const exportVisible = ref(false)
+const exportScope = ref('filtered')
+function openExport() { exportScope.value = 'filtered'; exportVisible.value = true }
+function confirmExport() { exportVisible.value = false; exportCsv(exportScope.value === 'selected') }
+
+// 选择器保留弹窗内临时选择，只有点击确定才写回表单。
+const pickerVisible = ref(false)
+const pickerKind = ref<'org' | 'person'>('org')
+const pickerSelected = ref<string[]>([])
+const pickerMultiple = ref(false)
+const pickerItems = computed(() => pickerKind.value === 'org'
+    ? flatOrgs.map(o => ({ id: o.orgId, name: o.orgName, orgId: o.orgId }))
+    : [{ id: '张三', name: '张三', orgId: 'd111' }, { id: '李四', name: '李四', orgId: 'd112' }, { id: '王五', name: '王五', orgId: 'd121' }])
+function openPicker(kind: 'org' | 'person', multiple = false) {
+  pickerKind.value = kind; pickerMultiple.value = multiple
+  pickerSelected.value = kind === 'org' ? (form.value.orgId ? [form.value.orgId] : []) : form.value.owner.split('、').filter(Boolean)
+  pickerVisible.value = true
+}
+function confirmPicker(values: string[]) {
+  if (pickerKind.value === 'org') form.value.orgId = values[0]
+  else form.value.owner = values.join('、')
+}
+
+const importVisible = ref(false)
+const importInput = ref<HTMLInputElement>()
+const importRows = ref<{ line: number; code: string; name: string; orgId: string; error: string }[]>([])
+function downloadFile(name: string, content: string) {
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + content], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url)
+}
+function downloadImportTemplate() { downloadFile('功能模板导入示例.csv', '编码,名称,组织编码\r\nT2001,演示记录,d111') }
+/** CSV 支持带引号、逗号和转义引号；校验结果由用户确认后才写入内存。 */
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = []; let value = ''; let quoted = false
+  for (let i = 0; i < line.length; i++) { const ch = line[i]; if (ch === '"') { if (quoted && line[i + 1] === '"') { value += '"'; i++ } else quoted = !quoted } else if (ch === ',' && !quoted) { fields.push(value.trim()); value = '' } else value += ch }
+  if (quoted) throw new Error('引号未闭合')
+  fields.push(value.trim()); return fields
+}
+async function readImport(event: Event) {
+  const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return
+  try {
+    const lines = (await file.text()).replace(/^\uFEFF/, '').split(/\r?\n/).filter(line => line.trim())
+    if (lines.length < 2 || lines[0].trim() !== '编码,名称,组织编码') throw new Error('请使用下载的 CSV 模板')
+    const seen = new Set(demoRows.value.map(r => r.code.toLowerCase()))
+    importRows.value = lines.slice(1).map((line, index) => {
+      let fields: string[] = []; let error = ''
+      try { fields = parseCsvLine(line) } catch { error = 'CSV 引号格式错误' }
+      const [code = '', name = '', orgId = ''] = fields
+      if (!error && (fields.length !== 3 || !code || !name || !orgId)) error = '请填写编码、名称和组织编码'
+      else if (!error && !flatOrgs.some(org => org.orgId === orgId)) error = '组织编码不存在'
+      else if (!error && seen.has(code.toLowerCase())) error = '编码重复'
+      if (!error) seen.add(code.toLowerCase())
+      return { line: index + 2, code, name, orgId, error }
+    })
+  } catch (e: any) { importRows.value = []; message.error(e.message || '读取文件失败') } finally { input.value = '' }
+}
+function applyImport() {
+  const valid = importRows.value.filter(row => !row.error)
+  if (!valid.length) { message.warning('没有可导入的记录'); return }
+  Modal.confirm({ title: '确认导入？', content: `有效 ${valid.length} 条，失败 ${importRows.value.length - valid.length} 条将跳过。`, onOk: () => {
+    valid.forEach((row, i) => demoRows.value.unshift({ id: `import-${Date.now()}-${i}`, code: row.code, name: row.name, orgId: row.orgId, type: '部门', status: '0', amount: 0, owner: '', remark: '', reviewStatus: 'pending' }))
+    message.success(`导入成功 ${valid.length} 条，失败 ${importRows.value.length - valid.length} 条（内存演示）`); importVisible.value = false; importRows.value = []
+  } })
 }
 
 // ===== 导出 CSV（前端 blob，导当前筛选行；后端分页项目见 Person.vue 的 /system/person/export） =====
-function exportCsv() {
+function exportCsv(selectedOnly = false) {
   const head = '编码,名称,所属组织,类型,状态,金额,负责人,备注'
   const orgName = (id: string) => flatOrgs.find(o => o.orgId === id)?.orgName || ''
-  const lines = filteredRows.value.map(r => [r.code, r.name, orgName(r.orgId), r.type, r.status === '0' ? '启用' : '停用', r.amount, r.owner, r.remark].join(','))
+  const data = selectedOnly ? demoRows.value.filter(r => selectedRowKeys.value.includes(r.id)) : colFilteredRows.value
+  if (!data.length) { message.warning(selectedOnly ? '请先选择记录' : '没有可导出的记录'); return }
+  const lines = data.map(r => [r.code, r.name, orgName(r.orgId), r.type, r.status === '0' ? '启用' : '停用', r.amount, r.owner, r.remark].map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(','))
   const blob = new Blob(['\ufeff' + [head, ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = '功能模板导出.csv'
   a.click()
   URL.revokeObjectURL(a.href)
-  message.success(`已导出 ${filteredRows.value.length} 条`)
+  message.success(`已导出 ${data.length} 条`)
 }
 
-onMounted(() => { loadColState(); loadList() })
+onMounted(() => {
+  loadColState()
+  loadList()
+  void scheduleAutoFit()
+  widthObserver = new ResizeObserver(() => { void scheduleAutoFit() })
+  nextTick(() => {
+    const area = document.querySelector<HTMLElement>('.tpl-table .ant-table-container')
+    if (area) widthObserver?.observe(area)
+  })
+})
+onBeforeUnmount(() => widthObserver?.disconnect())
+watch(treeCollapsed, () => { void scheduleAutoFit() })
 </script>
 
 <template>
-  <div class="tpl-page">
+  <div class="tpl-container">
+    <StandardListLayout v-model:collapsed="treeCollapsed">
     <!-- 页头行：查询条件左置（定版布局：无标题无返回） -->
-    <div class="page-header">
+    <template #filters>
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索编码/名称/负责人" allow-clear style="width:200px" @press-enter="loadList">
+        <a-input v-model:value="keyword" placeholder="搜索编码/名称/负责人" allow-clear style="width:200px" @press-enter="runSearch">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
         </a-input>
         <a-select v-model:value="fType" allow-clear placeholder="类型" style="width:110px" @change="loadList">
@@ -380,18 +530,23 @@ onMounted(() => { loadColState(); loadList() })
           <a-select-option value="1">停用</a-select-option>
         </a-select>
       </div>
-    </div>
+    </template>
 
     <!-- 按钮行：+新增（最左）→ 查询 → 重置 …… 批量/导出/列设置（最右） -->
+    <template #actions>
     <div class="filter-bar">
       <a-button type="primary" @click="openAdd"><PlusOutlined />新增</a-button>
-      <a-button type="primary" @click="loadList">查询</a-button>
+      <a-button type="primary" @click="runSearch">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
+      <a-button :disabled="!hasSelection" @click="openBatchStatus">批量启停{{ hasSelection ? `（${selectedRowKeys.length}）` : '' }}</a-button>
+      <a-button :disabled="!hasSelection" @click="batchEdit">批量修改</a-button>
+      <a-button :disabled="!hasSelection" @click="batchAudit">批量审核</a-button>
       <a-button :disabled="!hasSelection" danger @click="removeBatch">
         删除选中{{ hasSelection ? `（${selectedRowKeys.length}）` : '' }}
       </a-button>
-      <a-button @click="exportCsv">↓ 导出</a-button>
+      <a-button @click="importRows = []; importVisible = true">↑ 导入</a-button>
+      <a-button @click="openExport">↓ 导出</a-button>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -406,17 +561,16 @@ onMounted(() => { loadColState(); loadList() })
             <a-divider style="margin: 6px 0" />
             <div class="col-set-foot">
               <a size="small" @click="showAllCols">恢复默认</a>
-              <a size="small" @click="autoFitCols">自适应列宽</a>
               <a-button type="primary" size="small" @click="colSetOpen = false">完成</a-button>
             </div>
           </a-card>
         </template>
       </a-dropdown>
     </div>
+    </template>
 
     <!-- 左树 + 右表（树可收起；树面板头部"重置"与表头重置同行为） -->
-    <div class="tpl-body" :class="{ 't-collapsed': treeCollapsed }">
-      <div class="tree-panel" :class="{ collapsed: treeCollapsed }">
+    <template #sidebar>
         <div class="tree-head">
           <span class="tree-title">组织架构</span>
           <a v-if="selectedOrgId" class="tree-clear" @click="resetFilters">重置</a>
@@ -439,21 +593,19 @@ onMounted(() => { loadColState(); loadList() })
             </template>
           </a-tree>
         </div>
-      </div>
-      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed" />
-
-      <div class="tpl-main">
+    </template>
+    <template #default>
         <a-table
           :columns="columns"
           :data-source="pagedRows"
           :loading="loading"
           :row-selection="{ selectedRowKeys, onChange: (keys: any[]) => { selectedRowKeys = keys as any } }"
           :pagination="{ total, current: pageNum, pageSize, showSizeChanger: true, showQuickJumper: true, showTotal: (t: number) => `共 ${t} 条`, onChange: (p: number, ps: number) => { pageNum = p; pageSize = ps } }"
-          :scroll="{ x: 'max-content', y: 'calc(100vh - 360px)' }"
+          :scroll="{ x: scrollWidth, y: 'calc(100vh - 390px)' }"
           table-layout="fixed"
           row-key="id"
           size="middle"
-          class="tpl-table"
+          class="tpl-table zy-fill-table"
           @change="onTableChange"
         >
           <template #bodyCell="{ column, record, index }">
@@ -468,6 +620,9 @@ onMounted(() => { loadColState(); loadList() })
             </template>
             <template v-else-if="column.key === 'status'">
               <a-switch :checked="record.status === '0'" checked-children="启用" un-checked-children="停用" @change="(v: any) => toggleStatus(record, v)" />
+            </template>
+            <template v-else-if="column.key === 'reviewStatus'">
+              <a-tag :color="record.reviewStatus === 'approved' ? 'green' : 'orange'">{{ record.reviewStatus === 'approved' ? '已审核' : '待审核' }}</a-tag>
             </template>
             <template v-else-if="column.key === 'amount'">
               {{ record.amount?.toLocaleString() }}
@@ -485,27 +640,27 @@ onMounted(() => { loadColState(); loadList() })
           <template #summary>
             <a-table-summary fixed>
               <a-table-summary-row>
-                <a-table-summary-cell :index="0" :col-span="3" class="summary-cell">合计（筛选结果）</a-table-summary-cell>
-                <a-table-summary-cell :index="3" class="summary-cell">{{ summary.count }} 条</a-table-summary-cell>
-                <a-table-summary-cell :index="4" />
-                <a-table-summary-cell :index="5" class="summary-cell">￥{{ summary.amount.toLocaleString() }}</a-table-summary-cell>
-                <a-table-summary-cell :index="6" :col-span="3" />
+                <a-table-summary-cell :index="0" :col-span="columns.length + 1" class="summary-cell">合计（筛选结果）　{{ summary.count }} 条　金额 ￥{{ summary.amount.toLocaleString() }}</a-table-summary-cell>
               </a-table-summary-row>
             </a-table-summary>
           </template>
         </a-table>
-      </div>
-    </div>
+    </template>
+    </StandardListLayout>
 
     <!-- 新增/编辑弹窗（B.5.1.2） -->
     <a-modal
-      v-model:open="showDlg"
+      :open="showDlg"
       :mask-closable="false"
       :keyboard="false"
-      :title="isEdit ? '编辑' : '新增'"
+      :title="isEdit ? '编辑演示记录' : '新增演示记录'"
       width="640px"
+      ok-text="保存"
+      cancel-text="取消"
+      :confirm-loading="saving"
+      :body-style="{ maxHeight: 'min(65vh, 600px)', overflowY: 'auto' }"
       @ok="saveRow"
-      @cancel="showDlg = false"
+      @cancel="closeForm"
     >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
@@ -521,14 +676,7 @@ onMounted(() => { loadColState(); loadList() })
           </a-col>
           <a-col :span="12">
             <a-form-item label="所属组织" name="orgId">
-              <a-tree-select
-                v-model:value="form.orgId"
-                :tree-data="demoTree"
-                :field-names="{ label: 'orgName', value: 'orgId', children: 'children' }"
-                tree-default-expand-all
-                allow-clear
-                placeholder="请选择"
-              />
+              <a-input :value="flatOrgs.find(o => o.orgId === form.orgId)?.orgName || ''" readonly placeholder="点击选择组织" @click="openPicker('org')"><template #suffix><a @click.stop="openPicker('org')">选择</a></template></a-input>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -547,7 +695,7 @@ onMounted(() => { loadColState(); loadList() })
           </a-col>
           <a-col :span="12">
             <a-form-item label="负责人">
-              <a-input v-model:value="form.owner" :maxlength="20" placeholder="请输入" />
+              <a-input :value="form.owner" readonly placeholder="点击选择人员（支持多选）" @click="openPicker('person', true)"><template #suffix><a @click.stop="openPicker('person', true)">选择</a></template></a-input>
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -563,31 +711,51 @@ onMounted(() => { loadColState(); loadList() })
         </a-row>
       </a-form>
     </a-modal>
+    <!-- 统一查询选择器：树筛选、关键词、结果列表、临时选择与已选数。 -->
+    <StandardPicker v-model:open="pickerVisible" v-model="pickerSelected" :title="pickerKind === 'org' ? '选择组织' : '选择人员'" :tree="demoTree" :items="pickerItems" :multiple="pickerMultiple" @confirm="confirmPicker" />
+    <BatchResultModal v-model:open="batchResultOpen" :title="batchResultTitle" :succeeded="batchSucceeded" :failures="batchFailures" />
+    <a-modal v-model:open="batchStatusVisible" title="批量启停演示" :mask-closable="false" ok-text="确认" cancel-text="取消" @ok="applyBatchStatus">
+      <p>已选择 {{ selectedRowKeys.length }} 条记录，请选择目标状态。已是目标状态的记录将自动跳过。</p>
+      <a-radio-group v-model:value="batchStatusTarget"><a-radio value="0">启用</a-radio><a-radio value="1">停用</a-radio></a-radio-group>
+    </a-modal>
+    <a-modal v-model:open="batchVisible" title="批量修改演示" :mask-closable="false" ok-text="下一步" cancel-text="取消" @ok="applyBatchEdit">
+      <p>已选择 {{ selectedRowKeys.length }} 条，仅修改下方选定的字段。</p>
+      <a-form layout="vertical"><a-form-item label="修改类型" required><a-select v-model:value="batchType" placeholder="请选择" :options="[{label:'部门',value:'部门'},{label:'科室',value:'科室'},{label:'小组',value:'小组'}]" /></a-form-item></a-form>
+    </a-modal>
+    <a-modal v-model:open="exportVisible" title="导出演示" :mask-closable="false" ok-text="导出" cancel-text="取消" @ok="confirmExport">
+      <a-radio-group v-model:value="exportScope"><a-radio value="filtered">当前筛选结果（{{ colFilteredRows.length }} 条）</a-radio><a-radio value="selected" :disabled="!hasSelection">选中记录（{{ selectedRowKeys.length }} 条）</a-radio></a-radio-group>
+    </a-modal>
+    <a-modal v-model:open="importVisible" title="导入演示" width="760px" :mask-closable="false" ok-text="导入有效记录" cancel-text="取消" @ok="applyImport">
+      <p>下载模板，填写后选择 UTF-8 CSV 文件；校验后确认导入，演示数据刷新即重置。示例组织编码：总部 d1、生产中心 d11、一车间 d111、二车间 d112、销售中心 d12、华东销售科 d121。</p>
+      <a-space><a-button @click="downloadImportTemplate">下载模板</a-button><a-button type="primary" @click="importInput?.click()">选择文件</a-button></a-space>
+      <input ref="importInput" type="file" accept=".csv,text/csv" style="display:none" @change="readImport" />
+      <ImportResultTable :rows="importRows" />
+    </a-modal>
   </div>
 </template>
 
 <style scoped>
-.tpl-page { padding: 12px 16px; }
+.tpl-container { height: 100%; min-height: 0; }
 .page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); margin-bottom: 12px; }
+.filter-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); }
 .filter-spacer { flex: 1 1 auto; min-width: 8px; }
 
 /* 左树 + 右表 分栏（树可收起） */
-.tpl-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); position: relative; }
+.tpl-body { display: flex; flex: 1; align-items: stretch; gap: 0; min-height: 0; position: relative; }
 .tpl-body.t-collapsed .tpl-main { margin-left: 14px; }
 .tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid #F2F3F5; }
 .tree-title { font-weight: 600; color: #1D2129; }
 .tree-clear { color: #1E5EFF; cursor: pointer; font-size: 13px; }
-.tree-body { flex: 1; overflow: auto; padding: 8px; }
+.tree-body { flex: 1; overflow: auto; padding: 8px; font-size: 14px; }
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; margin: 0; }
 .tree-count { font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #E8F3FF; color: #1E5EFF; display: inline-flex; align-items: center; justify-content: center; }
 
 /* 折叠手柄：8px 窄竖条 + CSS 三角（展开贴面板内右缘，收起贴页面左缘） */
-.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 248px; z-index: 6; width: 8px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
+.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 244px; z-index: 6; width: 16px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
 .tree-toggle::before { content: ''; width: 0; height: 0; border: 3.5px solid transparent; border-right-color: #86909C; margin-left: -2px; }
 .tree-toggle.at-left { left: 4px; }
 .tree-toggle.at-left::before { border-right-color: transparent; border-left-color: #86909C; margin-left: 2px; }
@@ -596,6 +764,8 @@ onMounted(() => { loadColState(); loadList() })
 .tree-toggle.at-left:hover::before { border-left-color: #1E5EFF; border-right-color: transparent; }
 
 .tpl-main { flex: 1; min-width: 0; }
+.tpl-table :deep(.ant-table) { font-size: 14px; }
+.tpl-table :deep(.ant-table-tbody .ant-btn-sm) { min-height: 28px; }
 .tpl-table :deep(.ant-table-thead > tr > th) { background: #F7F8FA; font-weight: 600; }
 .tpl-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
 

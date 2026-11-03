@@ -47,7 +47,12 @@ public class SysOssConfigController extends BaseController {
     @SaCheckPermission("system:ossConfig:list")
     @GetMapping("/list")
     public R<PageResult<SysOssConfigVo>> list(@Validated(QueryGroup.class) SysOssConfigBo bo, PageQuery pageQuery) {
-        return R.ok(ossConfigService.queryPageList(bo, pageQuery));
+        var page = ossConfigService.queryPageList(bo, pageQuery);
+        page.getRows().forEach(row -> {
+            row.setAccessKey(null);
+            row.setSecretKey(null);
+        });
+        return R.ok(page);
     }
 
     /**

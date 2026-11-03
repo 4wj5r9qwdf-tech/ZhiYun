@@ -18,6 +18,7 @@ public class RouterVo {
      * 路由名字
      */
     private String name;
+    private String perms;
 
     /**
      * 路由地址

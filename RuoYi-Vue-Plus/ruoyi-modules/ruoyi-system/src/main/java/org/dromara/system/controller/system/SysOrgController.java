@@ -31,6 +31,7 @@ import java.util.List;
 @RequestMapping("/system/org")
 public class SysOrgController extends BaseController {
 
+    private final org.springframework.jdbc.core.JdbcTemplate auditJdbc;
     private final ISysOrgService orgService;
     private final ISysPostService postService;
     private final SysOrgManageMapper orgManageMapper;
@@ -84,13 +85,16 @@ public class SysOrgController extends BaseController {
      */
     @SaCheckPermission("system:org:add")
     @Log(title = "部门管理", businessType = BusinessType.INSERT)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PostMapping
     public R<Void> add(@Validated @RequestBody SysOrgBo org) {
         if (!orgService.checkOrgNameUnique(org)) {
             return R.fail("新增部门'" + org.getOrgName() + "'失败，部门名称已存在");
         }
-        return toAjax(orgService.insertOrg(org));
+        int auditResult = orgService.insertOrg(org);
+        if (auditResult > 0) BusinessAudit.record("新增组织",org.getOrgId(),"名称",java.util.Map.of(),auditSnapshot(org.getOrgId(),false));
+        return toAjax(auditResult);
     }
 
     /**
@@ -101,6 +105,7 @@ public class SysOrgController extends BaseController {
      */
     @SaCheckPermission("system:org:edit")
     @Log(title = "部门管理", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping
     public R<Void> edit(@Validated @RequestBody SysOrgBo org) {
@@ -117,7 +122,10 @@ public class SysOrgController extends BaseController {
                 return R.fail("该部门下存在已分配用户，不能禁用!");
             }
         }
-        return toAjax(orgService.updateOrg(org));
+        var auditBefore = auditSnapshot(org.getOrgId(),true);
+        int auditResult = orgService.updateOrg(org);
+        if (auditResult > 0) BusinessAudit.record("修改组织",org.getOrgId(),"名称",auditBefore,auditSnapshot(org.getOrgId(),false));
+        return toAjax(auditResult);
     }
 
     /**
@@ -128,6 +136,7 @@ public class SysOrgController extends BaseController {
      */
     @SaCheckPermission("system:org:remove")
     @Log(title = "部门管理", businessType = BusinessType.DELETE)
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{orgId}")
     public R<Void> remove(@PathVariable Long orgId) {
         if (SystemConstants.DEFAULT_ORG_ID.equals(orgId)) {
@@ -146,7 +155,10 @@ public class SysOrgController extends BaseController {
             return R.warn("该部门被其他部门管辖,请先在管辖部门中移除");
         }
         orgService.checkOrgDataScope(orgId);
-        return toAjax(orgService.deleteOrgById(orgId));
+        var auditBefore = auditSnapshot(orgId,true);
+        int auditResult = orgService.deleteOrgById(orgId);
+        if (auditResult > 0) BusinessAudit.record("删除组织",orgId,"名称",auditBefore,auditSnapshot(orgId,false));
+        return toAjax(auditResult);
     }
 
     /**
@@ -184,11 +196,14 @@ public class SysOrgController extends BaseController {
      */
     @SaCheckPermission("system:org:edit")
     @Log(title = "部门管辖", businessType = BusinessType.UPDATE)
+    @org.springframework.transaction.annotation.Transactional
     @RepeatSubmit()
     @PutMapping("/{orgId}/manages")
     public R<Void> updateManages(@PathVariable Long orgId, @RequestBody List<Long> orgIds) {
         orgService.checkOrgDataScope(orgId);
+        var before = auditSnapshot(orgId,true);
         orgService.updateManagedOrgs(orgId, orgIds == null ? List.of() : orgIds);
+        BusinessAudit.record("调整组织管辖",orgId,"名称",before,auditSnapshot(orgId,false));
         return R.ok();
     }
 
@@ -203,4 +218,10 @@ public class SysOrgController extends BaseController {
         return R.ok(orgService.selectManagedNames());
     }
 
+    private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
+        var row = BusinessAudit.snapshot(auditJdbc,"SELECT org_name AS \"名称\", parent_id::text AS \"上级组织\", org_category AS \"组织类别\", building_id::text AS \"建筑\", location AS \"位置\", order_num AS \"排序\", leader::text AS \"负责人\", phone AS \"电话\", email AS \"邮箱\", status AS \"状态\", del_flag AS \"删除标记\", ancestors AS \"上级路径\" FROM sys_org WHERE org_id=?"+(lock ? " FOR UPDATE" : ""),id);
+        if (!row.isEmpty()) row.put("管辖组织 ID",auditJdbc.queryForList(
+            "SELECT managed_org_id::text FROM sys_org_manage WHERE manage_org_id=? ORDER BY managed_org_id",String.class,id));
+        return row;
+    }
 }

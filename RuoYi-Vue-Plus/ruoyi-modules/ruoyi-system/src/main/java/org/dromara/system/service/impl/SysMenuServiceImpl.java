@@ -168,6 +168,7 @@ public class SysMenuServiceImpl implements ISysMenuService {
         for (SysMenu menu : menus) {
             String name = menu.getRouteName() + menu.getMenuId();
             RouterVo router = new RouterVo();
+            router.setPerms(menu.getPerms());
             router.setHidden("1".equals(menu.getVisible()));
             router.setName(name);
             router.setPath(menu.getRouterPath());

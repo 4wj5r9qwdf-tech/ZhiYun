@@ -94,6 +94,7 @@ async function doUpload(file: File, target: 'logo' | 'bg', input: HTMLInputEleme
   if (target === 'logo') uploadingLogo.value = true
   else uploadingBg.value = true
   try {
+    fd.append('companyImagePurpose', target)
     const res: any = await api.post('/resource/oss/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     if (res.code === 200 && res.data) {
       if (target === 'logo') { form.value.logoOssId = res.data.ossId; form.value.logoUrl = res.data.url }

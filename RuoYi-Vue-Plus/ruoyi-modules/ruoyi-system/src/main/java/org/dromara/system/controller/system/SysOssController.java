@@ -75,9 +75,16 @@ public class SysOssController extends BaseController {
     @SaCheckPermission("system:oss:upload")
     @Log(title = "OSS对象存储", businessType = BusinessType.INSERT)
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public R<SysOssUploadVo> upload(@RequestPart("file") MultipartFile file, @RequestParam(value = "ossExt", required = false) String ossExtJson) {
+    public R<SysOssUploadVo> upload(@RequestPart("file") MultipartFile file, @RequestParam(value = "ossExt", required = false) String ossExtJson,
+        @RequestParam(value = "companyImagePurpose", required = false) String companyImagePurpose) {
         SysOssVo oss = ossService.upload(file, JsonUtils.parseObject(ossExtJson, SysOssExt.class));
         SysOssUploadVo uploadVo = new SysOssUploadVo(oss.getUrl(), oss.getOriginalName(), oss.getOssId().toString());
+        if ("logo".equals(companyImagePurpose) || "bg".equals(companyImagePurpose)) {
+            var imageDetails = java.util.Map.<String,Object>of(
+                "文件名称",oss.getOriginalName(),"文件大小（字节）",file.getSize());
+            BusinessAudit.record("logo".equals(companyImagePurpose) ? "上传公司标志" : "上传登录背景",
+                oss.getOssId(),"文件名称",java.util.Map.of(),imageDetails);
+        }
         return R.ok(uploadVo);
     }
 

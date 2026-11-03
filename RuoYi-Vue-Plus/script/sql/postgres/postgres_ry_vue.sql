@@ -689,7 +689,7 @@ create table if not exists sys_oper_log
     oper_url       varchar(255)  default ''::varchar,
     oper_ip        varchar(128)  default ''::varchar,
     oper_location  varchar(255)  default ''::varchar,
-    oper_param     varchar(4000) default ''::varchar,
+    oper_param     text default '',
     json_result    varchar(4000) default ''::varchar,
     status         int4          default 0,
     error_msg      varchar(4000) default ''::varchar,
@@ -878,7 +878,7 @@ comment on column sys_config.update_time    is '更新时间';
 comment on column sys_config.remark         is '备注';
 
 insert into sys_config values(1761700000000000001, '用户管理-账号初始密码', 'sys.user.initPassword', '123456', 'Y', 1761000000000000103, 1761100000000000001, now(), null, null, '初始化密码 123456');
-insert into sys_config values(1761700000000000002, '账号自助-是否开启用户注册功能', 'sys.account.registerUser', 'false', 'Y', 1761000000000000103, 1761100000000000001, now(), null, null, '是否开启注册用户功能（true开启，false关闭）');
+insert into sys_config values(1761700000000000002, '账号自助-是否开启用户注册功能', 'sys.account.registerUser', 'false', 'N', 1761000000000000103, 1761100000000000001, now(), null, null, '是否开启注册用户功能（true开启，false关闭）');
 insert into sys_config values(1761700000000000003, 'OSS预览列表资源开关', 'sys.oss.previewListResource', 'true', 'Y', 1761000000000000103, 1761100000000000001, now(), null, null, 'true:开启, false:关闭');
 
 

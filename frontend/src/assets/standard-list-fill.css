@@ -1,0 +1,11 @@
+/* 标准主列表：空数据时表体也占满剩余空间，合计和分页保留在底部。 */
+.zy-fill-table { height: 100%; min-height: 0; display: flex; flex: 1 1 0; flex-direction: column; }
+.zy-fill-table > .ant-spin-nested-loading,
+.zy-fill-table > .ant-spin-nested-loading > .ant-spin-container {
+  height: 100%; min-height: 0; display: flex; flex: 1 1 0; flex-direction: column;
+}
+.zy-fill-table .ant-spin-container > .ant-table { min-height: 0; display: flex; flex: 1 1 0; flex-direction: column; }
+.zy-fill-table .ant-table-container { min-height: 0; display: flex; flex: 1 1 0; flex-direction: column; }
+.zy-fill-table .ant-table-body { flex: 1 1 0; min-height: 0; max-height: none !important; }
+.zy-fill-table .ant-table-body:has(.ant-table-placeholder) > table { height: 100%; }
+.zy-fill-table .ant-table-pagination { flex: none; }
