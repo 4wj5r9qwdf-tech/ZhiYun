@@ -5,6 +5,7 @@
   标准件清单：
   B.5.1.1 列表页四件套：序号列 / 列宽拖拽(customHeaderCell+右缘14px) / 自适应列宽(列名最小宽+操作列实测) /
           操作列按钮式(primary编辑/danger删除, size=small, 操作列左/右缘16px可拖) / 后端分页禁前端过滤
+  连续新增：保存并新增 / 带入上次成功保存内容 / 清空内容（共用 savedFormDefaults 工具）
   B.5.1.2 表单弹窗：a-modal mask-closable=false + keyboard=false / 校验跳Tab / 多选勾选弹窗
   定版布局：页头行=查询条件左置(无标题无返回)；按钮行=+新增(最左)→查询→重置……动作/列设置(最右)
   左树面板：树+类型tag+人数角标+点击筛选该节点及下级+窄竖条折叠手柄(CSS三角, 展开贴面板内右缘/收起贴页左缘)
@@ -24,6 +25,7 @@ import StandardPicker from '../components/StandardPicker.vue'
 import ImportResultTable from '../components/ImportResultTable.vue'
 import BatchResultModal from '../components/BatchResultModal.vue'
 import StandardListLayout from '../components/StandardListLayout.vue'
+import { createSavedFormDefaults } from '../utils/savedFormDefaults'
 
 // ===== 演示数据（内存生成，不入库） =====
 type DemoNode = { orgId: string; orgName: string; orgCategory: string; children?: DemoNode[] }
@@ -339,12 +341,24 @@ const formRef = ref()
 const initialForm = ref('')
 const emptyForm = () => ({ id: null as string | null, code: '', name: '', orgId: undefined as string | undefined, type: '部门', status: '0', amount: undefined as number | undefined, owner: '', remark: '' })
 const form = ref(emptyForm())
+const codeInput = ref()
+const reusedPrevious = ref(false)
+const formDefaults = () => createSavedFormDefaults(sessionStorage, `system_template:last_saved:${sessionStorage.getItem('userId') || 'anon'}`, emptyForm, ['id'])
 const rules: any = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   orgId: [{ required: true, message: '请选择所属组织', trigger: 'change' }],
 }
-function openAdd() { isEdit.value = false; form.value = emptyForm(); initialForm.value = JSON.stringify(form.value); showDlg.value = true }
+/** 业务接入时按用户和档案类型隔离缓存；主键始终来自空表单，当前选择的归属优先于缓存。 */
+function openAdd(usePrevious = true) {
+  isEdit.value = false
+  form.value = usePrevious ? formDefaults().load() : emptyForm()
+  if (selectedOrgId.value) form.value.orgId = selectedOrgId.value
+  reusedPrevious.value = usePrevious && Boolean(form.value.code || form.value.name)
+  initialForm.value = JSON.stringify(form.value)
+  showDlg.value = true
+  void nextTick(() => { formRef.value?.clearValidate(); codeInput.value?.focus({ cursor: 'all' }) })
+}
 function openEdit(row: any) { isEdit.value = true; form.value = { ...row } as any; initialForm.value = JSON.stringify(form.value); showDlg.value = true }
 /** 保留用户未保存的输入；保存进行时不能关闭，避免重复提交。 */
 function closeForm() {
@@ -352,23 +366,35 @@ function closeForm() {
   if (JSON.stringify(form.value) === initialForm.value) { showDlg.value = false; return }
   Modal.confirm({ title: '放弃未保存的修改？', content: '关闭后，本次输入不会保存。', okText: '放弃修改', cancelText: '继续编辑', onOk: () => { showDlg.value = false } })
 }
-async function saveRow() {
+/** 真实业务将内存写入替换为 await API，确认保存成功后才能记忆表单并准备下一条。 */
+async function saveRow(continueAdding = false) {
   if (saving.value) return
+  saving.value = true
   try {
     await formRef.value?.validate()
-  } catch (error: any) { const name = error?.errorFields?.[0]?.name; if (name) formRef.value?.scrollToField(name); return }
-  saving.value = true
-  setTimeout(() => {
+    if (demoRows.value.some(row => row.id !== form.value.id && row.code.toLocaleLowerCase() === form.value.code.trim().toLocaleLowerCase())) { message.warning('示例编码已存在，请修改编码后保存'); return }
     if (isEdit.value && form.value.id) {
-      const i = demoRows.value.findIndex(r => r.id === form.value.id)
-      if (i >= 0) demoRows.value[i] = { ...demoRows.value[i], ...form.value } as DemoRow
+      const i = demoRows.value.findIndex(row => row.id === form.value.id)
+      if (i < 0) throw new Error('演示记录不存在，请刷新列表')
+      demoRows.value[i] = { ...demoRows.value[i], ...form.value } as DemoRow
     } else {
       demoRows.value.unshift({ ...form.value, id: 'r' + Date.now(), amount: form.value.amount ?? 0 } as DemoRow)
     }
-    saving.value = false
-    showDlg.value = false
+    formDefaults().save(form.value)
+    if (continueAdding && !isEdit.value) {
+      form.value.id = null
+      reusedPrevious.value = true
+      initialForm.value = JSON.stringify(form.value)
+      await nextTick()
+      formRef.value?.clearValidate()
+      codeInput.value?.focus({ cursor: 'all' })
+    } else showDlg.value = false
     message.success('已保存（内存演示，刷新即重置）')
-  }, 200)
+  } catch (error: any) {
+    const name = error?.errorFields?.[0]?.name
+    if (name) formRef.value?.scrollToField(name)
+    else message.error(error.message || '保存失败')
+  } finally { saving.value = false }
 }
 function removeOne(row: any) {
   Modal.confirm({
@@ -535,7 +561,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
     <!-- 按钮行：+新增（最左）→ 查询 → 重置 …… 批量/导出/列设置（最右） -->
     <template #actions>
     <div class="filter-bar">
-      <a-button type="primary" @click="openAdd"><PlusOutlined />新增</a-button>
+      <a-button type="primary" @click="openAdd()"><PlusOutlined />新增</a-button>
       <a-button type="primary" @click="runSearch">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
@@ -659,14 +685,16 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
       cancel-text="取消"
       :confirm-loading="saving"
       :body-style="{ maxHeight: 'min(65vh, 600px)', overflowY: 'auto' }"
-      @ok="saveRow"
+      :footer="null"
+      :closable="!saving"
       @cancel="closeForm"
     >
+      <div v-if="!isEdit" class="continuous-add-tip"><span>{{ reusedPrevious ? '已带入上次成功保存的内容，修改编码和名称即可继续新增。' : '保存并新增会保留填写内容，供下一条记录修改使用。' }}</span><a-button type="link" size="small" :disabled="saving" @click="openAdd(false)">清空内容</a-button></div>
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="编码" name="code">
-              <a-input v-model:value="form.code" :maxlength="20" placeholder="请输入" />
+              <a-input ref="codeInput" v-model:value="form.code" :maxlength="20" placeholder="请输入" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -710,6 +738,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
           </a-col>
         </a-row>
       </a-form>
+      <div class="continuous-add-footer"><a-button :disabled="saving" @click="closeForm">取消</a-button><a-button v-if="!isEdit" :loading="saving" @click="saveRow(true)">保存并新增</a-button><a-button type="primary" :loading="saving" @click="saveRow()">保存</a-button></div>
     </a-modal>
     <!-- 统一查询选择器：树筛选、关键词、结果列表、临时选择与已选数。 -->
     <StandardPicker v-model:open="pickerVisible" v-model="pickerSelected" :title="pickerKind === 'org' ? '选择组织' : '选择人员'" :tree="demoTree" :items="pickerItems" :multiple="pickerMultiple" @confirm="confirmPicker" />
@@ -735,6 +764,8 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 </template>
 
 <style scoped>
+.continuous-add-tip { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#86909C; font-size:12px; margin-bottom:12px; }
+.continuous-add-footer { display:flex; justify-content:flex-end; gap:8px; }
 .tpl-container { height: 100%; min-height: 0; }
 .page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

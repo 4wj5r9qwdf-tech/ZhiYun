@@ -20,7 +20,7 @@ const cards = computed(() => functionsOf('system').map(f => ({
 const categories = [
   { title: '权限与入口', keys: ['system_role', 'menu-directory', 'clients'] },
   { title: '系统配置', keys: ['company', 'parameters', 'dictionary', 'system_template'] },
-  { title: '业务基础资料', keys: ['system_tag', 'system_size', 'system_size_group', 'system_country_region'] },
+  { title: '业务基础资料', keys: ['system_unit', 'system_category', 'system_tag', 'system_size', 'system_size_group', 'system_country_region'] },
   { title: '文件与存储', keys: ['files', 'storage-config'] },
   { title: '运行监控', keys: ['monitor_online', 'monitor_operlog', 'cache-overview'] },
 ]

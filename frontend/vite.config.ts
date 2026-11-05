@@ -6,6 +6,22 @@ import AutoImport from 'unplugin-auto-import/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /node_modules/,
+              minSize: 100_000,
+              maxSize: 450_000,
+            },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     vue(),
     // 按需引入 ant-design-vue（4.x CSS-in-JS，无需 importStyle）

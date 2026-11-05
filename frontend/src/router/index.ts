@@ -32,6 +32,8 @@ const router = createRouter({
         { path: 'tag', name: 'TagManage', component: () => import('../views/TagManage.vue'), meta: { title: '标签管理', tab: true } },
         { path: 'size', name: 'SizeManage', component: () => import('../views/SizeManage.vue'), meta: { title: '尺码管理', tab: true } },
         { path: 'size-group', name: 'SizeGroupManage', component: () => import('../views/SizeGroupManage.vue'), meta: { title: '尺码组管理', tab: true } },
+        { path: 'unit', name: 'UnitManage', component: () => import('../views/UnitManage.vue'), meta: { title: '计量单位', tab: true } },
+        { path: 'category', name: 'CategoryManage', component: () => import('../views/CategoryManage.vue'), meta: { title: '分类管理', tab: true } },
         { path: 'country-region', name: 'CountryRegionManage', component: () => import('../views/CountryRegionManage.vue'), meta: { title: '国家/地区', tab: true } },
       ],
     },
@@ -39,7 +41,8 @@ const router = createRouter({
     { path: '/stock', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'StockIndex', component: () => import('../views/StockIndex.vue'), meta: { title: '库存' } },
       { path: 'warehouse', name: 'WarehouseManage', component: () => import('../views/WarehouseManage.vue'), meta: { title: '仓库管理', tab: true } },
-      { path: 'locations', name: 'WarehouseLocationManage', component: () => import('../views/WarehouseLocationManage.vue'), meta: { title: '库位管理', tab: true } },
+      { path: 'layout', name: 'WarehouseLayoutManage', component: () => import('../views/WarehouseLayoutManage.vue'), meta: { title: '仓库布局', tab: true } },
+      { path: 'locations', name: 'WarehouseLocationManage', redirect: to => ({ name: 'WarehouseLayoutManage', query: to.query, hash: to.hash }) },
     ] },
     { path: '/rd', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'RAndDIndex', component: () => import('../views/RAndDIndex.vue'), meta: { title: '研发' } },
@@ -88,11 +91,12 @@ const ROUTE_PERMS: Record<string, string> = {
   OnlineUsers: 'monitor:online:list',
   Person: 'system:person:list', OrgManage: 'system:org:list',
   PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', TagManage: 'system:tag:list', BuildingManage: 'system:building:list',
-  WarehouseManage: 'inventory:warehouse:list', WarehouseLocationManage: 'inventory:location:list',
+  WarehouseManage: 'inventory:warehouse:list', WarehouseLayoutManage: 'inventory:location:list',
   SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list',
+  UnitManage: 'system:unit:list', CategoryManage: 'system:category:list',
   Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLocationManage', 'RAndDIndex', 'WelfareIndex']
+const needAuth = ['UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'RAndDIndex', 'WelfareIndex']
 router.beforeEach(async (to) => {
   const token = sessionStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
@@ -102,6 +106,10 @@ router.beforeEach(async (to) => {
   if (token && needAuth.includes(to.name as string)) {
     await ensurePerms()
     const tabs = useTabsStore()
+    // 兼容更名前已保存的功能标签，保留仓库筛选参数。
+    tabs.tabs = tabs.tabs.map(tab => tab.name === 'WarehouseLocationManage'
+      ? { ...tab, name: 'WarehouseLayoutManage', title: '仓库布局', path: tab.path.replace(/^\/stock\/locations(?=[?#]|$)/, '/stock/layout') }
+      : tab)
     tabs.tabs = tabs.tabs.filter(tab => {
       const required = ROUTE_PERMS[tab.name]
       const route = router.resolve(tab.path)
