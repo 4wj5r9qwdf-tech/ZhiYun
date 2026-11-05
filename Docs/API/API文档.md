@@ -1,8 +1,8 @@
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-11-04
-> 说明：已验收功能的 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
+> 更新日期：2026-11-05
+> 说明：功能 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
 
 ---
 
@@ -49,7 +49,16 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 功能分组 | 英文键 | 分组文档 | 状态 | 验收日期 |
 |---|---|---|---|---|
+| 计量单位 | `unit` | [计量单位API.md](计量单位API.md) | REST/MCP已实现；工具发现、单位读写及低权限拒绝已验证 | 用户验收通过（2026-11-05） |
+| 分类管理 | `category` | [分类管理API.md](分类管理API.md) | 体系与节点REST/MCP已实现并完成发现/读写验证；待用户验收 | 未验收 |
 | 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST 已实现；MCP 工具未注册 | 2026-11-04 |
+| 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
+| 公司档案 | `company` | [公司档案API.md](公司档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
+| 组织架构 | `org` | [组织架构API.md](组织架构API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
+| 岗位管理 | `post` | [岗位管理API.md](岗位管理API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
+| 建筑档案 | `building` | [建筑档案API.md](建筑档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
+| 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST 已实现；MCP 查询与写工具已接入并随后端构建重启，CSV 工具未注册 | 2026-11-05 |
+| 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST 已实现；MCP 查询/写入工具已接入并随后端构建重启，批量导入工具未注册 | 2026-11-05 |
 
 ---
 
@@ -82,6 +91,69 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | `POST /system/config/size-code-rule` | 更新自动编码开关、前缀和数字位数 | 写 |
 
 > 权限码：尺码档案 `system:size:list/add/edit/delete`；编码规则 `system:config:edit`。REST 路由已实现；当前未注册到 MCP 动作目录，智能体不可直接调用，见[完整 API 契约](尺码管理API.md)。
+
+### 仓库管理 warehouse（`/system/warehouse`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/warehouse/list` | 按关键字、状态、仓库类型查询仓库 | 只读 |
+| `GET /system/warehouse/options` | 查询建筑和负责人选项 | 只读 |
+| `GET /system/warehouse/next-code` | 查询仓库编码建议 | 只读 |
+| `GET /system/warehouse/{id}` | 查询仓库详情和类型标签 | 只读 |
+| `POST /system/warehouse` | 新增仓库 | 写 |
+| `PUT /system/warehouse` | 修改仓库 | 写 |
+| `PUT /system/warehouse/{id}/status` | 启用或停用仓库 | 写 |
+| `DELETE /system/warehouse/{id}` | 逻辑删除无布局仓库 | 写 |
+| `POST /system/config/warehouse-code-rule` | 设置仓库自动编码规则 | 写 |
+
+> 权限码：`inventory:warehouse:list/query/add/edit/remove`；规则设置为 `system:config:edit`。MCP 查询与写工具均已接入代码，写调用必须先获得员工确认；见[完整仓库管理契约](仓库管理API.md)。
+
+### 仓库布局 warehouse_layout（`/system/warehouse-location`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/warehouse-location/options` | 查询仓库及入库定位深度 | 只读 |
+| `GET /system/warehouse-location/tree` | 查询库区—货架—货位层级树 | 只读 |
+| `GET /system/warehouse-location/list` | 按仓库、父级、层级、关键词、状态查询 | 只读 |
+| `GET /system/warehouse-location/{id}` | 查询位置详情 | 只读 |
+| `GET /system/warehouse-location/next-code` | 查询位置编码建议 | 只读 |
+| `POST /system/warehouse-location` | 新增位置；页面导入也逐条调用此接口 | 写 |
+| `PUT /system/warehouse-location` | 修改位置属性 | 写 |
+| `PUT /system/warehouse-location/{id}/status` | 启用、停用或维护位置 | 写 |
+| `DELETE /system/warehouse-location/{id}` | 逻辑删除未被引用的末级位置 | 写 |
+| `GET /system/config/configKey/inventory.warehouseLayout.codeRule` | 读取固定的布局编码规则 | 只读 |
+| `POST /system/config/warehouse-layout-code-rule` | 设置库区/货架/货位编码规则 | 写 |
+
+> 权限码：位置查询 `inventory:location:list/query`，维护 `inventory:location:add/edit/remove`；规则设置 `system:config:edit`。MCP 查询/写入工具均已接入代码；CSV 无专用批量 API，也未提供 MCP 批量工具；见[完整仓库布局契约](仓库布局API.md)。
+
+### 客户档案 customer_master（`/system/customer`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/customer/list` | 客户档案分页查询 | 只读 |
+| `GET /system/customer/category-counts` | 客户分类数量 | 只读 |
+| `GET /system/customer/{id}` | 客户主档、联系人、地址和标签 | 只读 |
+| `GET /system/customer/duplicates`、`/sales-options`、`/options` | 同名提示、业务员筛选、启用客户选项 | 只读 |
+| `POST /system/customer`、`PUT /system/customer/{id}` | 新增、修改 | 写 |
+| `PUT /system/customer/{id}/status`、`DELETE /system/customer/{id}` | 启停、删除未被引用档案 | 写 |
+
+> 权限及联系人脱敏规则见[客户档案 API 契约](客户档案API.md)。MCP 工具已加入代码，待运行时发现核对。
+
+### 公司档案 company（`/system/company`）
+
+列表、详情、OSS 文件引用查询、新增、修改、设置默认公司、软删除接口和权限见[公司档案 API 契约](公司档案API.md)。切换默认公司会影响登录页及首页展示，智能体须在写入前展示影响并取得确认。MCP 工具已加入代码，待运行时发现核对。
+
+### 组织架构 org（`/system/org`）
+
+组织树、详情、组织选项、业务管辖查询与全量替换、新增、修改、删除接口及数据范围约束见[组织架构 API 契约](组织架构API.md)。MCP 工具已加入代码，待运行时发现核对。
+
+### 岗位管理 post（`/system/post`）
+
+岗位分页、详情、选项、组织树、新增、修改、启停、批量删除接口及权限见[岗位管理 API 契约](岗位管理API.md)。MCP 工具已加入代码，待运行时发现核对。
+
+### 建筑档案 building（`/system/building`）
+
+建筑列表、详情、新增、修改和删除接口及权限见[建筑档案 API 契约](建筑档案API.md)。MCP 工具已加入代码，待运行时发现核对。
 
 ---
 
