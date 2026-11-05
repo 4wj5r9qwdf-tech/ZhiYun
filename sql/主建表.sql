@@ -14,6 +14,7 @@
 -- 更新：2026-10-30（与线上库对齐：create_dept→create_org；sys_role.data_scope_dept_ids→data_scope_org_ids；
 --       补 sys_company.name_color、sys_user_menu_config.locked、新增 sys_org_manage 节；
 --       全部列注释补全，另见 sql/补齐注释_20261030.sql）
+-- 更新：2026-11-05（确认公司档案、组织架构、岗位管理、建筑档案及客户档案相关表结构和权限均已合并；客户国家/地区编码字段与外键一并保留）
 -- ============================================================
 
 BEGIN;
@@ -492,6 +493,11 @@ SELECT 1762400000000000104, '标签停用', 5, 103, '#', '', '', 'N', 'Y', 'F', 
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:remove');
 
 COMMIT;
+
+-- 公司档案删除权限：与现有公司列表及新增/修改操作同级。
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1761800000000000011,'公司删除',1761800000000000007,14,'#','','N','Y','F','0','0','system:company:remove','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:company:remove');
 
 -- ============================================================
 -- 执行后自查：
@@ -1075,3 +1081,293 @@ UPDATE sys_menu SET status='0',visible='0' WHERE menu_id=1761400000000000001; UP
 -- 系统管理直接承载启用的维护功能。
 UPDATE sys_menu SET parent_id=1761400000000000001 WHERE parent_id=1762500000000000002;
 UPDATE sys_menu SET status='1',visible='1' WHERE menu_id=1762500000000000002;
+
+
+-- 仓库管理及仓库布局：验收后归并（2026-11-05），包含应用角色授权及完整权限树。
+
+-- 已验收功能原增量：仓库管理_20261104.sql
+-- 仓库管理：仓库档案。开发验收前使用本模块 SQL；功能验收后再按规范并入 sql/主建表.sql。
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS inv_warehouse (
+    warehouse_id       bigserial PRIMARY KEY,
+    warehouse_code     varchar(50) NOT NULL,
+    warehouse_name     varchar(200) NOT NULL,
+    building_id        bigint REFERENCES sys_building(plant_id),
+    floor_name         varchar(50),
+    area_name          varchar(100),
+    manager_user_id    bigint REFERENCES sys_user(user_id),
+    status             char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1')),
+    remark             varchar(1000),
+    del_flag           char(1) NOT NULL DEFAULT '0' CHECK (del_flag IN ('0','1')),
+    create_by          bigint,
+    create_time        timestamp NOT NULL DEFAULT now(),
+    update_by          bigint,
+    update_time        timestamp
+);
+
+-- 仓库归属建筑即可；车间与厂房建筑重复，移除首版重复列及其索引。
+DROP INDEX IF EXISTS idx_inv_warehouse_org;
+ALTER TABLE inv_warehouse DROP COLUMN IF EXISTS workshop_org_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_warehouse_code_active
+    ON inv_warehouse (lower(warehouse_code)) WHERE del_flag='0';
+CREATE INDEX IF NOT EXISTS idx_inv_warehouse_building ON inv_warehouse (building_id) WHERE del_flag='0';
+
+-- 仓库类型采用自由标签；按用户已确认的仓储规划提供六个常用初始提示，后续仍可自由新增。
+INSERT INTO sys_tag_module(module_key,module_name,create_time)
+VALUES('warehouse_master','仓库管理',now())
+ON CONFLICT(module_key) DO UPDATE SET module_name=EXCLUDED.module_name,update_time=now();
+INSERT INTO sys_tag(module_key,tag_name,is_common,status,remark)
+SELECT 'warehouse_master',v.tag_name,'1','0','仓库类型常用标签（可继续添加自定义类型）'
+FROM (VALUES ('成品仓'),('面料仓'),('辅料仓'),('消耗品仓'),('设备仓'),('样衣仓')) AS v(tag_name)
+WHERE NOT EXISTS (SELECT 1 FROM sys_tag t WHERE t.module_key='warehouse_master' AND lower(t.tag_name)=lower(v.tag_name));
+
+COMMENT ON TABLE inv_warehouse IS '库存模块仓库基础档案，记录仓库编码、名称、所属建筑及楼层区域、负责人和状态；仓库类型通过通用标签关联，仓库不是组织节点或建筑档案。';
+COMMENT ON COLUMN inv_warehouse.warehouse_id IS '仓库档案稳定主键，供库存及后续出入库业务通过ID关联，不作为对外展示编码。';
+COMMENT ON COLUMN inv_warehouse.warehouse_code IS '仓库业务编码；用于人工识别，所有未逻辑删除的仓库记录中必须唯一（不区分大小写）。';
+COMMENT ON COLUMN inv_warehouse.warehouse_name IS '仓库业务名称，例如二号车间主仓或一车间样衣仓。';
+COMMENT ON COLUMN inv_warehouse.building_id IS '仓库所属建筑档案ID，关联 sys_building.plant_id；建筑档案的 floor_info 提供总楼层数，本字段选择具体所属厂房或建筑。';
+COMMENT ON COLUMN inv_warehouse.floor_name IS '仓库所在的具体楼层；选项根据关联建筑档案的 floor_info 楼层数生成，未设置时为空。';
+COMMENT ON COLUMN inv_warehouse.area_name IS '仓库在所属建筑或楼层内的区域、房间或位置说明；未设置时为空。';
+COMMENT ON COLUMN inv_warehouse.manager_user_id IS '仓库负责人用户ID，关联 sys_user.user_id；未指定负责人时为空。';
+COMMENT ON COLUMN inv_warehouse.status IS '仓库使用状态：0=启用（可供新业务选择），1=停用（不得供新业务选择）。';
+COMMENT ON COLUMN inv_warehouse.remark IS '仓库补充说明，记录仓库使用或管理方面的备注。';
+COMMENT ON COLUMN inv_warehouse.del_flag IS '仓库逻辑删除标记：0=正常保留，1=已删除；删除记录保留用于历史追溯。';
+COMMENT ON COLUMN inv_warehouse.create_by IS '创建本仓库档案的用户ID，逻辑关联 sys_user.user_id，业务来源为当前登录用户。';
+COMMENT ON COLUMN inv_warehouse.create_time IS '仓库档案首次创建时间，由数据库默认记录。';
+COMMENT ON COLUMN inv_warehouse.update_by IS '最后修改本仓库档案的用户ID，逻辑关联 sys_user.user_id；尚未修改时为空。';
+COMMENT ON COLUMN inv_warehouse.update_time IS '仓库档案最后修改时间；尚未修改时为空。';
+COMMENT ON INDEX uq_inv_warehouse_code_active IS '限制未逻辑删除的仓库档案编码不区分大小写重复。';
+COMMENT ON INDEX idx_inv_warehouse_building IS '按所在建筑查询正常仓库档案。';
+COMMENT ON INDEX inv_warehouse_pkey IS '仓库档案主键唯一索引，保证 warehouse_id 稳定唯一。';
+COMMENT ON SEQUENCE inv_warehouse_warehouse_id_seq IS '生成仓库档案 warehouse_id 主键值的自增序列。';
+
+-- 本地/新环境可能由数据库管理员执行DDL；将表和自增序列权限授给系统业务表所有者对应的应用角色。
+DO $$
+DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO app_role
+    FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    IF app_role IS NULL THEN
+        RAISE EXCEPTION '无法从 public.sys_tag 识别应用数据库角色';
+    END IF;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.inv_warehouse TO %I', app_role);
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.inv_warehouse_warehouse_id_seq TO %I', app_role);
+END $$;
+
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000101,'仓库查询',5,140,'#','','N','Y','F','0','0','inventory:warehouse:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:warehouse:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000102,'仓库新增',5,141,'#','','N','Y','F','0','0','inventory:warehouse:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:warehouse:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000105,'仓库详情',5,140,'#','','N','Y','F','0','0','inventory:warehouse:query','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:warehouse:query');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000103,'仓库编辑与启停',5,142,'#','','N','Y','F','0','0','inventory:warehouse:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:warehouse:edit');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000104,'仓库删除',5,143,'#','','N','Y','F','0','0','inventory:warehouse:remove','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:warehouse:remove');
+
+COMMIT;
+
+
+-- 已验收功能原增量：库位管理_20261105.sql
+-- 仓库布局：库区、货架、货位三级位置档案及仓库入库定位深度设置。
+BEGIN;
+ALTER TABLE inv_warehouse ADD COLUMN IF NOT EXISTS inbound_location_level smallint NOT NULL DEFAULT 2 CHECK (inbound_location_level BETWEEN 0 AND 3);
+COMMENT ON COLUMN inv_warehouse.inbound_location_level IS '入库定位最小深度：0=仓库，1=库区，2=货架，3=货位；默认货架级。';
+CREATE TABLE IF NOT EXISTS inv_warehouse_location (
+ location_id bigserial PRIMARY KEY,
+ warehouse_id bigint NOT NULL REFERENCES inv_warehouse(warehouse_id),
+ parent_location_id bigint REFERENCES inv_warehouse_location(location_id),
+ location_code varchar(80) NOT NULL,
+ location_name varchar(200) NOT NULL,
+ location_level smallint NOT NULL CHECK (location_level BETWEEN 1 AND 3),
+ agv_reachable boolean NOT NULL DEFAULT true,
+ capacity_limit numeric(18,4),
+ capacity_unit varchar(30),
+ location_status varchar(20) NOT NULL DEFAULT 'active' CHECK (location_status IN ('active','disabled','maintenance')),
+ external_location_code varchar(120),
+ remark varchar(1000),
+ del_flag char(1) NOT NULL DEFAULT '0' CHECK (del_flag IN ('0','1')),
+ create_by bigint, create_time timestamp NOT NULL DEFAULT now(), update_by bigint, update_time timestamp
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_warehouse_location_code ON inv_warehouse_location(warehouse_id,lower(location_code)) WHERE del_flag='0';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_warehouse_location_external ON inv_warehouse_location(warehouse_id,external_location_code) WHERE del_flag='0' AND external_location_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_inv_warehouse_location_parent ON inv_warehouse_location(warehouse_id,parent_location_id,location_level) WHERE del_flag='0';
+COMMENT ON TABLE inv_warehouse_location IS '仓库内库区、货架、货位三级位置档案；AGV调度暂不在本表实现。';
+COMMENT ON COLUMN inv_warehouse_location.location_id IS '仓储位置稳定主键，供库存单据引用。';
+COMMENT ON COLUMN inv_warehouse_location.warehouse_id IS '所属仓库ID。';
+COMMENT ON COLUMN inv_warehouse_location.parent_location_id IS '直接父级位置ID；库区为空，货架挂库区，货位挂货架。';
+COMMENT ON COLUMN inv_warehouse_location.location_code IS '仓库内唯一位置编码，作为稳定人工识别码。';
+COMMENT ON COLUMN inv_warehouse_location.location_name IS '位置名称。';
+COMMENT ON COLUMN inv_warehouse_location.location_level IS '位置层级：1=库区，2=货架，3=货位。';
+COMMENT ON COLUMN inv_warehouse_location.agv_reachable IS '位置是否允许AGV到达的预留标记。';
+COMMENT ON COLUMN inv_warehouse_location.capacity_limit IS '位置容量上限预留值；本期不计算库存占用。';
+COMMENT ON COLUMN inv_warehouse_location.capacity_unit IS '位置容量单位预留值。';
+COMMENT ON COLUMN inv_warehouse_location.location_status IS '位置档案状态：active=可用，disabled=停用，maintenance=维护中。';
+COMMENT ON COLUMN inv_warehouse_location.external_location_code IS '外部仓储设备或AGV系统的位置映射码预留值。';
+COMMENT ON COLUMN inv_warehouse_location.remark IS '位置补充说明。';
+COMMENT ON COLUMN inv_warehouse_location.del_flag IS '逻辑删除标记：0=正常，1=已删除。';
+COMMENT ON COLUMN inv_warehouse_location.create_by IS '创建人用户ID。';
+COMMENT ON COLUMN inv_warehouse_location.create_time IS '创建时间。';
+COMMENT ON COLUMN inv_warehouse_location.update_by IS '最后修改人用户ID。';
+COMMENT ON COLUMN inv_warehouse_location.update_time IS '最后修改时间。';
+-- 管理员建表时从既有业务表识别应用角色，不能取管理员所有的仓库表角色或写死角色名。
+DO $$ DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ IF app_role IS NULL THEN RAISE EXCEPTION '无法识别应用数据库角色'; END IF;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.inv_warehouse_location TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.inv_warehouse_location_location_id_seq TO %I',app_role);
+END $$;
+-- 应用连接用户在 application-dev.yml 中配置为 zhizhun；表所有者可能不同，需单独授权。
+
+-- 仓库布局接口权限；前端功能入口复用库存模块的本地功能卡片目录，不额外创建左侧菜单节点。
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000111,'仓库布局查询',5,150,'#','','N','Y','F','0','0','inventory:location:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:location:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000112,'仓库布局详情',5,151,'#','','N','Y','F','0','0','inventory:location:query','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:location:query');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000113,'仓库布局新增',5,152,'#','','N','Y','F','0','0','inventory:location:add','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:location:add');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000114,'仓库布局编辑与状态',5,153,'#','','N','Y','F','0','0','inventory:location:edit','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:location:edit');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762600000000000115,'仓库布局删除',5,154,'#','','N','Y','F','0','0','inventory:location:remove','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:location:remove');
+
+-- 更新已有权限的中文名称，不改变权限码和角色授权。
+UPDATE sys_menu SET menu_name=CASE perms
+ WHEN 'inventory:location:list' THEN '仓库布局查询'
+ WHEN 'inventory:location:query' THEN '仓库布局详情'
+ WHEN 'inventory:location:add' THEN '仓库布局新增'
+ WHEN 'inventory:location:edit' THEN '仓库布局编辑与状态'
+ WHEN 'inventory:location:remove' THEN '仓库布局删除' END
+WHERE perms IN ('inventory:location:list','inventory:location:query','inventory:location:add','inventory:location:edit','inventory:location:remove');
+COMMIT;
+
+
+-- 仓储权限目录修复：复用既有权限ID与权限码，不给现有角色新增操作授权。
+-- Inventory menu repair: preserve existing permission identities and role assignments.
+BEGIN;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1762800000000000001,0,'库存',30,'stock','','N','Y','M','0','0','','DatabaseOutlined',now())
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=0,menu_name='库存',path='stock',menu_type='M',visible='0',status='0';
+
+-- list权限本身作为页面节点，原有勾选ID不变，其余操作挂回各自页面。
+UPDATE sys_menu SET parent_id=1762800000000000001,menu_name='仓库管理',menu_type='C',path='warehouse',component='stock/WarehouseManage',icon='DatabaseOutlined',order_num=10,visible='0',status='0'
+WHERE perms='inventory:warehouse:list';
+UPDATE sys_menu SET parent_id=1762800000000000001,menu_name='仓库布局',menu_type='C',path='layout',component='stock/WarehouseLayoutManage',icon='EnvironmentOutlined',order_num=20,visible='0',status='0'
+WHERE perms='inventory:location:list';
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='inventory:warehouse:list'),menu_type='F',visible='0',status='0'
+WHERE perms IN ('inventory:warehouse:query','inventory:warehouse:add','inventory:warehouse:edit','inventory:warehouse:remove');
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='inventory:location:list'),menu_type='F',visible='0',status='0'
+WHERE perms IN ('inventory:location:query','inventory:location:add','inventory:location:edit','inventory:location:remove');
+
+-- 为已持有仓储页面/操作的角色补齐可达祖先，不新增任何写权限。
+WITH RECURSIVE ancestors AS (
+ SELECT rm.role_id,m.parent_id AS menu_id FROM sys_role_menu rm JOIN sys_menu m ON m.menu_id=rm.menu_id
+ WHERE m.perms IN ('inventory:warehouse:list','inventory:warehouse:query','inventory:warehouse:add','inventory:warehouse:edit','inventory:warehouse:remove','inventory:location:list','inventory:location:query','inventory:location:add','inventory:location:edit','inventory:location:remove')
+ UNION
+ SELECT a.role_id,m.parent_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE m.parent_id<>0
+)
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT a.role_id,a.menu_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id
+WHERE a.menu_id<>0 AND NOT EXISTS(SELECT 1 FROM sys_role_menu r WHERE r.role_id=a.role_id AND r.menu_id=a.menu_id);
+COMMIT;
+
+-- 计量单位初始档案：按业务编码关联，重复执行不覆盖已有数据。
+-- 时间单位以秒为参照，1天为86400秒；时长业务以整数秒计算。
+BEGIN;
+CREATE TABLE IF NOT EXISTS base_unit (
+ unit_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ unit_code varchar(40) NOT NULL UNIQUE,
+ unit_name varchar(80) NOT NULL,
+ symbol varchar(20) NOT NULL DEFAULT '',
+ dimension varchar(20) NOT NULL CHECK(dimension IN ('length','mass','area','volume','time','count','other')),
+ decimal_places integer NOT NULL DEFAULT 3 CHECK(decimal_places BETWEEN 0 AND 8),
+ base_unit_id bigint REFERENCES base_unit(unit_id),
+ factor numeric(30,12) NOT NULL DEFAULT 1 CHECK(factor>0),
+ sort_order integer NOT NULL DEFAULT 0,
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(500) NOT NULL DEFAULT '',
+ del_flag char(1) NOT NULL DEFAULT '0' CHECK(del_flag IN ('0','1')),
+ create_by bigint, create_time timestamp NOT NULL DEFAULT now(), update_by bigint, update_time timestamp,
+ CHECK(base_unit_id IS NULL AND factor=1 OR base_unit_id IS NOT NULL AND base_unit_id<>unit_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_base_unit_name ON base_unit(lower(unit_name)) WHERE del_flag='0';
+COMMENT ON TABLE base_unit IS '计量单位公共档案；固定换算仅限同维度同参照单位，物料专属包装或重量长度换算另行维护';
+COMMENT ON COLUMN base_unit.unit_id IS '单位稳定主键，业务外键使用本ID';
+COMMENT ON COLUMN base_unit.unit_code IS '单位唯一业务编码，删除后不复用';
+COMMENT ON COLUMN base_unit.unit_name IS '计量单位中文名称';
+COMMENT ON COLUMN base_unit.symbol IS '单位符号，如m、kg，仅供显示';
+COMMENT ON COLUMN base_unit.dimension IS '计量维度：length长度/mass质量/area面积/volume体积/time时间/count计数/other其他';
+COMMENT ON COLUMN base_unit.decimal_places IS '数量展示及换算结果小数位数，0至8';
+COMMENT ON COLUMN base_unit.base_unit_id IS '固定换算参照单位，关联base_unit.unit_id；空表示独立参照单位';
+COMMENT ON COLUMN base_unit.factor IS '1本单位折合多少参照单位，精度numeric(30,12)，必须大于0；独立单位固定为1';
+COMMENT ON COLUMN base_unit.sort_order IS '显示排序，数字越小越靠前';
+COMMENT ON COLUMN base_unit.status IS '状态：0启用，1停用；停用保留历史引用';
+COMMENT ON COLUMN base_unit.remark IS '业务备注，不存凭据或敏感信息';
+COMMENT ON COLUMN base_unit.del_flag IS '逻辑删除标记：0正常，1已删除';
+COMMENT ON COLUMN base_unit.create_by IS '创建员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_unit.create_time IS '创建时间';
+COMMENT ON COLUMN base_unit.update_by IS '最后修改员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_unit.update_time IS '最后修改时间';
+
+COMMENT ON SEQUENCE base_unit_unit_id_seq IS '生成计量单位稳定主键的序列';
+INSERT INTO base_unit(unit_code,unit_name,symbol,dimension,decimal_places,base_unit_id,factor,sort_order,status,remark)
+VALUES ('01','米','m','length',3,NULL,1,0,'0',''),('04','秒','s','time',0,NULL,1,0,'0','')
+ON CONFLICT DO NOTHING;
+-- 已有同编码档案必须与预期参照一致，否则停止初始化，避免静默缺失或错误关联。
+DO $$
+BEGIN
+ IF (SELECT count(*) FROM base_unit WHERE (unit_code,unit_name,dimension) IN (('01','米','length'),('04','秒','time')) AND base_unit_id IS NULL AND status='0' AND del_flag='0') <> 2 THEN
+  RAISE EXCEPTION '计量单位初始参照米或秒与已有档案冲突，请先核对';
+ END IF;
+END $$;
+-- 辅助单位只关联编码、名称和维度均匹配的启用参照单位，避免误绑定。
+INSERT INTO base_unit(unit_code,unit_name,symbol,dimension,decimal_places,base_unit_id,factor,sort_order,status,remark)
+SELECT v.code,v.name,v.symbol,v.dimension,v.decimals,r.unit_id,v.factor,0,'0',''
+FROM (VALUES
+ ('02','厘米','cm','length',1,'01','米',0.01::numeric),
+ ('03','毫米','mm','length',0,'01','米',0.001::numeric),
+ ('05','分钟','min','time',0,'04','秒',60::numeric),
+ ('06','小时','h','time',0,'04','秒',3600::numeric),
+ ('07','天','d','time',0,'04','秒',86400::numeric)
+) AS v(code,name,symbol,dimension,decimals,root_code,root_name,factor)
+JOIN base_unit r ON r.unit_code=v.root_code AND r.unit_name=v.root_name AND r.dimension=v.dimension AND r.base_unit_id IS NULL AND r.status='0' AND r.del_flag='0'
+ON CONFLICT DO NOTHING;
+COMMIT;
+-- 开发库已有权限表的所有者作为应用角色；避免以初始化管理员身份建表后应用无权访问。
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(c.relowner) INTO app_role FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname='sys_tag';
+ IF app_role IS NULL THEN RAISE EXCEPTION '未找到应用角色，请先创建sys_tag'; END IF;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.base_unit TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.base_unit_unit_id_seq TO %I',app_role);
+END $$;
+
+-- 计量单位权限：保留已有权限ID，并补齐角色权限树祖先。
+BEGIN;
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762700000000000000,'计量单位',1761400000000000001,160,'unit','system/UnitManage','N','Y','C','0','0','system:unit:list','#',now() WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:unit:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT x.id,x.name,(SELECT menu_id FROM sys_menu WHERE perms='system:unit:list'),x.sort,'#','','N','Y','F','0','0',x.perms,'#',now() FROM (VALUES
+(1762700000000000001::bigint,'计量单位新增',161,'system:unit:add'),(1762700000000000002::bigint,'计量单位修改与启停',162,'system:unit:edit'),(1762700000000000003::bigint,'计量单位删除',163,'system:unit:remove')) AS x(id,name,sort,perms) WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms=x.perms);
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='计量单位',menu_type='C',path='unit',component='system/UnitManage',visible='0',status='0' WHERE perms='system:unit:list';
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='system:unit:list'),menu_type='F',visible='0',status='0' WHERE perms IN ('system:unit:add','system:unit:edit','system:unit:remove');
+WITH RECURSIVE ancestors AS (
+ SELECT rm.role_id,m.parent_id AS menu_id FROM sys_role_menu rm JOIN sys_menu m ON m.menu_id=rm.menu_id WHERE m.perms IN ('system:unit:list','system:unit:add','system:unit:edit','system:unit:remove')
+ UNION SELECT a.role_id,m.parent_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE m.parent_id<>0
+)
+INSERT INTO sys_role_menu(role_id,menu_id) SELECT DISTINCT a.role_id,a.menu_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE a.menu_id<>0 AND NOT EXISTS(SELECT 1 FROM sys_role_menu rm WHERE rm.role_id=a.role_id AND rm.menu_id=a.menu_id);
+COMMIT;
