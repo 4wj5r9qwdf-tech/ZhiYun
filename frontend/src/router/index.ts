@@ -36,6 +36,17 @@ const router = createRouter({
       ],
     },
     { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }] },
+    { path: '/stock', component: () => import('../views/Home.vue'), children: [
+      { path: '', name: 'StockIndex', component: () => import('../views/StockIndex.vue'), meta: { title: '库存' } },
+      { path: 'warehouse', name: 'WarehouseManage', component: () => import('../views/WarehouseManage.vue'), meta: { title: '仓库管理', tab: true } },
+      { path: 'locations', name: 'WarehouseLocationManage', component: () => import('../views/WarehouseLocationManage.vue'), meta: { title: '库位管理', tab: true } },
+    ] },
+    { path: '/rd', component: () => import('../views/Home.vue'), children: [
+      { path: '', name: 'RAndDIndex', component: () => import('../views/RAndDIndex.vue'), meta: { title: '研发' } },
+    ] },
+    { path: '/welfare', component: () => import('../views/Home.vue'), children: [
+      { path: '', name: 'WelfareIndex', component: () => import('../views/WelfareIndex.vue'), meta: { title: '后勤' } },
+    ] },
     // /person = 人员模块布局（左侧导航+顶栏），子路由在内容区渲染
     //   '' → PersonIndex（人员模块功能卡片：人员信息等）
     //   'person-info' → Person（人员信息列表，功能页）
@@ -77,18 +88,26 @@ const ROUTE_PERMS: Record<string, string> = {
   OnlineUsers: 'monitor:online:list',
   Person: 'system:person:list', OrgManage: 'system:org:list',
   PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', TagManage: 'system:tag:list', BuildingManage: 'system:building:list',
+  WarehouseManage: 'inventory:warehouse:list', WarehouseLocationManage: 'inventory:location:list',
   SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list',
   Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage']
+const needAuth = ['ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLocationManage', 'RAndDIndex', 'WelfareIndex']
 router.beforeEach(async (to) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {
     return { name: 'Login' }
   }
   // 所有需登录页面统一预拉权限（首页/工作台等无 perm 映射的入口也要就绪，否则卡片全隐身）
   if (token && needAuth.includes(to.name as string)) {
     await ensurePerms()
+    const tabs = useTabsStore()
+    tabs.tabs = tabs.tabs.filter(tab => {
+      const required = ROUTE_PERMS[tab.name]
+      const route = router.resolve(tab.path)
+      return route.name === tab.name && (!required || canOpenFunction(required))
+    })
+    tabs.persist()
   }
   const need = ROUTE_PERMS[to.name as string]
   if (need && token && !canOpenFunction(need)) {

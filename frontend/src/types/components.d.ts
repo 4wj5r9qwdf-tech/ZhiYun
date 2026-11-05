@@ -57,6 +57,7 @@ declare module 'vue' {
     ATooltip: typeof import('ant-design-vue/lib')['Tooltip']
     ATree: typeof import('ant-design-vue/lib')['Tree']
     ATreeSelect: typeof import('ant-design-vue/lib')['TreeSelect']
+    ATypographyText: typeof import('ant-design-vue/lib')['TypographyText']
     ATypographyTitle: typeof import('ant-design-vue/lib')['TypographyTitle']
     BatchResultModal: typeof import('./../components/BatchResultModal.vue')['default']
     CountryRegionSelect: typeof import('./../components/CountryRegionSelect.vue')['default']

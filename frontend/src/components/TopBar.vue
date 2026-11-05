@@ -9,6 +9,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import { BellOutlined, LogoutOutlined, SettingOutlined, LockOutlined, UserOutlined, AppstoreOutlined } from '@ant-design/icons-vue'
+import { useTabsStore } from '../store/tabs'
 import api from '../api'
 import { MODULE_FUNCTIONS } from '../config/modules'
 
@@ -137,7 +138,11 @@ function onUserMenuClick({ key }: { key: string | number }) {
   }
 }
 
-function logout() {
+async function logout() {
+  try { await api.post('/auth/logout') } catch { /* 本地会话仍需清理 */ }
+  useTabsStore().clearSession()
+  sessionStorage.removeItem('token')
+  sessionStorage.removeItem('userId')
   resetPerms()   // 换账号前清内存权限，防残留上一账号的可见性
   localStorage.removeItem('token')
   localStorage.removeItem('userId')

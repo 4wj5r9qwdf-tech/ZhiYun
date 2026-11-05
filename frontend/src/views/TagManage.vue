@@ -4,12 +4,15 @@ import { computed, nextTick, onActivated, onMounted, onBeforeUnmount, ref } from
 import { SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
-import { addTag, disableTag, editTag, getTagList, getTagModules } from '../api/tag'
+import { addTag, deleteTag, editTag, getTagList, getTagModules } from '../api/tag'
+import { MODULES, MODULE_FUNCTIONS } from '../config/modules'
+import { can } from '../utils/perms'
 
 type TagRow = { tagId: string; moduleKey: string; tagName: string; isCommon: string; status: string }
 /** 只保存服务端实际动态登记过的模块，不在前端预置空模块。 */
 const moduleOptions = ref<{ moduleKey: string; label: string; tagCount: number }[]>([])
 const moduleKey = ref('')
+const selectedModule = ref('')
 const keyword = ref('')
 const status = ref('')
 const rows = ref<TagRow[]>([])
@@ -22,6 +25,9 @@ const form = ref({ tagId: '', moduleKey: '', moduleName: '', tagName: '', isComm
 const pageNum = ref(1)
 const pageSize = ref(20)
 const selectedRowKeys = ref<string[]>([])
+const batchEditOpen = ref(false)
+const batchStatus = ref('unchanged')
+const batchIsCommon = ref('unchanged')
 const colSetOpen = ref(false)
 const treeCollapsed = ref(false)
 /** 表格字段定义；序号列固定显示，其余列由用户列设置控制显隐和顺序。 */
@@ -188,10 +194,24 @@ function autoFitCols() {
   }
 }
 function colTitle(key: string) { return allColumns.find(item => item.key === key)?.title || key }
-const tagTree = computed(() => [{
-  title: '业务模块', key: 'tag_root', selectable: false,
-  children: moduleOptions.value.map(item => ({ title: item.label, key: item.moduleKey, tagCount: item.tagCount })),
-}])
+const legacyFunctionAliases: Record<string, string> = {
+  customer: 'customer_master',
+  size: 'system_size',
+  size_group: 'system_size_group',
+  warehouse_master: 'inventory_warehouse',
+}
+function functionForModuleKey(moduleKey: string) {
+  const canonicalKey = legacyFunctionAliases[moduleKey] || moduleKey
+  return MODULE_FUNCTIONS.find(func => func.key === canonicalKey)
+}
+const tagTree = computed(() => MODULES.filter(module => module.key !== 'workbench').map(module => ({
+  title: module.label, key: `module:${module.key}`, selectable: true,
+  children: MODULE_FUNCTIONS.filter(func => func.module === module.key).flatMap(func => {
+    const aliases = moduleOptions.value.filter(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === func.key)
+    if (!aliases.length) return []
+    return [{ title: func.title, key: `function:${func.key}`, tagCount: aliases.reduce((sum, item) => sum + item.tagCount, 0) }]
+  }),
+})).filter(module => module.children.length > 0))
 /** 从服务端刷新真实标签归属；首次收录标签的业务模块随后出现在此树中。 */
 async function loadModules() {
   try {
@@ -199,8 +219,12 @@ async function loadModules() {
     moduleOptions.value = (res.data || []).map((item: any) => ({
       moduleKey: String(item.moduleKey), label: String(item.moduleName), tagCount: Number(item.tagCount || 0),
     }))
-    if (!moduleOptions.value.some(item => item.moduleKey === moduleKey.value)) {
-      moduleKey.value = moduleOptions.value[0]?.moduleKey || ''
+    const selectedFunctionKey = moduleKey.value.startsWith('function:') ? moduleKey.value.slice('function:'.length) : ''
+    const hasSelectedTarget = selectedFunctionKey
+      ? moduleOptions.value.some(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === selectedFunctionKey)
+      : moduleOptions.value.some(item => item.moduleKey === moduleKey.value)
+    if (moduleKey.value && !hasSelectedTarget) {
+      moduleKey.value = ''
       pageNum.value = 1
     }
     await loadRows()
@@ -211,24 +235,41 @@ async function loadModules() {
     message.error('标签归属加载失败')
   }
 }
-/** 忽略不可选的树根节点；切换模块后重新请求对应命名空间的数据。 */
+/** 忽略分组节点；切换功能后重新请求对应命名空间的数据。 */
 function onTreeSelect(keys: (string | number)[]) {
   const selected = String(keys[0] || '')
-  if (moduleOptions.value.some(item => item.moduleKey === selected) && moduleKey.value !== selected) {
-    moduleKey.value = selected
+  if (selected.startsWith('module:')) {
+    selectedModule.value = selected.slice('module:'.length)
+    moduleKey.value = ''
+    searchRows()
+  } else if (selected.startsWith('function:')) {
+    const functionKey = selected.slice('function:'.length)
+    moduleKey.value = `function:${functionKey}`
+    selectedModule.value = functionForModuleKey(functionKey)?.module || ''
+    searchRows()
+  } else if (!selected && moduleKey.value) {
+    moduleKey.value = ''
+    selectedModule.value = ''
     searchRows()
   }
 }
 
-/** 请求当前模块列表；服务端负责按模块、关键字和启停状态过滤。 */
+/** 请求当前功能列表；未选功能时合并所有已登记功能的数据。 */
 async function loadRows() {
-  if (!moduleKey.value) { rows.value = []; selectedRowKeys.value = []; return }
   loading.value = true
   try {
-    const res: any = await getTagList(moduleKey.value, keyword.value, status.value)
+    const selectedModules = moduleKey.value.startsWith('function:')
+      ? moduleOptions.value.filter(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === moduleKey.value.slice('function:'.length))
+      : moduleOptions.value.filter(item => {
+        const func = functionForModuleKey(item.moduleKey)
+        return !selectedModule.value || func?.module === selectedModule.value
+      })
+    const results = await Promise.all(selectedModules.map(item => getTagList(item.moduleKey, keyword.value, status.value)))
     // API 的 tagId 可能以数字返回；与 rowSelection 内统一的字符串 key 对齐，
     // 否则工具栏计数会变化，但表格按严格相等匹配时无法显示勾选或取消勾选。
-    rows.value = (res.data || []).map((row: TagRow) => ({ ...row, tagId: String(row.tagId) }))
+    rows.value = results.flatMap((res: any) => res.data || [])
+      .map((row: TagRow) => ({ ...row, tagId: String(row.tagId) }))
+      .sort((a, b) => a.moduleKey.localeCompare(b.moduleKey) || a.tagName.localeCompare(b.tagName, 'zh-CN'))
     selectedRowKeys.value = []
   } catch {
     message.error('标签列表加载失败')
@@ -239,8 +280,8 @@ async function loadRows() {
 
 /** 搜索或切换模块后从第一页开始，避免旧页码超出新结果集范围。 */
 function searchRows() { pageNum.value = 1; loadRows() }
-/** 重置只清除列表过滤条件，不改变当前树选中的业务模块。 */
-function resetFilter() { keyword.value = ''; status.value = ''; treeCollapsed.value = false; selectedRowKeys.value = []; searchRows() }
+/** 搜索栏和树面板共用重置：清除文本、状态及功能筛选。 */
+function resetFilter() { keyword.value = ''; status.value = ''; moduleKey.value = ''; selectedModule.value = ''; treeCollapsed.value = false; selectedRowKeys.value = []; searchRows() }
 /** Ant Design Vue 分页回调；数据由本次接口全量返回，分页仅在当前模块结果集内进行。 */
 function onPageChange(page: number, size: number) { pageNum.value = page; pageSize.value = size }
 function onTableChange(_pagination: unknown, _filters: unknown, sorter: any) {
@@ -310,34 +351,50 @@ async function save() {
   }
 }
 
-/** 单条软停用，保留历史业务关联，不从档案表物理删除。 */
-function confirmDisable(row: TagRow) {
+/** 删除未被业务记录引用的标签；后端会在事务内再次校验引用关系。 */
+function confirmDelete(row: TagRow) {
   Modal.confirm({
-    title: '停用标签',
-    content: '停用“' + row.tagName + '”？已关联记录保留，停用后不可新选。',
+    title: '删除标签',
+    content: `确定删除标签“${row.tagName}”吗？已被业务记录使用的标签不能删除，请改为停用。`,
+    okText: '确定删除',
+    cancelText: '取消',
     okType: 'danger',
     onOk: async () => {
-      await disableTag(String(row.tagId))
-      message.success('标签已停用')
-      await loadRows()
+      await deleteTag(String(row.tagId))
+      message.success('标签已删除')
+      await loadModules()
     },
   })
 }
 
-/** 批量软停用所选标签；调用现有单条接口，成功后刷新目录并清空选择。 */
-function disableSelected() {
+/** 打开批量编辑；默认保持字段原值，只有明确选择的字段才会写入。 */
+function openBatchEdit() {
   const selected = rows.value.filter(row => selectedRowKeys.value.includes(String(row.tagId)))
   if (!selected.length) return
-  Modal.confirm({
-    title: '停用所选标签',
-    content: `确认停用选中的 ${selected.length} 个标签？已关联记录保留，停用后不可新选。`,
-    okType: 'danger',
-    onOk: async () => {
-      await Promise.all(selected.map(row => disableTag(String(row.tagId))))
-      message.success('所选标签已停用')
-      await loadRows()
-    },
-  })
+  batchStatus.value = 'unchanged'
+  batchIsCommon.value = 'unchanged'
+  batchEditOpen.value = true
+}
+
+/** 批量更新选中标签；只提交用户在弹窗中明确指定的字段。 */
+async function saveBatchEdit() {
+  const selected = rows.value.filter(row => selectedRowKeys.value.includes(String(row.tagId)))
+  if (!selected.length) return
+  if (batchStatus.value === 'unchanged' && batchIsCommon.value === 'unchanged') return message.warning('请至少选择一项要修改的内容')
+  try {
+    await Promise.all(selected.map(row => editTag({
+      tagId: String(row.tagId), moduleKey: row.moduleKey, tagName: row.tagName,
+      isCommon: batchIsCommon.value === 'unchanged' ? row.isCommon : batchIsCommon.value,
+      status: batchStatus.value === 'unchanged' ? row.status : batchStatus.value,
+    })))
+    message.success(`已批量编辑 ${selected.length} 个标签`)
+    batchEditOpen.value = false
+    selectedRowKeys.value = []
+    await loadRows()
+  } catch (error: any) {
+    message.error(error?.response?.data?.msg || '批量编辑失败，请刷新后核对结果')
+    await loadRows()
+  }
 }
 
 /** 导出当前模块及当前筛选结果为 UTF-8 BOM CSV，供 Excel 正常识别中文。 */
@@ -392,7 +449,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
       <a-button type="primary" @click="searchRows">查询</a-button>
       <a-button @click="resetFilter">重置</a-button>
       <span class="filter-spacer"></span>
-      <a-button danger :disabled="!selectedRowKeys.length" @click="disableSelected">停用选中{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}</a-button>
+      <a-button :disabled="!selectedRowKeys.length" @click="openBatchEdit">批量编辑{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}</a-button>
       <a-button @click="exportCsv">↓ 导出</a-button>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
@@ -419,13 +476,13 @@ onBeforeUnmount(() => widthObserver?.disconnect())
       <aside class="tag-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
           <span class="tree-title">标签归属</span>
-          <a v-if="keyword || status" class="tree-clear" @click="resetFilter">重置</a>
+          <a class="tree-clear" @click="resetFilter">重置</a>
         </div>
         <div class="tree-body">
           <a-tree :tree-data="tagTree" :field-names="{ title: 'title', key: 'key', children: 'children' }"
-            :selected-keys="[moduleKey]" default-expand-all block-node @select="onTreeSelect">
+            :selected-keys="[moduleKey || (selectedModule ? `module:${selectedModule}` : '')]" default-expand-all block-node @select="onTreeSelect">
             <template #title="{ title, key, tagCount }">
-              <span class="tree-node">{{ title }}<span v-if="key === 'tag_root'" class="type-tag">模块</span>
+              <span class="tree-node">{{ title }}<span v-if="String(key).startsWith('module:')" class="type-tag">模块</span>
                 <span v-else class="tree-count">{{ tagCount ?? 0 }}</span></span>
             </template>
           </a-tree>
@@ -435,7 +492,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
           </div>
         </div>
       </aside>
-      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开模块树' : '收起模块树'" @click="toggleTree" />
+      <button type="button" class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :aria-label="treeCollapsed ? '展开树' : '收起树'" :title="treeCollapsed ? '展开模块树' : '收起模块树'" @click="toggleTree" />
       <main class="tag-main">
         <a-table :columns="columns" :data-source="pagedRows" :loading="loading" :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showQuickJumper: true, showTotal: showTotalText, onChange: onPageChange, hideOnSinglePage: false }"
           :row-selection="rowSelection" :scroll="{ x: tableScrollWidth, y: 'calc(100vh - 360px)' }" table-layout="fixed" :row-key="rowKey" size="middle" class="tag-table zy-fill-table" @change="onTableChange">
@@ -447,7 +504,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
             </template>
             <template v-else-if="column.key === 'action'">
               <div class="ops-btns"><a-button type="primary" size="small" @click="openEdit(asTagRow(record))">编辑</a-button>
-                <a-button v-if="record.status === '0'" danger size="small" @click="confirmDisable(asTagRow(record))">停用</a-button></div>
+                <a-button v-if="can('system:tag:remove')" danger size="small" @click="confirmDelete(asTagRow(record))">删除</a-button></div>
             </template>
           </template>
           <template #summary>
@@ -479,6 +536,25 @@ onBeforeUnmount(() => widthObserver?.disconnect())
         </a-form-item>
       </a-form>
     </a-modal>
+    <a-modal v-model:open="batchEditOpen" title="批量编辑标签" ok-text="保存" cancel-text="取消" @ok="saveBatchEdit">
+      <a-form layout="vertical">
+        <a-form-item label="常用提示">
+          <a-select v-model:value="batchIsCommon">
+            <a-select-option value="unchanged">保持原值</a-select-option>
+            <a-select-option value="1">是</a-select-option>
+            <a-select-option value="0">否</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="状态">
+          <a-select v-model:value="batchStatus">
+            <a-select-option value="unchanged">保持原值</a-select-option>
+            <a-select-option value="0">启用</a-select-option>
+            <a-select-option value="1">停用</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-typography-text type="secondary">将修改所选的 {{ selectedRowKeys.length }} 个标签；保持原值的项目不会变更。</a-typography-text>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -490,7 +566,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 .page-header { display: flex; align-items: center; margin-bottom: 16px; gap: 10px; flex-wrap: wrap; }
 .head-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tag-layout { position: relative; display: flex; gap: 0; align-items: stretch; min-height: calc(100vh - 300px); }
-.tag-layout.tree-collapsed .tag-main { margin-left: 14px; }
+
 .tag-tree-panel { width: 260px; flex: 0 0 260px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .tag-tree-panel.collapsed { width: 0; flex-basis: 0; min-width: 0; opacity: 0; margin-right: 0; pointer-events: none; }
 .tree-head { display: flex; align-items: center; min-height: 46px; padding: 10px 12px; border-bottom: 1px solid #F0F2F5; }
@@ -501,9 +577,9 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .type-tag { padding: 1px 5px; line-height: 16px; border: 1px solid #D9DDE5; border-radius: 4px; color: #4E5969; font-size: 11px; }
 .tree-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #E8F3FF; color: #1E5EFF; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
-.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 252px; z-index: 6; width: 8px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
+.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: -4px; z-index: 6; width: 8px; min-width: 0; height: 36px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
 .tree-toggle::before { content: ''; width: 0; height: 0; border: 3.5px solid transparent; border-right-color: #86909C; margin-left: -2px; }
-.tree-toggle.at-left { left: 4px; }
+
 .tree-toggle.at-left::before { border-right-color: transparent; border-left-color: #86909C; margin-left: 2px; }
 .tree-toggle:hover { border-color: #1E5EFF; }
 .tree-toggle:hover::before { border-right-color: #1E5EFF; }

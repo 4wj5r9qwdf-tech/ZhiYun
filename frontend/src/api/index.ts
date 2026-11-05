@@ -11,7 +11,7 @@ const api = axios.create({
 
 // 请求拦截：带 token + clientid（RuoYi 6.x 校验客户端ID与Token匹配）
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token')
+  const token = sessionStorage.getItem('token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -24,7 +24,10 @@ api.interceptors.response.use(
   (res) => res.data,
   (err) => {
     if (err.response?.status === 401) {
+      sessionStorage.removeItem('token')
+      sessionStorage.removeItem('userId')
       localStorage.removeItem('token')
+      localStorage.removeItem('userId')
       window.location.href = '/login'
     }
     return Promise.reject(err)

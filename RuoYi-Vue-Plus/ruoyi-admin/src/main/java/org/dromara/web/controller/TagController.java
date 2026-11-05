@@ -21,7 +21,7 @@ import java.util.Map;
  * <p>标签按 {@code module_key} 隔离，同名标签可分别属于不同业务模块。
  * 业务模块不预置：某个业务功能首次自动收录标签时，同时创建模块归属和标签档案；
  * 管理页面只展示已经产生标签的模块。具体业务记录关联由各业务保存接口负责。
- * 停用只修改状态，不删除标签及其历史关联。
+     * 停用只修改状态，不删除标签及其历史关联；未被业务记录引用的标签允许显式删除。
  */
 @RequiredArgsConstructor
 @RestController
@@ -208,6 +208,22 @@ public class TagController {
         var auditBefore = auditSnapshot(tagId,true);
         jdbcTemplate.update("UPDATE sys_tag SET status='1', update_time=now() WHERE tag_id=?", tagId);
         BusinessAudit.record("停用标签",tagId,"名称",auditBefore,auditSnapshot(tagId,false));
+        return R.ok();
+    }
+
+    /** 删除从未被业务记录使用的标签；已被引用时保留目录并要求软停用。 */
+    @SaCheckPermission("system:tag:remove")
+    @Log(title = "标签管理", businessType = BusinessType.DELETE)
+    @Transactional
+    @DeleteMapping("/{tagId}")
+    public R<Void> delete(@PathVariable Long tagId) {
+        var before = auditSnapshot(tagId, true);
+        if (before.isEmpty()) return R.fail("标签不存在");
+        Long relationCount = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM sys_tag_relation WHERE tag_id=?", Long.class, tagId);
+        if (relationCount != null && relationCount > 0) return R.fail("标签已被业务记录使用，不能删除；可改为停用");
+        jdbcTemplate.update("DELETE FROM sys_tag WHERE tag_id=?", tagId);
+        BusinessAudit.record("删除标签", tagId, "名称", before, Map.of());
         return R.ok();
     }
 

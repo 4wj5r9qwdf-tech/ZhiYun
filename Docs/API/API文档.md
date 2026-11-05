@@ -1,8 +1,8 @@
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-10-28
-> 说明：面向智能体的 API 总索引。格式遵守《Docs/API文档规范.md》：先在此定位功能分组与接口，再进分组文档看完整契约。**分组文档一律放 `Docs/API/` 目录。**
+> 更新日期：2026-11-04
+> 说明：已验收功能的 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
 
 ---
 
@@ -49,7 +49,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 功能分组 | 英文键 | 分组文档 | 状态 | 验收日期 |
 |---|---|---|---|---|
-| （后续功能验收后逐组追加） | | | | |
+| 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST 已实现；MCP 工具未注册 | 2026-11-04 |
 
 ---
 
@@ -67,14 +67,30 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 > 权限码：`system:org:list` / `system:org:query` / `system:org:add` / `system:org:edit` / `system:org:remove`（按发起员工角色过滤，无权限返回 403）。
 
+### 尺码管理 size（`/system/size-data/size`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/size-data/size/list` | 查询尺码档案（含类型标签） | 只读 |
+| `GET /system/size-data/size/options` | 查询业务选择用尺码（含状态） | 只读 |
+| `GET /system/config/configKey/system.code.size` | 查询尺码自动编码规则（固定参数键） | 只读 |
+| `POST /system/size-data/size` | 新增尺码 | 写 |
+| `PUT /system/size-data/size/{id}` | 修改尺码档案 | 写 |
+| `PUT /system/size-data/size/{id}/status` | 启用或停用尺码 | 写 |
+| `DELETE /system/size-data/size/{id}` | 删除未被尺码组引用的尺码 | 写 |
+| `POST /system/size-data/size/batch-tags` | 批量替换所选尺码的类型标签；空数组清空标签 | 写 |
+| `POST /system/config/size-code-rule` | 更新自动编码开关、前缀和数字位数 | 写 |
+
+> 权限码：尺码档案 `system:size:list/add/edit/delete`；编码规则 `system:config:edit`。REST 路由已实现；当前未注册到 MCP 动作目录，智能体不可直接调用，见[完整 API 契约](尺码管理API.md)。
+
 ---
 
 ## 三、维护约定
 
-1. 面向智能体开放的 API 在对应能力范围确认、实现并验收后，补充分组文档并更新本索引；普通 ERP 功能不因验收而自动纳入智能体 API。
+1. 每个用户验收通过的功能都补充分组 API/MCP 契约文档、Skill 并更新本索引。准确标明 REST 实现和 MCP 运行时接入状态；未注册的工具不可标成可用。
 2. 分组文档必须含**机器契约五字段**（幂等性/副作用/前置条件/是否需审批/权限要求），缺一不算达标。
 3. 示例必须是**可直接运行的 curl/JSON**，与后端实测一致（禁止凭记忆写）。
-4. Skill 契约在对应能力进入开发范围并经用户确认后再建立；MCP 工具接入时按《内嵌智能体规范》逐组登记。当前不以本索引暗示智能体功能已实现。
+4. 功能验收后在 `Docs/Skills/<功能名>/SKILL.md` 建立 Skill；MCP 工具接入时按《内嵌智能体规范》逐组登记。Skill 必须声明所依赖工具是否已注册，不以文档存在暗示运行时已接通。
 
 
 ## 客户档案（2026-11-02）

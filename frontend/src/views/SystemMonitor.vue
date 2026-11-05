@@ -122,6 +122,117 @@ const selected = ref<Record<string, unknown>>()
 const configDialog = ref(false)
 const configSaving = ref(false)
 const editingConfig = ref<Record<string, any>>({})
+const autoCodeSaving = ref(false)
+const autoCodeConfigId = ref<number>()
+const autoCodeRule = ref({ enabled: true, prefix: 'SZ', digits: 4 })
+const autoCodeEditing = ref(false)
+const savedAutoCodeRule = ref({ enabled: true, prefix: 'SZ', digits: 4 })
+const sizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
+const savedSizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
+const sizeGroupCodeEditing = ref(false)
+const sizeGroupCodeSaving = ref(false)
+const parameterRows = computed(() => rows.value)
+const sizeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.size'))
+const sizeGroupRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.sizeGroup'))
+const ossPreviewRow = computed(() => parameterRows.value.find(row => row.configKey === 'sys.oss.previewListResource'))
+function readCodeRule(row: Record<string, any> | undefined, fallback: { enabled: boolean; prefix: string; digits: number }) {
+  if (!row?.configValue) return { ...fallback }
+  try {
+    const value = JSON.parse(String(row.configValue))
+    if (typeof value.enabled === 'boolean' && typeof value.prefix === 'string' && Number.isInteger(value.digits) && value.digits >= 1 && value.digits <= 10) {
+      return { enabled: value.enabled, prefix: value.prefix, digits: value.digits }
+    }
+  } catch { /* 规则值损坏时显示默认值，由保存流程修复。 */ }
+  return { ...fallback }
+}
+function syncCodeRules(configs: Record<string, any>[]) {
+  const sizeRow = configs.find(row => row.configKey === 'system.code.size')
+  const groupRow = configs.find(row => row.configKey === 'system.code.sizeGroup')
+  if (!autoCodeEditing.value) {
+    autoCodeRule.value = readCodeRule(sizeRow, { enabled: true, prefix: 'SZ', digits: 4 })
+    savedAutoCodeRule.value = { ...autoCodeRule.value }
+  }
+  if (!sizeGroupCodeEditing.value) {
+    sizeGroupCodeRule.value = readCodeRule(groupRow, { enabled: true, prefix: 'SG', digits: 4 })
+    savedSizeGroupCodeRule.value = { ...sizeGroupCodeRule.value }
+  }
+}
+async function openAutoCode() {
+  try {
+    if (!rows.value.length) await load()
+    const config = rows.value.find((row: Record<string, unknown>) => row.configKey === 'system.code.size') as Record<string, any> | undefined
+    if (!config) throw new Error('参数列表中未找到尺码自动编码规则，请刷新参数列表确认')
+    autoCodeConfigId.value = config.configId
+    if (!config.configValue) {
+      autoCodeRule.value = { enabled: true, prefix: 'SZ', digits: 4 }
+    } else {
+      const saved = JSON.parse(config.configValue)
+      if (typeof saved.enabled !== 'boolean' || typeof saved.prefix !== 'string' || !Number.isInteger(saved.digits)) throw new Error('尺码自动编码规则格式无效，请检查系统参数')
+      autoCodeRule.value = { enabled: saved.enabled, prefix: saved.prefix, digits: saved.digits }
+    }
+    savedAutoCodeRule.value = { ...autoCodeRule.value }
+    autoCodeEditing.value = true
+  } catch (error) { message.error(error instanceof Error ? error.message : '读取编码规则失败') }
+}
+function cancelAutoCodeEdit() {
+  autoCodeRule.value = { ...savedAutoCodeRule.value }
+  autoCodeEditing.value = false
+}
+async function saveAutoCode() {
+  if (typeof autoCodeRule.value.prefix !== 'string' || !autoCodeRule.value.prefix.trim() || autoCodeRule.value.prefix.trim().length > 30 || !Number.isInteger(autoCodeRule.value.digits) || autoCodeRule.value.digits < 1 || autoCodeRule.value.digits > 10) {
+    message.warning('请填写前缀（最多30位），位数需在1到10之间'); return
+  }
+  autoCodeSaving.value = true
+  try {
+    if (!autoCodeConfigId.value) throw new Error('缺少系统参数编号，请关闭设置后重新打开')
+    const res: any = await api.post('/system/config/size-code-rule', { ...autoCodeRule.value, prefix: autoCodeRule.value.prefix.trim() })
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    message.success('尺码自动编码规则已保存')
+    savedAutoCodeRule.value = { ...autoCodeRule.value }
+    autoCodeEditing.value = false
+    const configValue = JSON.stringify({ ...autoCodeRule.value, prefix: autoCodeRule.value.prefix.trim() })
+    rows.value = rows.value.map(row => row.configKey === 'system.code.size' ? { ...row, configValue } : row)
+  } catch (error: any) {
+    const status = error?.response?.status
+    const url = error?.config?.url
+    message.error(status ? `保存请求失败（HTTP ${status}）：${url || '/system/config'}` : error instanceof Error ? error.message : '保存编码规则失败')
+  }
+  finally { autoCodeSaving.value = false }
+}
+async function openSizeGroupCode() {
+  try {
+    if (!rows.value.length) await load()
+    const config = rows.value.find((row: Record<string, unknown>) => row.configKey === 'system.code.sizeGroup') as Record<string, any> | undefined
+    const saved = config?.configValue ? JSON.parse(config.configValue) : { enabled: true, prefix: 'SG', digits: 4 }
+    if (typeof saved.enabled !== 'boolean' || typeof saved.prefix !== 'string' || !Number.isInteger(saved.digits)) throw new Error('尺码组自动编码规则格式无效，请检查系统参数')
+    sizeGroupCodeRule.value = { enabled: saved.enabled, prefix: saved.prefix, digits: saved.digits }
+    savedSizeGroupCodeRule.value = { ...sizeGroupCodeRule.value }
+    sizeGroupCodeEditing.value = true
+  } catch (error) { message.error(error instanceof Error ? error.message : '读取编码规则失败') }
+}
+function cancelSizeGroupCodeEdit() {
+  sizeGroupCodeRule.value = { ...savedSizeGroupCodeRule.value }
+  sizeGroupCodeEditing.value = false
+}
+async function saveSizeGroupCode() {
+  if (!sizeGroupCodeRule.value.prefix.trim() || sizeGroupCodeRule.value.prefix.trim().length > 30 || !Number.isInteger(sizeGroupCodeRule.value.digits) || sizeGroupCodeRule.value.digits < 1 || sizeGroupCodeRule.value.digits > 10) { message.warning('请填写前缀（最多30位），位数需在1到10之间'); return }
+  sizeGroupCodeSaving.value = true
+  try {
+    const saved = { ...sizeGroupCodeRule.value, prefix: sizeGroupCodeRule.value.prefix.trim() }
+    const res: any = await api.post('/system/config/size-group-code-rule', saved)
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    message.success('尺码组自动编码规则已保存')
+    savedSizeGroupCodeRule.value = { ...saved }
+    sizeGroupCodeRule.value = { ...saved }
+    sizeGroupCodeEditing.value = false
+    const configValue = JSON.stringify(saved)
+    if (rows.value.some(row => row.configKey === 'system.code.sizeGroup')) rows.value = rows.value.map(row => row.configKey === 'system.code.sizeGroup' ? { ...row, configValue } : row)
+    else rows.value = [...rows.value, { configId: undefined, configName: '尺码组自动编码规则', configKey: 'system.code.sizeGroup', configValue, configType: 'Y', remark: '尺码组自动编码开关、编号前缀及数字位数' }]
+  } catch (error: any) {
+    const status = error?.response?.status
+    message.error(status ? `保存请求失败（HTTP ${status}）：${error?.config?.url || '/system/config'}` : error instanceof Error ? error.message : '保存编码规则失败')
+  } finally { sizeGroupCodeSaving.value = false }
+}
 function editConfig(row: Record<string, unknown>) {
   editingConfig.value = { ...row }
   configDialog.value = true
@@ -203,7 +314,7 @@ async function load() {
   loading.value = true
   try {
     const endpoints: Record<string,string> = {"menu-directory": "/system/menu/list", "cache-overview": "/monitor/cache", "dictionary": "/system/dict/type/list", "parameters": "/system/config/list", "files": "/resource/oss/list", "storage-config": "/resource/oss/config/list", "clients": "/system/client/list"}
-    const res: any = await api.get(endpoints[kind.value] || '/monitor/' + kind.value + '/list', { params: { pageNum: page.value, pageSize: isLogs.value ? pageSize.value : 20,
+    const res: any = await api.get(endpoints[kind.value] || '/monitor/' + kind.value + '/list', { params: { pageNum: page.value, pageSize: isLogs.value ? pageSize.value : currentKind === 'parameters' ? 100 : 20,
       ...(currentKind === 'files' ? { originalName: fileFilter.value || undefined } : {}),
       ...(isLogs.value ? { [currentKind === 'operlog' ? 'operName' : 'userName']: applied.value.account, status: applied.value.status } : {}) } })
     if (currentRequest !== requestId) return
@@ -212,6 +323,7 @@ async function load() {
     const records = kind.value === 'cache-overview'
       ? Object.entries(data.info || {}).map(([metric, value]) => ({ metric, value }))
       : Array.isArray(data) ? data : data.rows || []
+    if (currentKind === 'parameters') syncCodeRules(records as Record<string, any>[])
     const usage = new Map<string, string[]>()
     if (currentKind === 'files' && can('system:company:list')) {
       try {
@@ -292,9 +404,56 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
         <a-button type="primary" :loading="loading" @click="fileFilter = fileName.trim(); search()">查询</a-button>
         <a-button @click="fileName = ''; fileFilter = ''; search()">重置</a-button>
       </div>
+      <div v-else-if="kind === 'parameters'" class="parameter-actions">
+        <div><h2>系统参数</h2><span>配置影响系统各模块的默认行为</span></div>
+        <a-button :loading="loading" @click="load">刷新设置</a-button>
+      </div>
       <a-button v-else type="primary" :loading="loading" @click="load">刷新</a-button>
     </template>
-    <a-table class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="index"
+    <section v-if="kind === 'parameters'" class="settings-page" :aria-busy="loading">
+      <div class="settings-section-title">业务规则</div>
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading">
+          <div><h3>尺码自动编码</h3><p>设置新增尺码时使用的编码前缀与数字位数。已有尺码编码不受影响。</p></div>
+          <a-tag v-if="sizeRuleRow" color="blue">系统内置</a-tag>
+        </div>
+        <a-spin :spinning="loading">
+          <a-empty v-if="!loading && !sizeRuleRow" description="未找到尺码自动编码规则" />
+          <template v-else-if="sizeRuleRow">
+            <div class="setting-controls">
+              <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="autoCodeRule.enabled" :disabled="!autoCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+              <a-form-item label="编码前缀"><a-input v-model:value="autoCodeRule.prefix" :disabled="!autoCodeEditing" :maxlength="30" placeholder="例如 SZ" /></a-form-item>
+              <a-form-item label="数字位数"><a-input-number v-model:value="autoCodeRule.digits" :disabled="!autoCodeEditing" :min="1" :max="10" :precision="0" /></a-form-item>
+              <div class="setting-example">生成示例：<strong>{{ autoCodeRule.prefix || 'SZ' }}{{ '0'.repeat(Math.max(0, autoCodeRule.digits - 1)) }}1</strong></div>
+            </div>
+            <div class="setting-footer"><span>关闭后，新增尺码需手动填写编码。</span><a-space v-if="can('system:config:edit')"><a-button v-if="autoCodeEditing" @click="cancelAutoCodeEdit">取消</a-button><a-button v-if="autoCodeEditing" type="primary" :loading="autoCodeSaving" @click="saveAutoCode">保存规则</a-button><a-button v-else type="primary" @click="openAutoCode">修改规则</a-button></a-space></div>
+          </template>
+        </a-spin>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading">
+          <div><h3>尺码组自动编码</h3><p>设置新增尺码组使用的编号前缀与数字位数。已有尺码组编号不受影响。</p></div>
+          <a-tag color="blue">系统内置</a-tag>
+        </div>
+        <a-spin :spinning="loading">
+          <div class="setting-controls">
+            <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="sizeGroupCodeRule.enabled" :disabled="!sizeGroupCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+            <a-form-item label="编码前缀"><a-input v-model:value="sizeGroupCodeRule.prefix" :disabled="!sizeGroupCodeEditing" :maxlength="30" placeholder="例如 SG" /></a-form-item>
+            <a-form-item label="数字位数"><a-input-number v-model:value="sizeGroupCodeRule.digits" :disabled="!sizeGroupCodeEditing" :min="1" :max="10" :precision="0" /></a-form-item>
+            <div class="setting-example">生成示例：<strong>{{ sizeGroupCodeRule.prefix || 'SG' }}{{ '0'.repeat(Math.max(0, sizeGroupCodeRule.digits - 1)) }}1</strong></div>
+          </div>
+          <div class="setting-footer"><span>{{ sizeGroupRuleRow ? '关闭后，新增尺码组需手动填写编号。' : '尚未保存规则，保存后将创建系统参数。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="sizeGroupCodeEditing" @click="cancelSizeGroupCodeEdit">取消</a-button><a-button v-if="sizeGroupCodeEditing" type="primary" :loading="sizeGroupCodeSaving" @click="saveSizeGroupCode">保存规则</a-button><a-button v-else type="primary" @click="openSizeGroupCode">修改规则</a-button></a-space></div>
+        </a-spin>
+      </a-card>
+
+      <div class="settings-section-title">系统功能</div>
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>OSS 预览列表资源</h3><p>控制文件选择器是否展示图片预览资源。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <div class="setting-footer"><a-tag :color="ossPreviewRow?.configValue === 'true' ? 'green' : 'default'">{{ ossPreviewRow?.configValue === 'true' ? '已开启' : '已关闭' }}</a-tag><a-button v-if="ossPreviewRow && can('system:config:edit')" type="link" @click="editConfig(ossPreviewRow)">编辑</a-button></div>
+      </a-card>
+    </section>
+    <a-table v-else class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="index"
       :size="isLogs ? 'middle' : undefined" :table-layout="isLogs ? 'fixed' : undefined"
       :scroll="isLogs ? { x: columns.reduce((sum, column) => sum + (column.width ?? 110), 0), y: 'calc(100vh - 390px)' } : { y: 'calc(100vh - 330px)' }"
       :pagination="{ current: page, pageSize: isLogs ? pageSize : 20, total, showSizeChanger: isLogs, showQuickJumper: isLogs, showTotal: isLogs ? (count: number) => `共 ${count} 条` : undefined, onChange: (value: number, size: number) => { page = value; pageSize = size; load() } }">
@@ -305,8 +464,6 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
         </template>
         <template v-else-if="column.key === 'sequence'">{{ (page - 1) * pageSize + index + 1 }}</template>
         <a-button v-else-if="column.key === 'action' && can('system:config:edit') && record.configKey === 'sys.oss.previewListResource'" type="link" @click="editConfig(record)">编辑</a-button>
-        <template v-else-if="kind === 'parameters' && column.key === 'configType'">{{ text === 'Y' ? '系统内置' : text === 'N' ? '自定义' : '未识别' }}</template>
-        <template v-else-if="kind === 'parameters' && column.key === 'configValue'">{{ record.configKey === 'sys.oss.previewListResource' ? (text === 'true' ? '开启' : '关闭') : '—' }}</template>
         <a-button v-else-if="column.key === 'auditDetail'" type="link" @click="selected = record">查看</a-button>
         <template v-else-if="column.key === 'status' && ['operlog', 'loginInfo'].includes(kind)"><a-tag :color="String(text) === '0' ? 'green' : 'red'">{{ String(text) === '0' ? '成功' : '失败' }}</a-tag></template>
         <template v-else-if="column.key === 'loginTime' && typeof text === 'number'">{{ new Date(text).toLocaleString('zh-CN') }}</template>
@@ -341,6 +498,24 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
     </a-modal>
   </StandardListLayout>
 </template>
+<style scoped>
+.parameter-actions { display:flex; align-items:center; justify-content:space-between; background:#fff; border-radius:8px; padding:14px 18px; }
+.parameter-actions h2 { margin:0 0 4px; font-size:16px; font-weight:600; }
+.parameter-actions span { color:#86909c; font-size:13px; }
+.settings-page { height:100%; overflow:auto; padding:4px 2px 24px; }
+.settings-section-title { margin:16px 0 10px; color:#4e5969; font-size:14px; font-weight:600; }
+.setting-card { margin-bottom:14px; border-radius:8px; box-shadow:0 2px 8px rgba(29,33,41,.06); }
+.setting-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+.setting-heading h3 { margin:0 0 5px; color:#1d2129; font-size:15px; font-weight:600; }
+.setting-heading p { margin:0; color:#86909c; font-size:13px; }
+.setting-controls { display:flex; align-items:flex-end; gap:24px; flex-wrap:wrap; margin-top:24px; }
+.setting-control { min-width:150px; display:flex; align-items:center; justify-content:space-between; gap:18px; padding-bottom:24px; color:#4e5969; }
+.setting-controls :deep(.ant-form-item) { margin-bottom:0; min-width:150px; }
+.setting-controls :deep(.ant-input-number) { width:120px; }
+.setting-example { padding-bottom:7px; color:#86909c; font-size:13px; }
+.setting-example strong { color:#1e5eff; font-size:15px; }
+.setting-footer { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; padding-top:14px; border-top:1px solid #f0f0f0; color:#86909c; font-size:13px; }
+</style>
 
 
 <style scoped>

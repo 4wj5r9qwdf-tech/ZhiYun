@@ -12,11 +12,15 @@ export interface TabItem {
   path: string      // 完整路径（点击切换用）
 }
 
-const STORAGE_KEY = 'zy_open_tabs'
+const storageKey = () => {
+  const userId = sessionStorage.getItem('userId')
+  return userId ? 'zy_open_tabs:' + userId : ''
+}
 
 function load(): { tabs: TabItem[]; activeName: string } {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const key = storageKey()
+    const raw = key ? localStorage.getItem(key) : null
     if (raw) {
       const d = JSON.parse(raw)
       if (Array.isArray(d?.tabs)) return { tabs: d.tabs, activeName: d.activeName || '' }
@@ -31,8 +35,18 @@ export const useTabsStore = defineStore('tabs', {
     return { tabs: s.tabs, activeName: s.activeName }
   },
   actions: {
+    reload() {
+      const saved = load()
+      this.tabs = saved.tabs
+      this.activeName = saved.activeName
+    },
+    clearSession() {
+      this.tabs = []
+      this.activeName = ''
+    },
     persist() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabs: this.tabs, activeName: this.activeName }))
+      const key = storageKey()
+      if (key) localStorage.setItem(key, JSON.stringify({ tabs: this.tabs, activeName: this.activeName }))
     },
     /** 打开（或激活）一个功能 tab；重复打开只激活不新增。 */
     openTab(tab: TabItem) {
