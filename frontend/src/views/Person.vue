@@ -687,7 +687,7 @@ function resetFilter() {
       </div>
 
       <!-- 收起/展开手柄 -->
-      <div class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed" />
+      <button type="button" class="tree-toggle" :class="{ 'at-left': treeCollapsed }" :aria-label="treeCollapsed ? '展开树' : '收起树'" :title="treeCollapsed ? '展开组织树' : '收起组织树'" @click="treeCollapsed = !treeCollapsed" />
     
 
       <div class="org-main">
@@ -865,7 +865,7 @@ function resetFilter() {
 
 /* 左侧组织树（对齐组织架构页） */
 .org-body { display: flex; align-items: stretch; gap: 0; min-height: calc(100vh - 300px); position: relative; }
-.org-body.t-collapsed .org-main { margin-left: 14px; }
+
 .org-tree-panel { width: 260px; flex: none; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(29,33,41,.06); display: flex; flex-direction: column; overflow: hidden; transition: width .2s, opacity .2s; margin-right: 8px; }
 .org-tree-panel.collapsed { width: 0; height: 0; min-height: 0; opacity: 0; margin-right: 0; padding: 0; border: none; pointer-events: none; }
 .tree-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #F0F2F5; }
@@ -876,9 +876,9 @@ function resetFilter() {
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; background: #E8FFEA; color: #00B42A; margin: 0; }
 .type-tag .ant-tag { margin: 0; }
 .tree-count { font-size: 11px; color: #1E5EFF; background: #E8F3FF; border-radius: 8px; padding: 0 6px; line-height: 16px; }
-.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 248px; z-index: 6; width: 8px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
+.tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: -4px; z-index: 6; width: 8px; min-width: 0; height: 36px; padding: 0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
 .tree-toggle::before { content: ''; width: 0; height: 0; border: 3.5px solid transparent; border-right-color: #86909C; margin-left: -2px; }
-.tree-toggle.at-left { left: 4px; }
+
 .tree-toggle.at-left::before { border-right-color: transparent; border-left-color: #86909C; margin-left: 2px; }
 .tree-toggle:hover, .tree-toggle:hover::before { border-color: #1E5EFF; }
 .tree-toggle:hover::before { border-right-color: #1E5EFF; }

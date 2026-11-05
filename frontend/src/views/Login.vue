@@ -8,6 +8,7 @@ import { ensurePerms, resetPerms } from '../utils/perms'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { CLIENT_ID } from '../api'
+import { useTabsStore } from '../store/tabs'
 
 const router = useRouter()
 
@@ -71,7 +72,14 @@ async function handleLogin() {
       password: loginForm.value.password,
     })
     if (res.code === 200 && res.data?.access_token) {
-      localStorage.setItem('token', res.data.access_token)
+      sessionStorage.setItem('token', res.data.access_token)
+      localStorage.removeItem('token')
+      localStorage.removeItem('userId')
+      const profile: any = await api.get('/system/profile/info')
+      if (profile.code !== 200 || profile.data?.user_id == null) throw new Error('无法获取登录用户')
+      sessionStorage.setItem('userId', String(profile.data.user_id))
+      localStorage.setItem('userId', String(profile.data.user_id))
+      useTabsStore().reload()
     resetPerms()   // 换账号双保险：登录一律重拉权限
     await ensurePerms()
       successMsg.value = '登录成功，正在跳转...'
@@ -84,6 +92,10 @@ async function handleLogin() {
       errorMsg.value = res.msg || '登录失败'
     }
   } catch (e: any) {
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('userId')
+    localStorage.removeItem('userId')
+    useTabsStore().clearSession()
     errorMsg.value = e?.response?.data?.msg || '登录失败，请检查网络'
   } finally {
     loading.value = false

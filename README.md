@@ -37,7 +37,7 @@
 
 ## 快速开始
 
-开发工作流：Codex 智能体在 WSL 中直接使用 `/home/it/ZhiYun` 编辑、构建和运行；Windows `D:\ZhiYun` 是迁移期旧工作副本，不再与 WSL 交替编辑或覆盖同步。切换步骤与当前未提交改动见 [Docs/WSL智能体环境迁移交接.md](Docs/WSL智能体环境迁移交接.md)，日常约定见 [Docs/开发环境与同步流程.md](Docs/开发环境与同步流程.md)。
+开发工作流：源码直接在 WSL `/home/it/ZhiYun` 中编辑、构建和测试，并从该工作区推送 GitHub。Windows `D:\ZhiYun` 是迁移期副本，目前主要保留文档等内容，不作为代码日常编辑源。
 
 **依赖**：JDK 21 · PostgreSQL 16（含 pgvector）· Redis 7 · Docker · Node.js 24 · pnpm
 
@@ -59,16 +59,19 @@
    - 普通员工：工号（6 位）/手机号 + 密码，新建人员默认密码 `123456`（测试环境）
    - 超级管理员：账号 `admin`，密码在 **你部署项目时** 于 `.env` 的 `SUPER_ADMIN_USERNAME / SUPER_ADMIN_PASSWORD` 自行创建设置（不进数据库、不进 Git）
 
-停止服务：`bash scripts/stop.sh`；查看状态：`bash scripts/status.sh`。
+启动服务：`cd ~/ZhiYun
+bash scripts/start.sh`;
+停止服务：`bash scripts/stop.sh`；
+查看状态：`bash scripts/status.sh`。
 
 ## 文档入口
 
 - 项目协作入口：[AGENTS.md](AGENTS.md)（AI 助手执行边界与规范导航）
 - 需求基线：[Docs/系统需求规划.md](Docs/系统需求规划.md) → 各 `Docs/模块-*.md` / [Docs/生产流程规划.md](Docs/生产流程规划.md)
 - 开发顺序：[Docs/开发路线图.md](Docs/开发路线图.md)（按阶段和依赖，不排日期）
-- 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（生产模块“打样”分区）
+- 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（独立“研发”模块）
 - 开发顺序：[Docs/开发路线图.md](Docs/开发路线图.md)（按阶段和依赖，不排日期）
-- 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（生产模块“打样”分区）
+- 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（独立“研发”模块）
 - 开发规范：[Docs/开发规范.md](Docs/开发规范.md) · [Docs/前端规范.md](Docs/前端规范.md)（Ant Design Vue + 列表页标准模板）· [Docs/API文档规范.md](Docs/API文档规范.md) · [Docs/内嵌智能体规范.md](Docs/内嵌智能体规范.md)
 - 开发环境：[Docs/开发环境与同步流程.md](Docs/开发环境与同步流程.md) · [Docs/部署与迁移.md](Docs/部署与迁移.md)
 - WSL 智能体迁移交接：[Docs/WSL智能体环境迁移交接.md](Docs/WSL智能体环境迁移交接.md)

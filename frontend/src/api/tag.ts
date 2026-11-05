@@ -34,3 +34,8 @@ export function editTag(body: { tagId: string; moduleKey: string; tagName: strin
 export function disableTag(tagId: string) {
   return api.put('/system/tag/' + tagId + '/disable')
 }
+
+/** 删除未被业务记录引用的标签目录项。 */
+export function deleteTag(tagId: string) {
+  return api.delete('/system/tag/' + tagId)
+}

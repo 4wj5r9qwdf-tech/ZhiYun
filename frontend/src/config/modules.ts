@@ -14,10 +14,9 @@ export const MODULES: ModuleDef[] = [
   { key: 'order', icon: 'ShoppingOutlined', label: '订单' },
   { key: 'prod', icon: 'ApartmentOutlined', label: '生产' },
   { key: 'stock', icon: 'DatabaseOutlined', label: '库存' },
+  { key: 'rd', icon: 'ExperimentOutlined', label: '研发' },
   { key: 'person', icon: 'TeamOutlined', label: '人员' },
-  { key: 'dorm', icon: 'HomeOutlined', label: '宿舍' },
-  { key: 'canteen', icon: 'SmileOutlined', label: '食堂' },
-  { key: 'vehicle', icon: 'CarOutlined', label: '车辆' },
+  { key: 'welfare', icon: 'SmileOutlined', label: '后勤' },
   { key: 'property', icon: 'BankOutlined', label: '物业资产' },
   { key: 'finance', icon: 'AccountBookOutlined', label: '财务' },
   { key: 'approve', icon: 'AuditOutlined', label: '审批' },
@@ -53,6 +52,9 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' , perm: 'system:post:list' },
   // 物业资产模块
   { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' , perm: 'system:building:list' },
+  // 库存模块
+  { key: 'inventory_warehouse', title: '仓库管理', desc: '维护仓库档案、类型标签与负责人', icon: 'DatabaseOutlined', route: 'WarehouseManage', module: 'stock', perm: 'inventory:warehouse:list' },
+  { key: 'inventory_location', title: '库位管理', desc: '维护仓库区域、货架、货位及AGV位置映射', icon: 'EnvironmentOutlined', route: 'WarehouseLocationManage', module: 'stock', perm: 'inventory:location:list' },
 ]
 
 // 取某模块的功能卡片

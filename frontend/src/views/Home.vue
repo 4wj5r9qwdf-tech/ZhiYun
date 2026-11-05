@@ -26,6 +26,9 @@ const activeModule = computed(() => {
   if (route.path.startsWith('/order')) return 'order'
   if (route.path.startsWith('/person')) return 'person'
   if (route.path.startsWith('/property')) return 'property'
+  if (route.path.startsWith('/stock')) return 'stock'
+  if (route.path.startsWith('/rd')) return 'rd'
+  if (route.path.startsWith('/welfare')) return 'welfare'
   return 'system'
 })
 
@@ -35,6 +38,9 @@ function navModule(key: string) {
   else if (key === 'person') router.push({ name: 'PersonIndex' })
   else if (key === 'order') router.push({ name: 'OrderIndex' })
   else if (key === 'property') router.push({ name: 'PropertyIndex' })
+  else if (key === 'stock') router.push({ name: 'StockIndex' })
+  else if (key === 'rd') router.push({ name: 'RAndDIndex' })
+  else if (key === 'welfare') router.push({ name: 'WelfareIndex' })
   else {
     const label = (modules.find((m: ModuleDef) => m.key === key) as ModuleDef | undefined)?.label ?? key
     message.info(`「${label}」模块开发中`)
@@ -64,6 +70,9 @@ const moduleHomeRoute = computed(() => {
   if (route.path.startsWith('/order')) return 'OrderIndex'
   if (route.path.startsWith('/person')) return 'PersonIndex'
   if (route.path.startsWith('/property')) return 'PropertyIndex'
+  if (route.path.startsWith('/stock')) return 'StockIndex'
+  if (route.path.startsWith('/rd')) return 'RAndDIndex'
+  if (route.path.startsWith('/welfare')) return 'WelfareIndex'
   return 'SystemIndex'
 })
 

@@ -933,7 +933,7 @@ CREATE TABLE IF NOT EXISTS sys_size (
 );
 COMMENT ON TABLE sys_size IS '尺码基础档案，停用保留历史引用';
 COMMENT ON COLUMN sys_size.id IS '稳定主键';
-COMMENT ON COLUMN sys_size.code IS '系统生成的稳定编号';
+COMMENT ON COLUMN sys_size.code IS '尺码业务编码，自动生成时分配当前最小可用序号';
 COMMENT ON COLUMN sys_size.name IS '尺码名称';
 COMMENT ON COLUMN sys_size.name_en IS '英文名称';
 COMMENT ON COLUMN sys_size.sort_order IS '显示排序';
@@ -977,6 +977,19 @@ COMMENT ON TABLE sys_size_group_item IS '尺码组有序尺码明细，同组禁
 COMMENT ON COLUMN sys_size_group_item.group_id IS '所属尺码组ID';
 COMMENT ON COLUMN sys_size_group_item.size_id IS '尺码档案ID';
 COMMENT ON COLUMN sys_size_group_item.sort_order IS '组内排序，与尺码档案默认排序独立';
+-- 尺码及尺码组自动编码默认规则；重复执行不覆盖管理员已配置值。
+INSERT INTO sys_config(config_id, config_name, config_key, config_value, config_type, create_time, remark)
+SELECT COALESCE((SELECT MAX(config_id) FROM sys_config), 0) + 1,
+       '尺码自动编码规则', 'system.code.size',
+       '{"enabled":true,"prefix":"SZ","digits":4}', 'Y', now(),
+       '尺码自动编码开关、编码前缀及数字位数'
+WHERE NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='system.code.size');
+INSERT INTO sys_config(config_id, config_name, config_key, config_value, config_type, create_time, remark)
+SELECT COALESCE((SELECT MAX(config_id) FROM sys_config), 0) + 1,
+       '尺码组自动编码规则', 'system.code.sizeGroup',
+       '{"enabled":true,"prefix":"SG","digits":4}', 'Y', now(),
+       '尺码组自动编码开关、编号前缀及数字位数'
+WHERE NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='system.code.sizeGroup');
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1762400000000000401,'尺码查询',5,130,'#','','N','Y','F','0','0','system:size:list','#',now()
 WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:list');
@@ -987,6 +1000,9 @@ INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_fra
 SELECT 1762400000000000403,'尺码修改与启停',5,132,'#','','N','Y','F','0','0','system:size:edit','#',now()
 WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:edit');
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000404,'尺码删除',5,133,'#','','N','Y','F','0','0','system:size:delete','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size:delete');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1762400000000000411,'尺码组查询',5,140,'#','','N','Y','F','0','0','system:size-group:list','#',now()
 WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:list');
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
@@ -995,6 +1011,21 @@ WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:add');
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1762400000000000413,'尺码组修改与启停',5,142,'#','','N','Y','F','0','0','system:size-group:edit','#',now()
 WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:edit');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762400000000000414,'尺码组删除',5,143,'#','','N','Y','F','0','0','system:size-group:delete','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:size-group:delete');
+
+-- 已有尺码编辑权限的角色同步获得删除权限。
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT edit_rm.role_id,delete_menu.menu_id
+FROM sys_role_menu edit_rm
+JOIN sys_menu edit_menu ON edit_menu.menu_id=edit_rm.menu_id
+JOIN sys_menu delete_menu ON delete_menu.perms=CASE edit_menu.perms
+ WHEN 'system:size:edit' THEN 'system:size:delete'
+ WHEN 'system:size-group:edit' THEN 'system:size-group:delete'
+END
+WHERE edit_menu.perms IN ('system:size:edit','system:size-group:edit')
+ON CONFLICT DO NOTHING;
 
 -- 权限树整合：保留既有ID与角色关联，停用未接入的框架菜单，不删除记录。
 INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
