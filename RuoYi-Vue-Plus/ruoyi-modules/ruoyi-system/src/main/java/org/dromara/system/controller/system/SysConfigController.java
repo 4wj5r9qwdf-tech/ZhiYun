@@ -1,6 +1,7 @@
 package org.dromara.system.controller.system;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.PageResult;
@@ -207,6 +208,103 @@ public class SysConfigController extends BaseController {
         } catch (Exception e) {
             return R.fail("保存尺码组自动编码规则失败");
         }
+    }
+
+    /** 保存仓库布局层级编码规则。 */
+    @SaCheckPermission("system:config:edit")
+    @Log(title = "仓库布局编码规则", businessType = BusinessType.UPDATE)
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/warehouse-layout-code-rule")
+    public R<Void> updateWarehouseLayoutCodeRule(@RequestBody Map<String, Object> rule) {
+        Object enabled = rule.get("enabled");
+        if (!(enabled instanceof Boolean)) return R.fail("仓库布局编码规则开关无效");
+        Map<String, Object> saved = new java.util.LinkedHashMap<>();
+        saved.put("enabled", enabled);
+        for (String level : List.of("zone", "rack", "bin")) {
+            Object prefix = rule.get(level + "Prefix"), digits = rule.get(level + "Digits");
+            if (!(prefix instanceof String text) || !text.matches("[A-Za-z0-9]{1,8}")
+                || !(digits instanceof Number number) || number.intValue() < 1 || number.intValue() > 6
+                || number.doubleValue() != number.intValue()) {
+                return R.fail("库区、货架和货位前缀须为1到8位字母或数字，序号位数须为1到6位");
+            }
+            saved.put(level + "Prefix", text.toUpperCase(java.util.Locale.ROOT));
+            saved.put(level + "Digits", number.intValue());
+        }
+        try {
+            String configKey = "inventory.warehouseLayout.codeRule";
+            SysConfig previous = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, configKey));
+            String value = JsonUtils.toJsonString(saved);
+            boolean updated = configMapper.lambdaUpdate().set(SysConfig::getConfigValue, value)
+                .eq(SysConfig::getConfigKey, configKey).update();
+            if (!updated) {
+                SysConfig config = new SysConfig();
+                config.setConfigName("仓库布局自动编码规则");
+                config.setConfigKey(configKey);
+                config.setConfigValue(value);
+                config.setConfigType("Y");
+                config.setRemark("仓库布局编码开关、库区/货架/货位前缀及序号位数");
+                configMapper.insert(config);
+            }
+            SysConfig current = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, configKey));
+            Map<String, Object> before = previous == null ? Map.of() : warehouseLayoutRuleAudit(previous.getConfigValue());
+            BusinessAudit.record(previous == null ? "新增仓库布局编码规则" : "修改仓库布局编码规则",
+                current == null ? null : current.getConfigId(), "参数名称", before, warehouseLayoutRuleAudit(value));
+            CacheUtils.evict(CacheNames.SYS_CONFIG, configKey);
+            return R.ok();
+        } catch (Exception e) {
+            return R.fail("保存仓库布局编码规则失败");
+        }
+    }
+
+    private Map<String, Object> warehouseLayoutRuleAudit(String value) {
+        Map<String, Object> rule = JsonUtils.parseMap(value);
+        Map<String, Object> audit = new java.util.LinkedHashMap<>();
+        audit.put("参数名称", "仓库布局自动编码规则");
+        audit.put("自动生成", Boolean.TRUE.equals(rule.get("enabled")) ? "开启" : "关闭");
+        audit.put("库区前缀", rule.get("zonePrefix")); audit.put("库区序号位数", rule.get("zoneDigits"));
+        audit.put("货架前缀", rule.get("rackPrefix")); audit.put("货架序号位数", rule.get("rackDigits"));
+        audit.put("货位前缀", rule.get("binPrefix")); audit.put("货位序号位数", rule.get("binDigits"));
+        return audit;
+    }
+
+    /** 保存仓库编码自动生成规则。 */
+    @SaCheckPermission("system:config:edit")
+    @Log(title = "仓库编码规则", businessType = BusinessType.UPDATE)
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/warehouse-code-rule")
+    public R<Void> updateWarehouseCodeRule(@RequestBody Map<String, Object> rule) {
+        Object enabled = rule.get("enabled"), prefix = rule.get("prefix"), digits = rule.get("digits");
+        if (!(enabled instanceof Boolean) || !(prefix instanceof String text) || !text.matches("[A-Za-z0-9]{1,12}")
+            || !(digits instanceof Number number) || number.intValue() < 1 || number.intValue() > 10 || number.doubleValue() != number.intValue()) {
+            return R.fail("仓库编码规则无效：前缀须为1到12位字母或数字，序号位数须为1到10位");
+        }
+        String key = "inventory.warehouse.codeRule";
+        try {
+            SysConfig previous = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, key));
+            String value = JsonUtils.toJsonString(Map.of("enabled", enabled, "prefix", text.toUpperCase(java.util.Locale.ROOT), "digits", number.intValue()));
+            boolean updated = configMapper.lambdaUpdate().set(SysConfig::getConfigValue, value).eq(SysConfig::getConfigKey, key).update();
+            if (!updated) {
+                SysConfig config = new SysConfig();
+                config.setConfigName("仓库自动编码规则"); config.setConfigKey(key); config.setConfigValue(value);
+                config.setConfigType("Y"); config.setRemark("仓库编码自动生成开关、前缀及序号位数");
+                configMapper.insert(config);
+            }
+            SysConfig current = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, key));
+            BusinessAudit.record(previous == null ? "新增仓库编码规则" : "修改仓库编码规则",
+                current == null ? null : current.getConfigId(), "参数名称",
+                previous == null ? Map.of() : warehouseCodeRuleAudit(previous.getConfigValue()), warehouseCodeRuleAudit(value));
+            CacheUtils.evict(CacheNames.SYS_CONFIG, key);
+            return R.ok();
+        } catch (Exception e) { return R.fail("保存仓库自动编码规则失败"); }
+    }
+
+    private Map<String, Object> warehouseCodeRuleAudit(String value) {
+        Map<String, Object> rule = JsonUtils.parseMap(value);
+        Map<String, Object> audit = new java.util.LinkedHashMap<>();
+        audit.put("参数名称", "仓库自动编码规则");
+        audit.put("自动生成", Boolean.TRUE.equals(rule.get("enabled")) ? "开启" : "关闭");
+        audit.put("仓库编码前缀", rule.get("prefix")); audit.put("序号位数", rule.get("digits"));
+        return audit;
     }
 
     /**

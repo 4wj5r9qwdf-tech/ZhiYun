@@ -131,6 +131,16 @@ const sizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
 const savedSizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
 const sizeGroupCodeEditing = ref(false)
 const sizeGroupCodeSaving = ref(false)
+const layoutCodeRule = ref({ enabled: true, zonePrefix: 'Z', zoneDigits: 2, rackPrefix: 'R', rackDigits: 2, binPrefix: 'B', binDigits: 3 })
+const savedLayoutCodeRule = ref({ ...layoutCodeRule.value })
+const layoutCodeEditing = ref(false)
+const layoutCodeSaving = ref(false)
+const layoutCodeRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.warehouseLayout.codeRule'))
+const warehouseCodeRule = ref({ enabled: true, prefix: 'WH', digits: 4 })
+const savedWarehouseCodeRule = ref({ ...warehouseCodeRule.value })
+const warehouseCodeEditing = ref(false)
+const warehouseCodeSaving = ref(false)
+const warehouseCodeRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.warehouse.codeRule'))
 const parameterRows = computed(() => rows.value)
 const sizeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.size'))
 const sizeGroupRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.sizeGroup'))
@@ -156,6 +166,60 @@ function syncCodeRules(configs: Record<string, any>[]) {
     sizeGroupCodeRule.value = readCodeRule(groupRow, { enabled: true, prefix: 'SG', digits: 4 })
     savedSizeGroupCodeRule.value = { ...sizeGroupCodeRule.value }
   }
+  if (!layoutCodeEditing.value) {
+    const row = configs.find(item => item.configKey === 'inventory.warehouseLayout.codeRule')
+    const fallback = { enabled: true, zonePrefix: 'Z', zoneDigits: 2, rackPrefix: 'R', rackDigits: 2, binPrefix: 'B', binDigits: 3 }
+    try {
+      const value = row?.configValue ? JSON.parse(String(row.configValue)) : fallback
+      layoutCodeRule.value = { ...fallback, ...value }
+    } catch { layoutCodeRule.value = { ...fallback } }
+    savedLayoutCodeRule.value = { ...layoutCodeRule.value }
+  }
+  if (!warehouseCodeEditing.value) {
+    const row = configs.find(item => item.configKey === 'inventory.warehouse.codeRule')
+    const fallback = { enabled: true, prefix: 'WH', digits: 4 }
+    try { warehouseCodeRule.value = row?.configValue ? { ...fallback, ...JSON.parse(String(row.configValue)) } : { ...fallback } }
+    catch { warehouseCodeRule.value = { ...fallback } }
+    savedWarehouseCodeRule.value = { ...warehouseCodeRule.value }
+  }
+}
+function openLayoutCodeEdit() { layoutCodeEditing.value = true }
+function cancelLayoutCodeEdit() { layoutCodeRule.value = { ...savedLayoutCodeRule.value }; layoutCodeEditing.value = false }
+async function saveLayoutCodeRule() {
+  const rule = layoutCodeRule.value
+  if (!['zone', 'rack', 'bin'].every(level => /^[A-Za-z0-9]{1,8}$/.test(rule[`${level}Prefix` as 'zonePrefix' | 'rackPrefix' | 'binPrefix']) && Number.isInteger(rule[`${level}Digits` as 'zoneDigits' | 'rackDigits' | 'binDigits']) && rule[`${level}Digits` as 'zoneDigits' | 'rackDigits' | 'binDigits'] >= 1 && rule[`${level}Digits` as 'zoneDigits' | 'rackDigits' | 'binDigits'] <= 6)) { message.warning('前缀须为1到8位字母或数字，序号位数须为1到6位'); return }
+  layoutCodeSaving.value = true
+  try {
+    const saved = { ...rule, zonePrefix: rule.zonePrefix.toUpperCase(), rackPrefix: rule.rackPrefix.toUpperCase(), binPrefix: rule.binPrefix.toUpperCase() }
+    const res: any = await api.post('/system/config/warehouse-layout-code-rule', saved)
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    layoutCodeRule.value = { ...saved }; savedLayoutCodeRule.value = { ...saved }; layoutCodeEditing.value = false
+    const configValue = JSON.stringify(saved)
+    rows.value = layoutCodeRow.value
+      ? rows.value.map(row => row.configKey === 'inventory.warehouseLayout.codeRule' ? { ...row, configValue } : row)
+      : [...rows.value, { configName: '仓库布局自动编码规则', configKey: 'inventory.warehouseLayout.codeRule', configValue, configType: 'Y', remark: '仓库布局编码开关、库区/货架/货位前缀及序号位数' }]
+    message.success('仓库布局自动编码规则已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存仓库布局编码规则失败') }
+  finally { layoutCodeSaving.value = false }
+}
+function openWarehouseCodeEdit() { warehouseCodeEditing.value = true }
+function cancelWarehouseCodeEdit() { warehouseCodeRule.value = { ...savedWarehouseCodeRule.value }; warehouseCodeEditing.value = false }
+async function saveWarehouseCodeRule() {
+  const rule = warehouseCodeRule.value
+  if (!/^[A-Za-z0-9]{1,12}$/.test(rule.prefix) || !Number.isInteger(rule.digits) || rule.digits < 1 || rule.digits > 10) { message.warning('仓库编码前缀须为1到12位字母或数字，序号位数须为1到10位'); return }
+  warehouseCodeSaving.value = true
+  try {
+    const saved = { ...rule, prefix: rule.prefix.toUpperCase() }
+    const res: any = await api.post('/system/config/warehouse-code-rule', saved)
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    warehouseCodeRule.value = { ...saved }; savedWarehouseCodeRule.value = { ...saved }; warehouseCodeEditing.value = false
+    const configValue = JSON.stringify(saved)
+    rows.value = warehouseCodeRow.value
+      ? rows.value.map(row => row.configKey === 'inventory.warehouse.codeRule' ? { ...row, configValue } : row)
+      : [...rows.value, { configName: '仓库自动编码规则', configKey: 'inventory.warehouse.codeRule', configValue, configType: 'Y', remark: '仓库编码自动生成开关、前缀及序号位数' }]
+    message.success('仓库自动编码规则已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存仓库自动编码规则失败') }
+  finally { warehouseCodeSaving.value = false }
 }
 async function openAutoCode() {
   try {
@@ -445,6 +509,32 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
           </div>
           <div class="setting-footer"><span>{{ sizeGroupRuleRow ? '关闭后，新增尺码组需手动填写编号。' : '尚未保存规则，保存后将创建系统参数。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="sizeGroupCodeEditing" @click="cancelSizeGroupCodeEdit">取消</a-button><a-button v-if="sizeGroupCodeEditing" type="primary" :loading="sizeGroupCodeSaving" @click="saveSizeGroupCode">保存规则</a-button><a-button v-else type="primary" @click="openSizeGroupCode">修改规则</a-button></a-space></div>
         </a-spin>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>仓库编码自动生成</h3><p>新增仓库时按统一前缀和序号生成建议编码，已有仓库编码不自动重编。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <div class="setting-controls">
+          <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="warehouseCodeRule.enabled" :disabled="!warehouseCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+          <a-form-item label="仓库编码前缀"><a-input v-model:value="warehouseCodeRule.prefix" :disabled="!warehouseCodeEditing" :maxlength="12" placeholder="例如 WH" /></a-form-item>
+          <a-form-item label="序号位数"><a-input-number v-model:value="warehouseCodeRule.digits" :disabled="!warehouseCodeEditing" :min="1" :max="10" :precision="0" /></a-form-item>
+          <div class="setting-example">生成示例：<strong>{{ warehouseCodeRule.prefix || 'WH' }}{{ '0'.repeat(Math.max(0, warehouseCodeRule.digits - 1)) }}1</strong></div>
+        </div>
+        <div class="setting-footer"><span>{{ warehouseCodeRule.enabled ? '新增时自动带出可编辑的建议编码；关闭后需手动填写。' : '自动生成已关闭，新增时须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="warehouseCodeEditing" @click="cancelWarehouseCodeEdit">取消</a-button><a-button v-if="warehouseCodeEditing" type="primary" :loading="warehouseCodeSaving" @click="saveWarehouseCodeRule">保存规则</a-button><a-button v-else type="primary" @click="openWarehouseCodeEdit">修改规则</a-button></a-space></div>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>仓库布局层级编码</h3><p>按仓库、库区、货架、货位路径生成编码。已有档案编码不重编，新增时按所选上级分配下一个序号。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <div class="setting-controls">
+          <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="layoutCodeRule.enabled" :disabled="!layoutCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+          <a-form-item label="库区前缀"><a-input v-model:value="layoutCodeRule.zonePrefix" :disabled="!layoutCodeEditing" :maxlength="8" /></a-form-item>
+          <a-form-item label="库区序号位数"><a-input-number v-model:value="layoutCodeRule.zoneDigits" :disabled="!layoutCodeEditing" :min="1" :max="6" :precision="0" /></a-form-item>
+          <a-form-item label="货架前缀"><a-input v-model:value="layoutCodeRule.rackPrefix" :disabled="!layoutCodeEditing" :maxlength="8" /></a-form-item>
+          <a-form-item label="货架序号位数"><a-input-number v-model:value="layoutCodeRule.rackDigits" :disabled="!layoutCodeEditing" :min="1" :max="6" :precision="0" /></a-form-item>
+          <a-form-item label="货位前缀"><a-input v-model:value="layoutCodeRule.binPrefix" :disabled="!layoutCodeEditing" :maxlength="8" /></a-form-item>
+          <a-form-item label="货位序号位数"><a-input-number v-model:value="layoutCodeRule.binDigits" :disabled="!layoutCodeEditing" :min="1" :max="6" :precision="0" /></a-form-item>
+          <div class="setting-example">生成示例：<strong>WH01-{{ layoutCodeRule.zonePrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.zoneDigits - 1)) }}1-{{ layoutCodeRule.rackPrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.rackDigits - 1)) }}1-{{ layoutCodeRule.binPrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.binDigits - 1)) }}1</strong></div>
+        </div>
+        <div class="setting-footer"><span>{{ layoutCodeRule.enabled ? '关闭自动生成后，新增时须手动填写编码。仓库编码和已建档位置编码不可修改。' : '自动生成已关闭，新增时须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="layoutCodeEditing" @click="cancelLayoutCodeEdit">取消</a-button><a-button v-if="layoutCodeEditing" type="primary" :loading="layoutCodeSaving" @click="saveLayoutCodeRule">保存规则</a-button><a-button v-else type="primary" @click="openLayoutCodeEdit">修改规则</a-button></a-space></div>
       </a-card>
 
       <div class="settings-section-title">系统功能</div>

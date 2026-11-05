@@ -44,6 +44,8 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'system_tag', title: '标签管理', desc: '按模块维护标签与常用提示', icon: 'TagsOutlined', route: 'TagManage', module: 'system' , perm: 'system:tag:list' },
   { key: 'system_size', title: '尺码管理', desc: '尺码档案与类型标签', icon: 'ColumnWidthOutlined', route: 'SizeManage', module: 'system', perm: 'system:size:list' },
   { key: 'system_size_group', title: '尺码组管理', desc: '维护尺码组合与顺序', icon: 'GroupOutlined', route: 'SizeGroupManage', module: 'system', perm: 'system:size-group:list' },
+  { key: 'system_unit', title: '计量单位', desc: '全局单位档案与固定换算', icon: 'ColumnWidthOutlined', route: 'UnitManage', module: 'system', perm: 'system:unit:list' },
+  { key: 'system_category', title: '分类管理', desc: '按业务体系维护多级分类', icon: 'ApartmentOutlined', route: 'CategoryManage', module: 'system', perm: 'system:category:list' },
   { key: 'system_country_region', title: '国家/地区', desc: '维护国家和地区基础资料', icon: 'GlobalOutlined', route: 'CountryRegionManage', module: 'system', perm: 'system:country:list' },
   { key: 'customer_master', title: '客户档案', desc: '客户主档/联系人/地址', icon: 'TeamOutlined', route: 'CustomerManage', module: 'order', perm: 'system:customer:list' },
   // 人员模块
@@ -54,7 +56,7 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' , perm: 'system:building:list' },
   // 库存模块
   { key: 'inventory_warehouse', title: '仓库管理', desc: '维护仓库档案、类型标签与负责人', icon: 'DatabaseOutlined', route: 'WarehouseManage', module: 'stock', perm: 'inventory:warehouse:list' },
-  { key: 'inventory_location', title: '库位管理', desc: '维护仓库区域、货架、货位及AGV位置映射', icon: 'EnvironmentOutlined', route: 'WarehouseLocationManage', module: 'stock', perm: 'inventory:location:list' },
+  { key: 'inventory_location', title: '仓库布局', desc: '维护库区、货架、货位及所属关系', icon: 'EnvironmentOutlined', route: 'WarehouseLayoutManage', module: 'stock', perm: 'inventory:location:list' },
 ]
 
 // 取某模块的功能卡片

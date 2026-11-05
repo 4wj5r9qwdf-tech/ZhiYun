@@ -9,7 +9,7 @@ const failureRows = computed(() => props.failures.map((row, index) => ({ ...row,
   <a-modal :open="open" :title="title" :footer="null" @cancel="emit('update:open', false)">
     <p>成功 {{ succeeded }} 条，未处理 {{ failures.length }} 条。</p>
     <a-table v-if="failures.length" :columns="[{ title: '记录', dataIndex: 'name', key: 'name' }, { title: '原因', dataIndex: 'reason', key: 'reason' }]" :data-source="failureRows" row-key="rowId" size="small" :pagination="{ pageSize: 5 }" />
-    <div class="result-footer"><a-button type="primary" @click="emit('update:open', false)">完成</a-button></div>
+    <div class="result-footer"><slot name="actions" /><a-button type="primary" @click="emit('update:open', false)">完成</a-button></div>
   </a-modal>
 </template>
-<style scoped>.result-footer { display: flex; justify-content: flex-end; margin-top: 16px; }</style>
+<style scoped>.result-footer { display: flex; justify-content: flex-end; gap:8px; margin-top: 16px; }</style>

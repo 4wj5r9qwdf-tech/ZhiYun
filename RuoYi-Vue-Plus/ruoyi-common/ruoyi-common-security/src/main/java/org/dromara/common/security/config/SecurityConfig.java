@@ -113,6 +113,35 @@ public class SecurityConfig implements WebMvcConfigurer {
     }
 
     /**
+     * Protects the Streamable HTTP MCP endpoint with the same employee session,
+     * client ID, and client access scope checks used by MVC endpoints.
+     * MCP transport requests do not pass through Spring MVC interceptors.
+     */
+    @Bean
+    public SaServletFilter getMcpSaServletFilter() {
+        return new SaServletFilter()
+            .addInclude("/mcp", "/mcp/**")
+            .setAuth(obj -> {
+                StpUtil.checkLogin();
+                HttpServletRequest request = ServletUtils.getRequest();
+                String headerCid = request.getHeader(LoginHelper.CLIENT_KEY);
+                String paramCid = ServletUtils.getParameter(LoginHelper.CLIENT_KEY);
+                String tokenCid = getTokenExtra(LoginHelper.CLIENT_KEY);
+                if (StringUtils.isBlank(tokenCid) || !StringUtils.equalsAny(tokenCid, headerCid, paramCid)) {
+                    throw NotLoginException.newInstance(StpUtil.getLoginType(),
+                        "-100", "客户端ID与Token不匹配", StpUtil.getTokenValue());
+                }
+                validateClientAccessRules(request);
+            })
+            .setError(e -> {
+                HttpServletResponse response = ServletUtils.getResponse();
+                response.setContentType(SaTokenConsts.CONTENT_TYPE_APPLICATION_JSON);
+                int status = e instanceof NotPermissionException ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED;
+                return SaResult.error(e.getMessage()).setCode(status);
+            });
+    }
+
+    /**
      * 按客户端配置校验接口访问路径与来源 IP。
      *
      * @param request 当前请求
