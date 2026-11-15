@@ -1,0 +1,151 @@
+package org.dromara.web.mcp;
+
+import cn.dev33.satoken.stp.StpUtil;
+import lombok.RequiredArgsConstructor;
+import org.dromara.common.core.domain.R;
+import org.dromara.system.controller.system.SysConfigController;
+import org.dromara.web.controller.SizeDataController;
+import org.springframework.ai.mcp.annotation.McpTool;
+import org.springframework.ai.mcp.annotation.McpToolParam;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+
+/**
+ * 尺码与尺码组 MCP 工具，复用现有 REST 控制器的校验、事务和审计逻辑。
+ * Size and size-group MCP tools reuse the existing REST validation, transactions, and audit behavior.
+ */
+@Component
+@RequiredArgsConstructor
+public class SizeMcpTools {
+
+    private final SizeDataController sizeController;
+    private final SysConfigController configController;
+
+    // 尺码管理 size
+
+    /** 按当前员工权限查询尺码及标签。 / List sizes and tags under the current employee permission. */
+    @McpTool(name = "size_list", description = "查询尺码档案及类型标签，需要 system:size:list 权限")
+    public R<?> sizeList() {
+        StpUtil.checkPermission("system:size:list");
+        return sizeController.list("size");
+    }
+
+    /** 查询业务选择尺码，停用项仅用于历史回显。 / Read size options; disabled items are for historical display only. */
+    @McpTool(name = "size_options", description = "查询尺码业务选项；停用尺码仅用于历史回显，需要员工登录")
+    public R<?> sizeOptions() {
+        StpUtil.checkLogin();
+        return sizeController.options("size");
+    }
+
+    /** 新增尺码前必须展示完整字段并取得员工确认。 / Create a size only after presenting the full payload and receiving confirmation. */
+    @McpTool(name = "size_create", description = "新增尺码档案；执行前展示编码、名称、标签等完整字段并取得员工确认，需要 system:size:add 权限")
+    public R<?> sizeCreate(@McpToolParam(description = "尺码字段对象：code、name、name_en、sort_order、remark、tagIds；编码可按规则留空生成") Map<String, Object> body) {
+        StpUtil.checkPermission("system:size:add");
+        return sizeController.add("size", body);
+    }
+
+    /** 修改尺码完整字段和标签集合。 / Update the full size fields and final tag set. */
+    @McpTool(name = "size_update", description = "修改尺码及其完整类型标签集合；展示前后差异并取得确认，需要 system:size:edit 权限")
+    public R<?> sizeUpdate(@McpToolParam(description = "尺码ID十进制字符串") String id,
+                           @McpToolParam(description = "完整尺码字段对象：code、name、name_en、sort_order、remark、tagIds") Map<String, Object> body) {
+        StpUtil.checkPermission("system:size:edit");
+        return sizeController.edit("size", Long.valueOf(id), body);
+    }
+
+    /** 启停尺码但保留已有尺码组引用。 / Change size availability while preserving existing group references. */
+    @McpTool(name = "size_set_status", description = "启用或停用尺码；停用不清除尺码组历史引用，执行前取得确认，需要 system:size:edit 权限")
+    public R<?> sizeSetStatus(@McpToolParam(description = "尺码ID十进制字符串") String id,
+                              @McpToolParam(description = "目标状态：0启用、1停用") String status) {
+        StpUtil.checkPermission("system:size:edit");
+        return sizeController.status("size", Long.valueOf(id), Map.of("status", status));
+    }
+
+    /** 删除未被尺码组引用的尺码。 / Delete a size only when no size group references it. */
+    @McpTool(name = "size_delete", description = "删除尺码；被尺码组引用时后端会拒绝，执行前展示编码名称并取得本次确认，需要 system:size:delete 权限")
+    public R<?> sizeDelete(@McpToolParam(description = "尺码ID十进制字符串") String id) {
+        StpUtil.checkPermission("system:size:delete");
+        return sizeController.delete("size", Long.valueOf(id));
+    }
+
+    /** 批量替换选中尺码的最终类型标签集合。 / Replace the final type-tag set for selected sizes. */
+    @McpTool(name = "size_batch_set_tags", description = "批量替换尺码类型标签；空标签列表会清除所选尺码全部类型标签，最多500条，执行前展示影响并取得确认，需要 system:size:edit 权限")
+    public R<?> sizeBatchSetTags(@McpToolParam(description = "批量标签字段：ids为尺码ID数组，tagIds为最终标签ID数组；ID均用十进制字符串") Map<String, Object> body) {
+        StpUtil.checkPermission("system:size:edit");
+        return sizeController.batchTags("size", body);
+    }
+
+    /** 只读取固定尺码编码规则参数，不开放通用系统参数读取。 / Read only the fixed size-code rule key. */
+    @McpTool(name = "size_get_code_rule", description = "读取尺码自动编码规则，仅读取固定参数键 system.code.size，需要员工登录")
+    public R<?> sizeGetCodeRule() {
+        StpUtil.checkLogin();
+        return configController.getConfigKey("system.code.size");
+    }
+
+    /** 更新尺码编码规则前必须展示完整新旧规则并取得确认。 / Update the size-code rule after confirming old and new values. */
+    @McpTool(name = "size_set_code_rule", description = "修改尺码自动编码开关、前缀和位数；执行前展示旧新规则并取得确认，需要 system:config:edit 权限")
+    public R<?> sizeSetCodeRule(@McpToolParam(description = "规则对象：enabled布尔值、prefix字符串、digits整数1到10") Map<String, Object> body) {
+        StpUtil.checkPermission("system:config:edit");
+        return configController.updateSizeCodeRule(body);
+    }
+
+    // 尺码组管理 size_group
+
+    /** 按权限查询尺码组、组内尺码顺序及标签。 / List size groups with ordered members and tags. */
+    @McpTool(name = "size_group_list", description = "查询尺码组、组内尺码顺序和类型标签，需要 system:size-group:list 权限")
+    public R<?> sizeGroupList() {
+        StpUtil.checkPermission("system:size-group:list");
+        return sizeController.list("size-group");
+    }
+
+    /** 查询业务选择尺码组，停用项仅用于历史回显。 / Read size-group options; disabled items are for historical display only. */
+    @McpTool(name = "size_group_options", description = "查询尺码组业务选项及组内尺码；停用组仅用于历史回显，需要员工登录")
+    public R<?> sizeGroupOptions() {
+        StpUtil.checkLogin();
+        return sizeController.options("size-group");
+    }
+
+    /** 新增尺码组前展示成员顺序并取得员工确认。 / Create a size group after confirming its ordered members. */
+    @McpTool(name = "size_group_create", description = "新增尺码组；展示编码、名称、标签和有序尺码成员并取得确认，需要 system:size-group:add 权限")
+    public R<?> sizeGroupCreate(@McpToolParam(description = "尺码组对象：code、name、name_en、sort_order、remark、tagIds、sizeIds；至少包含一个尺码，顺序即组内顺序") Map<String, Object> body) {
+        StpUtil.checkPermission("system:size-group:add");
+        return sizeController.add("size-group", body);
+    }
+
+    /** 修改尺码组档案、成员顺序和完整标签集合。 / Update a size group, ordered members, and final tags. */
+    @McpTool(name = "size_group_update", description = "修改尺码组及组内尺码顺序；展示完整前后差异并取得确认，需要 system:size-group:edit 权限")
+    public R<?> sizeGroupUpdate(@McpToolParam(description = "尺码组ID十进制字符串") String id,
+                                @McpToolParam(description = "完整尺码组对象：code、name、name_en、sort_order、remark、tagIds、sizeIds") Map<String, Object> body) {
+        StpUtil.checkPermission("system:size-group:edit");
+        return sizeController.edit("size-group", Long.valueOf(id), body);
+    }
+
+    /** 启停尺码组并保留历史引用。 / Change size-group availability and preserve historical references. */
+    @McpTool(name = "size_group_set_status", description = "启用或停用尺码组；执行前取得确认，需要 system:size-group:edit 权限")
+    public R<?> sizeGroupSetStatus(@McpToolParam(description = "尺码组ID十进制字符串") String id,
+                                   @McpToolParam(description = "目标状态：0启用、1停用") String status) {
+        StpUtil.checkPermission("system:size-group:edit");
+        return sizeController.status("size-group", Long.valueOf(id), Map.of("status", status));
+    }
+
+    /** 删除尺码组以及控制器事务内清理的成员和标签关联。 / Delete a group and its transactional member/tag links. */
+    @McpTool(name = "size_group_delete", description = "删除尺码组并清理组内尺码关系；不可恢复，执行前展示编码名称并取得本次确认，需要 system:size-group:delete 权限")
+    public R<?> sizeGroupDelete(@McpToolParam(description = "尺码组ID十进制字符串") String id) {
+        StpUtil.checkPermission("system:size-group:delete");
+        return sizeController.delete("size-group", Long.valueOf(id));
+    }
+
+    /** 只读取固定尺码组编码规则参数。 / Read only the fixed size-group code rule key. */
+    @McpTool(name = "size_group_get_code_rule", description = "读取尺码组自动编码规则，仅读取固定参数键 system.code.sizeGroup，需要员工登录")
+    public R<?> sizeGroupGetCodeRule() {
+        StpUtil.checkLogin();
+        return configController.getConfigKey("system.code.sizeGroup");
+    }
+
+    /** 更新尺码组编码规则前展示完整新旧规则并取得员工确认。 / Update size-group code rules after confirming old and new values. */
+    @McpTool(name = "size_group_set_code_rule", description = "修改尺码组自动编码开关、前缀和位数；执行前展示旧新规则并取得确认，需要 system:config:edit 权限")
+    public R<?> sizeGroupSetCodeRule(@McpToolParam(description = "规则对象：enabled布尔值、prefix字符串、digits整数1到10") Map<String, Object> body) {
+        StpUtil.checkPermission("system:config:edit");
+        return configController.updateSizeGroupCodeRule(body);
+    }
+}

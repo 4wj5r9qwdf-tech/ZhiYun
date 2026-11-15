@@ -9,3 +9,9 @@
 .zy-fill-table .ant-table-body { flex: 1 1 0; min-height: 0; max-height: none !important; }
 .zy-fill-table .ant-table-body:has(.ant-table-placeholder) > table { height: 100%; }
 .zy-fill-table .ant-table-pagination { flex: none; }
+
+/* 主列表使用浅色列分隔线，帮助横向核对数据，同时保留原有行线和列宽。 */
+.zy-fill-table .ant-table-thead > tr > th:not(:last-child),
+.zy-fill-table .ant-table-tbody > tr:not(.ant-table-placeholder) > td:not(:last-child) {
+  border-right: 1px solid #edf0f5;
+}

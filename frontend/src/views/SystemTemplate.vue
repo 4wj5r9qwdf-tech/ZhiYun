@@ -25,6 +25,7 @@ import StandardPicker from '../components/StandardPicker.vue'
 import ImportResultTable from '../components/ImportResultTable.vue'
 import BatchResultModal from '../components/BatchResultModal.vue'
 import StandardListLayout from '../components/StandardListLayout.vue'
+import EditorSectionNav from '../components/EditorSectionNav.vue'
 import { createSavedFormDefaults } from '../utils/savedFormDefaults'
 
 // ===== 演示数据（内存生成，不入库） =====
@@ -335,6 +336,21 @@ const scrollWidth = computed(() => 48 + 64 + opsWidth.value + colState.value.fil
 
 // ===== 演示弹窗（B.5.1.2：mask-closable=false / keyboard=false / 保存校验） =====
 const showDlg = ref(false)
+// 模式二展示分区导航和独立滚动，示例内容只保存在页面内存。
+const modeTwoOpen = ref(false)
+const modeTwoActive = ref('basic')
+const modeTwoForm = ref({ code:'', name:'', owner:'', remark:'' })
+const modeTwoSections = [
+  { key:'basic', title:'基础资料', hint:'编码与名称' },
+  { key:'detail', title:'业务信息', hint:'负责人及说明' },
+  { key:'confirm', title:'填写确认', hint:'检查已填写内容' },
+]
+function openModeTwo() { modeTwoForm.value = { code:'', name:'', owner:'', remark:'' }; modeTwoActive.value = 'basic'; modeTwoOpen.value = true }
+function goToModeTwo(key: string) { modeTwoActive.value = key; document.getElementById(`template-mode-two-${key}`)?.scrollIntoView({ behavior:'smooth', block:'start' }) }
+function saveModeTwo() {
+  if (!modeTwoForm.value.code.trim() || !modeTwoForm.value.name.trim()) { message.warning('请填写编码和名称'); goToModeTwo('basic'); return }
+  message.success('示例填写完成（仅演示，不写入数据）'); modeTwoOpen.value = false
+}
 const isEdit = ref(false)
 const saving = ref(false)
 const formRef = ref()
@@ -543,18 +559,18 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
     <!-- 页头行：查询条件左置（定版布局：无标题无返回） -->
     <template #filters>
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索编码/名称/负责人" allow-clear style="width:200px" @press-enter="runSearch">
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索编码/名称/负责人" allow-clear style="width:200px" @press-enter="runSearch">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
-        </a-input>
-        <a-select v-model:value="fType" allow-clear placeholder="类型" style="width:110px" @change="loadList">
+        </a-input></label>
+        <label class="zy-filter-field"><span>类型</span><a-select v-model:value="fType" allow-clear placeholder="类型" style="width:110px" @change="loadList">
           <a-select-option value="部门">部门</a-select-option>
           <a-select-option value="科室">科室</a-select-option>
           <a-select-option value="小组">小组</a-select-option>
-        </a-select>
-        <a-select v-model:value="fStatus" allow-clear placeholder="状态" style="width:100px" @change="loadList">
+        </a-select></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="fStatus" allow-clear placeholder="状态" style="width:100px" @change="loadList">
           <a-select-option value="0">启用</a-select-option>
           <a-select-option value="1">停用</a-select-option>
-        </a-select>
+        </a-select></label>
       </div>
     </template>
 
@@ -562,6 +578,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
     <template #actions>
     <div class="filter-bar">
       <a-button type="primary" @click="openAdd()"><PlusOutlined />新增</a-button>
+      <a-button @click="openModeTwo">新增页面模式二</a-button>
       <a-button type="primary" @click="runSearch">查询</a-button>
       <a-button @click="resetFilters">重置</a-button>
       <span class="filter-spacer"></span>
@@ -692,17 +709,17 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
       <div v-if="!isEdit" class="continuous-add-tip"><span>{{ reusedPrevious ? '已带入上次成功保存的内容，修改编码和名称即可继续新增。' : '保存并新增会保留填写内容，供下一条记录修改使用。' }}</span><a-button type="link" size="small" :disabled="saving" @click="openAdd(false)">清空内容</a-button></div>
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-row :gutter="12">
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="编码" name="code">
               <a-input ref="codeInput" v-model:value="form.code" :maxlength="20" placeholder="请输入" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="名称" name="name">
               <a-input v-model:value="form.name" :maxlength="30" placeholder="请输入" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="所属组织" name="orgId">
               <a-input :value="flatOrgs.find(o => o.orgId === form.orgId)?.orgName || ''" readonly placeholder="点击选择组织" @click="openPicker('org')"><template #suffix><a @click.stop="openPicker('org')">选择</a></template></a-input>
             </a-form-item>
@@ -740,6 +757,20 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
       </a-form>
       <div class="continuous-add-footer"><a-button :disabled="saving" @click="closeForm">取消</a-button><a-button v-if="!isEdit" :loading="saving" @click="saveRow(true)">保存并新增</a-button><a-button type="primary" :loading="saving" @click="saveRow()">保存</a-button></div>
     </a-modal>
+    <!-- 新增页面模式二：适合字段较多、需要按分组定位的表单。 -->
+    <a-modal v-model:open="modeTwoOpen" title="新增页面模式二（示例）" :width="1000" :body-style="{ padding: 0 }" :mask-closable="false" :footer="null">
+      <div class="mode-two-layout">
+        <EditorSectionNav eyebrow="功能模板" title="创建示例资料" description="按分组填写，可随时点击左侧定位。" :sections="modeTwoSections" :active="modeTwoActive" @select="goToModeTwo" />
+        <div class="mode-two-content">
+          <a-form layout="vertical">
+            <section id="template-mode-two-basic" class="mode-two-section"><h3>基础资料</h3><p>填写示例的基本身份信息。</p><div class="mode-two-fields"><a-form-item label="编码" required><a-input v-model:value="modeTwoForm.code" placeholder="请输入编码" /></a-form-item><a-form-item label="名称" required><a-input v-model:value="modeTwoForm.name" placeholder="请输入名称" /></a-form-item></div></section>
+            <section id="template-mode-two-detail" class="mode-two-section"><h3>业务信息</h3><p>根据实际业务安排分组与字段。</p><div class="mode-two-fields"><a-form-item label="负责人"><a-input v-model:value="modeTwoForm.owner" placeholder="请输入负责人" /></a-form-item><a-form-item label="备注"><a-input v-model:value="modeTwoForm.remark" placeholder="可不填" /></a-form-item></div></section>
+            <section id="template-mode-two-confirm" class="mode-two-section"><h3>填写确认</h3><p>检查信息后保存；左侧导航只负责定位，不限制填写顺序。</p><div>编码：{{ modeTwoForm.code || '未填写' }}　名称：{{ modeTwoForm.name || '未填写' }}</div></section>
+          </a-form>
+        </div>
+      </div>
+      <div class="mode-two-footer"><a-button @click="modeTwoOpen = false">取消</a-button><a-button type="primary" @click="saveModeTwo">保存示例</a-button></div>
+    </a-modal>
     <!-- 统一查询选择器：树筛选、关键词、结果列表、临时选择与已选数。 -->
     <StandardPicker v-model:open="pickerVisible" v-model="pickerSelected" :title="pickerKind === 'org' ? '选择组织' : '选择人员'" :tree="demoTree" :items="pickerItems" :multiple="pickerMultiple" @confirm="confirmPicker" />
     <BatchResultModal v-model:open="batchResultOpen" :title="batchResultTitle" :succeeded="batchSucceeded" :failures="batchFailures" />
@@ -764,6 +795,14 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 </template>
 
 <style scoped>
+.mode-two-layout { display:grid; grid-template-columns:190px minmax(0,1fr); height:min(650px,calc(100dvh - 200px)); min-height:0; }
+.mode-two-content { overflow:auto; min-width:0; padding:22px 24px; scroll-behavior:smooth; }
+.mode-two-section { padding:0 0 24px; margin-bottom:24px; border-bottom:1px solid #edf0f5; }
+.mode-two-section h3 { margin:0; color:#263854; font-size:16px; }
+.mode-two-section p { margin:6px 0 18px; color:#8998ad; font-size:12px; }
+.mode-two-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px; }
+.mode-two-footer { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid #edf0f5; }
+@media(max-width:760px) { .mode-two-layout { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); } }
 .continuous-add-tip { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#86909C; font-size:12px; margin-bottom:12px; }
 .continuous-add-footer { display:flex; justify-content:flex-end; gap:8px; }
 .tpl-container { height: 100%; min-height: 0; }

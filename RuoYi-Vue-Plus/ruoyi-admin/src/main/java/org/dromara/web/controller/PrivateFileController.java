@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
 
+import static org.dromara.system.service.ISysOssService.STYLE_COVER_PREFIX;
+
 /**
  * 私有文件代理接口（带登录鉴权读私有桶 zhizhun-private）。
  *
@@ -63,6 +65,7 @@ public class PrivateFileController {
         }
         String objectName = (String) row.get("object_name");
         String fileName = (String) row.get("file_name");
+        if (objectName.startsWith(STYLE_COVER_PREFIX)) return ResponseEntity.notFound().build();
         return streamFile(objectName, fileName);
     }
 
@@ -72,6 +75,7 @@ public class PrivateFileController {
     @SaCheckLogin
     @GetMapping("/by-key/{objectName:.+}")
     public ResponseEntity<byte[]> getByKey(@PathVariable String objectName) {
+        if (objectName.startsWith(STYLE_COVER_PREFIX)) return ResponseEntity.notFound().build();
         return streamFile(objectName, null);
     }
 
@@ -82,21 +86,27 @@ public class PrivateFileController {
     @SaCheckLogin
     @PostMapping("/upload")
     public R<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
+        return uploadPrivate(file, "", file == null ? null : file.getContentType());
+    }
+
+    /** 共用私有桶写入，款式文件使用仅由业务接口读取的命名空间。 / Store styles under a business-protected prefix. */
+    R<Map<String, Object>> uploadPrivate(MultipartFile file, String prefix, String contentType) {
         if (file == null || file.isEmpty()) {
             throw new ServiceException("上传文件不能为空");
         }
         String original = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
         OssClient client = OssFactory.instance(PRIVATE_CONFIG_KEY);
-        String pathKey = client.buildPathKey(original);
+        String storageName = prefix.isEmpty() ? original : "attachment" + suffix(original);
+        String pathKey = prefix + client.buildPathKey(storageName);
         PutObjectResult result;
         try (InputStream in = file.getInputStream()) {
             result = client.bucketUpload(PRIVATE_BUCKET, pathKey, in, file.getSize(),
-                Options.builder().setContentType(file.getContentType()));
+                Options.builder().setContentType(contentType));
         } catch (IOException e) {
             throw new ServiceException("上传失败：" + e.getMessage());
         }
         // 落 sys_oss（service 记私有配置 key），供代理读取与业务引用
-        long ossId = System.currentTimeMillis();
+        long ossId = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
         jdbcTemplate.update(
             "INSERT INTO sys_oss (oss_id, file_name, original_name, file_suffix, url, service, create_time, create_by) " +
             "VALUES (?,?,?,?,?,? ,now(), ?)",
@@ -104,7 +114,7 @@ public class PrivateFileController {
         return R.ok(Map.of(
             "ossId", String.valueOf(ossId),
             // url 故意留空：私有文件不给直链，须走代理接口
-            "proxyUrl", "/resource/oss/private/" + ossId,
+            "proxyUrl", prefix.isEmpty() ? "/resource/oss/private/" + ossId : "",
             "fileName", original));
     }
 
@@ -122,7 +132,7 @@ public class PrivateFileController {
     }
 
     /** 用私有桶客户端下载并返回 ResponseEntity。 */
-    private ResponseEntity<byte[]> streamFile(String objectName, String fileName) {
+    ResponseEntity<byte[]> streamFile(String objectName, String fileName) {
         if (objectName == null || objectName.isBlank()) {
             return ResponseEntity.notFound().build();
         }
@@ -137,6 +147,7 @@ public class PrivateFileController {
             ? result.contentType() : MediaType.APPLICATION_OCTET_STREAM_VALUE;
         return ResponseEntity.ok()
             .contentType(MediaType.parseMediaType(contentType))
+            .header("X-Content-Type-Options", "nosniff")
             .header("Content-Disposition", "inline; filename=\"" + sanitize(fileName) + "\"")
             .body(out.toByteArray());
     }

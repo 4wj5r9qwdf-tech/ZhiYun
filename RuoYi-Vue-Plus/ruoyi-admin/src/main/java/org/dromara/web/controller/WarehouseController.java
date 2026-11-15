@@ -93,7 +93,7 @@ public class WarehouseController {
         if (rows.isEmpty()) return R.fail("仓库不存在或已删除");
         Map<String, Object> data = rows.get(0);
         data.put("tagIds", jdbc.queryForList("SELECT tag_id::text AS id FROM sys_tag_relation WHERE module_key=? AND record_id=? ORDER BY tag_id", TAG_MODULE, id).stream().map(r -> r.get("id")).toList());
-        data.put("tagOptions", jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,t.status FROM sys_tag_relation tr JOIN sys_tag t ON t.tag_id=tr.tag_id WHERE tr.module_key=? AND tr.record_id=?", TAG_MODULE, id).stream().map(r -> Map.of("value", r.get("value"), "label", r.get("label"), "disabled", "1".equals(String.valueOf(r.get("status"))))).toList());
+        data.put("tagOptions", jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,g.group_name AS \"groupName\",t.status FROM sys_tag_relation tr JOIN sys_tag t ON t.tag_id=tr.tag_id JOIN sys_tag_group g ON g.group_id=t.tag_group_id WHERE tr.module_key=? AND tr.record_id=?", TAG_MODULE, id).stream().map(r -> Map.of("value", r.get("value"), "label", r.get("label"), "groupName", r.get("groupName"), "disabled", "1".equals(String.valueOf(r.get("status"))))).toList());
         return R.ok(data);
     }
 

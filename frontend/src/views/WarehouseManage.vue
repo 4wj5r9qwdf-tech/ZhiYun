@@ -166,9 +166,9 @@ onMounted(async () => { await Promise.all([loadOptions(), loadList(), loadCodeRu
 <template>
   <StandardListLayout>
     <template #filters>
-      <a-input v-model:value="keyword" allow-clear placeholder="搜索仓库编码/名称/位置" style="width: 270px" @press-enter="loadList" />
-      <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width: 120px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" />
-      <a-select v-model:value="filterTagId" allow-clear placeholder="仓库类型" style="width: 180px" :options="tagOptions" />
+      <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" allow-clear placeholder="搜索仓库编码/名称/位置" style="width: 270px" @press-enter="loadList" /></label>
+      <label class="zy-filter-field"><span>状态</span><a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width: 120px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" /></label>
+      <label class="zy-filter-field"><span>仓库类型</span><a-select v-model:value="filterTagId" allow-clear placeholder="仓库类型" style="width: 180px" :options="tagOptions" /></label>
     </template>
     <template #actions>
       <div class="action-bar">

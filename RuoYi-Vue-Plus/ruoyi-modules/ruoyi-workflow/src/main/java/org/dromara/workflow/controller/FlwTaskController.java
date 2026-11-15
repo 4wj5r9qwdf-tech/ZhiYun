@@ -37,6 +37,12 @@ import java.util.List;
 public class FlwTaskController extends BaseController {
 
     private final IFlwTaskService flwTaskService;
+    private static final List<String> INTERNAL_VARIABLES=List.of("ignore", "ignoreDepute", "ignoreCooperate", "autoPass", "initiator", "initiatorOrgId", "businessId", "businessCode", "submit");
+
+    /** 保留工作流内部变量由服务端设置，避免调用方伪造身份或绕过审批控制。 */
+    private boolean hasInternalVariable(java.util.Map<String,Object> variables) {
+        return INTERNAL_VARIABLES.stream().anyMatch(variables::containsKey);
+    }
 
     /**
      * 启动流程任务。
@@ -48,6 +54,8 @@ public class FlwTaskController extends BaseController {
     @RepeatSubmit()
     @PostMapping("/startWorkFlow")
     public R<StartProcessReturnDTO> startWorkFlow(@Validated(AddGroup.class) @RequestBody StartProcessBo startProcessBo) {
+        if (startProcessBo.getHandler()!=null && !startProcessBo.getHandler().isBlank()) return R.fail("发起人由当前登录账号确定");
+        if (hasInternalVariable(startProcessBo.getVariables())) return R.fail("请求包含不允许的审批控制参数");
         StartProcessReturnDTO startProcessReturn = flwTaskService.startWorkFlow(startProcessBo);
         return R.ok("提交成功", startProcessReturn);
     }
@@ -62,6 +70,12 @@ public class FlwTaskController extends BaseController {
     @RepeatSubmit()
     @PostMapping("/completeTask")
     public R<Void> completeTask(@Validated(AddGroup.class) @RequestBody CompleteTaskBo completeTaskBo) {
+        // HTTP 调用必须以当前登录人办理，不能由客户端传入内部权限绕过标记或伪造办理人。
+        // Never accept internal permission bypass flags or an impersonated handler from an HTTP client.
+        if (completeTaskBo.getHandler()!=null && !completeTaskBo.getHandler().isBlank()) {
+            return R.fail("办理人由当前登录账号确定");
+        }
+        if (hasInternalVariable(completeTaskBo.getVariables())) return R.fail("请求包含不允许的审批控制参数");
         return toAjax(flwTaskService.completeTask(completeTaskBo));
     }
 

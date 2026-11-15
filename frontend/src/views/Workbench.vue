@@ -5,7 +5,7 @@
  * - 待办汇总（模块级累加）
  * - 顶栏：真实登录人 + 通知铃铛 + 全局搜索（复用 TopBar）
  */
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import * as AntIcons from '@ant-design/icons-vue'
@@ -29,10 +29,16 @@ const activeModule = ref('workbench')
 const workbenchKeys = ref<string[]>([])     // 已加入工作台的功能key
 const todoByMenu = ref<Record<string, number>>({})   // 功能级待办
 const todoByModule = ref<Record<string, number>>({}) // 模块级待办（累加）
+const approvalTasks = ref<any[]>([])
+const approvalLoading = ref(false)
+const approvalError = ref(false)
 
+let todoTimer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   await Promise.all([loadWorkbench(), loadTodo()])
+  todoTimer = setInterval(loadTodo, 60000)
 })
+onBeforeUnmount(() => { if (todoTimer) clearInterval(todoTimer) })
 
 async function loadWorkbench() {
   try {
@@ -42,6 +48,7 @@ async function loadWorkbench() {
 }
 
 async function loadTodo() {
+  approvalLoading.value = true
   try {
     const res: any = await api.get('/system/profile/todo/count')
     if (res.code === 200) {
@@ -52,10 +59,19 @@ async function loadTodo() {
         byMenu[r.menu_key] = c
         byModule[r.module_key] = (byModule[r.module_key] || 0) + c
       }
+      try {
+        const tasks:any = await api.get('/workflow/task/pageByTaskWait', {params:{pageNum:1,pageSize:5}})
+        if (tasks.code !== 200) throw new Error(tasks.msg)
+        approvalTasks.value = tasks.data?.rows || []
+        const count = Math.max(0, Number(tasks.data?.total || 0))
+        byMenu.approval_waiting = count; byModule.approve = (byModule.approve || 0) + count
+        approvalError.value = false
+      } catch { approvalTasks.value = []; approvalError.value = true }
       todoByMenu.value = byMenu
       todoByModule.value = byModule
     }
-  } catch { /* ignore */ }
+  } catch { approvalError.value = true }
+  finally { approvalLoading.value = false }
 }
 
 // 工作台展示的功能列表（已加入工作台的，按置顶→排序）
@@ -69,7 +85,7 @@ function moduleTodo(key: string) { return todoByModule.value[key] || 0 }
 
 // 待办汇总列表数据源（模块 key → 显示名 + 待办数）
 const todoEntries = computed(() =>
-  Object.entries(todoByModule.value).map(([mk, cnt]) => ({
+  Object.entries(todoByModule.value).filter(([mk,cnt]) => mk !== 'approve' && cnt > 0).map(([mk, cnt]) => ({
     key: mk,
     label: (modules.find((m: ModuleDef) => m.key === mk) as ModuleDef | undefined)?.label ?? mk,
     count: cnt,
@@ -82,6 +98,7 @@ function navModule(key: string) {
   if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
   else if (key === 'order') router.push({ name: 'OrderIndex' })
+  else if (key === 'approve') router.push({ name: 'ApprovalIndex' })
   else if (key === 'property') router.push({ name: 'PropertyIndex' })
   else if (key === 'stock') router.push({ name: 'StockIndex' })
   else if (key === 'rd') router.push({ name: 'RAndDIndex' })
@@ -134,8 +151,14 @@ function navModule(key: string) {
         <!-- 待办汇总 -->
         <div class="group">
           <div class="group-title">待办汇总</div>
-          <a-empty v-if="Object.keys(todoByModule).length === 0" class="empty-hint" description="暂无待办" />
-          <a-list v-else class="todo-list" :data-source="todoEntries">
+          <div class="approval-todos">
+            <div class="approval-todos-header"><strong>审批待办</strong><a @click="router.push({name:'ApprovalWaiting'})">查看全部（{{ todoByMenu.approval_waiting || 0 }}）</a></div>
+            <a-spin :spinning="approvalLoading"><div v-if="approvalError" class="todo-empty">审批待办加载失败，请稍后刷新。</div><div v-else-if="!approvalTasks.length" class="todo-empty">暂无审批待办</div><div v-for="task in approvalTasks" :key="task.id" class="approval-task">
+              <div class="approval-task-main"><a @click="router.push({name:'ApprovalWaiting',query:{taskId:String(task.id)}})">{{ task.businessTitle || task.businessCode || '待处理审批' }}</a><span>{{ task.nodeName || '审批节点' }}<template v-if="task.createByName"> · 发起人 {{ task.createByName }}</template></span></div>
+              <span class="approval-task-time">{{ task.createTime || '—' }}</span><a-button type="link" size="small" @click="router.push({name:'ApprovalWaiting',query:{taskId:String(task.id)}})">办理</a-button>
+            </div></a-spin>
+          </div>
+          <a-list v-if="todoEntries.length" class="todo-list" :data-source="todoEntries">
             <template #renderItem="{ item }">
               <a-list-item class="todo-row">
                 <span class="todo-module">{{ item.label }}</span>
@@ -177,4 +200,8 @@ function navModule(key: string) {
 .todo-list :deep(.ant-list-item) { padding: 12px 16px; }
 .todo-module { font-size: 14px; color: #1D2129; }
 .todo-count { margin-left: auto; font-size: 13px; color: #F53F3F; }
+.approval-todos { background:#fff; border-radius:10px; padding:14px 16px; margin-bottom:10px; }
+.approval-todos-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:1px solid #f0f1f4; }
+.approval-task { display:flex; gap:16px; align-items:center; padding:12px 0; border-bottom:1px solid #f0f1f4; }.approval-task:last-child { border-bottom:0; }
+.approval-task-main { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }.approval-task-main span,.approval-task-time,.todo-empty { color:#86909c; font-size:12px; }.todo-empty { padding:18px 0; text-align:center; }
 </style>

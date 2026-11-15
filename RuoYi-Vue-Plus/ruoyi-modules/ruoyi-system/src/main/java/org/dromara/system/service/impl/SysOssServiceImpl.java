@@ -173,7 +173,8 @@ public class SysOssServiceImpl implements ISysOssService, OssService {
             .eqIfPresent(SysOss::getCreateBy, bo.getCreateBy())
             .eqIfText(SysOss::getService, bo.getService())
             .orderByAsc(SysOss::getOssId)
-            .build();
+            .build()
+            .notLikeRight(SysOss::getFileName, STYLE_COVER_PREFIX);
     }
 
     /**
@@ -185,7 +186,8 @@ public class SysOssServiceImpl implements ISysOssService, OssService {
     @Cacheable(cacheNames = CacheNames.SYS_OSS, key = "#ossId")
     @Override
     public SysOssVo getById(Long ossId) {
-        return ossMapper.selectVoById(ossId);
+        SysOssVo file = ossMapper.selectVoById(ossId);
+        return file == null || isStyleCover(file.getFileName()) ? null : file;
     }
 
 
@@ -309,6 +311,9 @@ public class SysOssServiceImpl implements ISysOssService, OssService {
             // 做一些业务上的校验,判断是否需要校验
         }
         List<SysOss> list = ossMapper.selectByIds(ids);
+        if (list.stream().anyMatch(file -> isStyleCover(file.getFileName()))) {
+            throw new ServiceException("款式主图由款式档案管理");
+        }
         for (SysOss sysOss : list) {
             OssFactory.instance(sysOss.getService()).delete(sysOss.getFileName());
         }
@@ -321,6 +326,10 @@ public class SysOssServiceImpl implements ISysOssService, OssService {
      * @param oss OSS对象
      * @return oss 匹配Url的OSS对象
      */
+    private boolean isStyleCover(String key) {
+        return key != null && key.startsWith(STYLE_COVER_PREFIX);
+    }
+
     private SysOssVo matchingUrl(SysOssVo oss) {
         OssClient instance = OssFactory.instance(oss.getService());
         // 仅修改桶类型为 private 的URL，临时URL时长为120s

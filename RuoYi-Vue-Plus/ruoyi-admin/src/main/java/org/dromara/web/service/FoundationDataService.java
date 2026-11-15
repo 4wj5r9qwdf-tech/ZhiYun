@@ -2,6 +2,7 @@ package org.dromara.web.service;
 
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.controller.system.BusinessAudit;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.*;
 
@@ -96,6 +98,52 @@ public class FoundationDataService {
     /** 查询分类体系；业务以稳定编码选定体系。 / List independently reusable taxonomy schemes. */
     public List<Map<String,Object>> schemes() { return jdbc.queryForList(SCHEME_SELECT+" WHERE del_flag='0' ORDER BY sort_order,scheme_id"); }
 
+    /** 生成与分类类型编码关联的可编辑建议值；关闭规则时返回空编码并保留手工录入。 / Preview the type-scoped editable code suggestion. */
+    public Map<String,Object> nextCategoryCode(Long schemeId,Long parentId) {
+        var owner=one(SCHEME_SELECT+" WHERE scheme_id=? AND del_flag='0'",schemeId);
+        if(!"0".equals(owner.get("status"))) fail("分类类型已停用，不能生成新分类编码");
+        var rule=categoryCodeRule();
+        return Map.of("enabled",rule.enabled(),"code",rule.enabled()?nextCategoryCode(schemeId,String.valueOf(owner.get("code")),parentId,rule):"");
+    }
+
+    /** 读取分类编码系统规则；分类类型编码始终作为前缀，不另设可冲突的全局前缀。 / Read shared category code policy. */
+    private CategoryCodeRule categoryCodeRule() {
+        boolean enabled=true; String separator="-"; int digits=4;
+        try {
+            String value=jdbc.queryForObject("SELECT config_value FROM sys_config WHERE config_key=?",String.class,"base.category.codeRule");
+            Map<String,Object> config=JsonUtils.parseMap(value);
+            if(config.get("enabled") instanceof Boolean flag) enabled=flag;
+            if(config.get("separator") instanceof String text) separator=text;
+            if(config.get("digits") instanceof Number number) digits=number.intValue();
+        } catch(org.springframework.dao.EmptyResultDataAccessException ignored) { /* 默认开启，类型编码 + 短横线 + 四位序号。 */ }
+        catch(Exception e) { throw new IllegalStateException("分类编码自动生成规则无效，请在参数设置中修复",e); }
+        if(!Set.of("-","_",".","").contains(separator) || digits<1 || digits>8)
+            throw new IllegalStateException("分类编码自动生成规则无效，请检查分隔符和序号位数");
+        return new CategoryCodeRule(enabled,separator,digits);
+    }
+
+    /** 根分类以类型编码为前缀，下级分类以直接父级编码为前缀；序号仅在同一父级下递增。 / Generate hierarchical codes with a sibling-scoped sequence. */
+    private String nextCategoryCode(Long schemeId,String schemeCode,Long parentId,CategoryCodeRule rule) {
+        String parentCode=schemeCode;
+        if(parentId!=null) {
+            var parent=one(CATEGORY_SELECT+" WHERE category_id=? AND scheme_id=? AND del_flag='0'",parentId,schemeId);
+            if(!"0".equals(parent.get("status"))) fail("上级分类已停用，不能生成下级分类编码");
+            parentCode=String.valueOf(parent.get("code"));
+        }
+        String prefix=parentCode+rule.separator(); Set<BigInteger> used=new HashSet<>();
+        for(String value:jdbc.queryForList("SELECT category_code FROM base_category WHERE scheme_id=? AND parent_id IS NOT DISTINCT FROM ? AND del_flag='0'",String.class,schemeId,parentId)) {
+            if(!value.startsWith(prefix)) continue;
+            String suffix=value.substring(prefix.length());
+            if(suffix.matches("[0-9]+")) try { used.add(new BigInteger(suffix)); } catch(NumberFormatException ignored) { /* 忽略超界历史编码，正常重复校验仍会保护提交。 */ }
+        }
+        BigInteger next=BigInteger.ONE; while(used.contains(next)) next=next.add(BigInteger.ONE);
+        String serial=next.toString(); String code=prefix+"0".repeat(Math.max(0,rule.digits()-serial.length()))+serial;
+        if(code.length()>40) throw new ServiceException("自动生成的分类编码超过40个字符，请缩短分类类型编码或减少序号位数");
+        return code;
+    }
+
+    private record CategoryCodeRule(boolean enabled,String separator,int digits) {}
+
     /** 锁定体系，所有节点写入共享此锁以阻止并发成环。 / Lock the scheme as the hierarchy mutation boundary. */
     private Map<String,Object> scheme(Long id) { return one(SCHEME_SELECT+" WHERE scheme_id=? AND del_flag='0' FOR UPDATE",id); }
 
@@ -108,10 +156,12 @@ public class FoundationDataService {
         var before=id==null?Map.<String,Object>of():scheme(id);
         if(id!=null && !code.equals(before.get("code"))) fail("体系编码创建后不可修改");
         if(id!=null && count("WITH RECURSIVE tree AS (SELECT category_id,1 AS depth FROM base_category WHERE scheme_id=? AND parent_id IS NULL AND del_flag='0' UNION ALL SELECT c.category_id,t.depth+1 FROM base_category c JOIN tree t ON c.parent_id=t.category_id WHERE c.del_flag='0') SELECT count(*) FROM tree WHERE depth>?",id,depth)>0) fail("现有分类超过目标最大层级，请先调整分类结构");
-        if(count("SELECT count(*) FROM base_category_scheme WHERE (scheme_code=? OR (lower(scheme_name)=lower(?) AND del_flag='0')) AND scheme_id<>?",code,name,id==null?0:id)>0) fail("分类体系编码或名称已存在");
+        if(count("SELECT count(*) FROM base_category_scheme WHERE del_flag='0' AND (scheme_code=? OR lower(scheme_name)=lower(?)) AND scheme_id<>?",code,name,id==null?0:id)>0) fail("分类类型编码或名称已存在");
         if(id==null) id=jdbc.queryForObject("INSERT INTO base_category_scheme(scheme_code,scheme_name,max_depth,sort_order,status,remark,create_by) VALUES (?,?,?,?,?,?,?) RETURNING scheme_id",Long.class,code,name,depth,sort,status,remark,LoginHelper.getUserId());
         else jdbc.update("UPDATE base_category_scheme SET scheme_name=?,max_depth=?,sort_order=?,status=?,remark=?,update_by=?,update_time=now() WHERE scheme_id=?",name,depth,sort,status,remark,LoginHelper.getUserId(),id);
-        audit(before.isEmpty()?"新增分类体系":"修改分类体系",id,before,scheme(id)); return id.toString();
+        var after = scheme(id);
+        audit(categoryAction("分类类型", before, after), id, before, after);
+        return id.toString();
     }
 
     /** 返回单体系平铺节点，父级ID构树并保留停用历史显示。 / Load a complete scheme tree as stable flat nodes. */
@@ -145,7 +195,8 @@ public class FoundationDataService {
         var before=id==null?Map.<String,Object>of():category(id);
         if(id!=null && !schemeId.toString().equals(before.get("schemeId"))) fail("分类不能迁移到其他体系");
         if(!"0".equals(owner.get("status"))) fail("分类体系已停用，请先启用体系再维护节点");
-        Long parent=id(body.get("parentId")); String code=code(body),name=text(body,"name",80,true),status=status(body),remark=text(body,"remark",500,false);
+        Long parent=id(body.get("parentId")); String codeValue=Objects.toString(body.get("code"),"").trim();
+        String code,name=text(body,"name",80,true),status=status(body),remark=text(body,"remark",500,false);
         int sort=integer(body,"sortOrder",0,0,999999),parentDepth=0;
         Set<Long> seen=new HashSet<>(); Long cursor=parent;
         while(cursor!=null) {
@@ -155,13 +206,22 @@ public class FoundationDataService {
             if(!"0".equals(row.get("status")) && ("0".equals(status) || !Objects.equals(before.get("parentId"),parent==null?null:parent.toString()))) fail("上级分类已停用，不能新增引用或启用下级");
             parentDepth++; cursor=id(row.get("parentId"));
         }
+        if(id==null) {
+            var rule=categoryCodeRule(); String suggestion=Objects.toString(body.get("autoGeneratedCode"),"").trim();
+            if(rule.enabled() && (codeValue.isBlank() || codeValue.equals(suggestion))) {
+                codeValue=nextCategoryCode(schemeId,String.valueOf(owner.get("code")),parent,rule); body.put("code",codeValue);
+            } else if(codeValue.isBlank()) fail("分类编码自动生成已关闭，请手动填写分类编码");
+        }
+        code=code(Map.of("code",codeValue));
         int subtree=id==null?1:jdbc.queryForObject("WITH RECURSIVE tree AS (SELECT category_id,1 AS depth FROM base_category WHERE category_id=? UNION ALL SELECT c.category_id,t.depth+1 FROM base_category c JOIN tree t ON c.parent_id=t.category_id WHERE c.del_flag='0') SELECT max(depth) FROM tree",Integer.class,id);
         if(parentDepth+subtree>((Number)owner.get("maxDepth")).intValue()) fail("移动后的分类树超过体系最大层级");
         if(id!=null && "1".equals(status) && count("SELECT count(*) FROM base_category WHERE parent_id=? AND status='0' AND del_flag='0'",id)>0) fail("请先停用下级分类");
-        if(count("SELECT count(*) FROM base_category WHERE scheme_id=? AND category_id<>? AND (category_code=? OR (del_flag='0' AND coalesce(parent_id,0)=? AND lower(category_name)=lower(?)))",schemeId,id==null?0:id,code,parent==null?0:parent,name)>0) fail("分类编码已存在或同一上级下名称重复");
+        if(count("SELECT count(*) FROM base_category WHERE scheme_id=? AND category_id<>? AND del_flag='0' AND (category_code=? OR (coalesce(parent_id,0)=? AND lower(category_name)=lower(?)))",schemeId,id==null?0:id,code,parent==null?0:parent,name)>0) fail("分类编码已存在或同一上级下名称重复");
         if(id==null) id=jdbc.queryForObject("INSERT INTO base_category(scheme_id,parent_id,category_code,category_name,sort_order,status,remark,create_by) VALUES (?,?,?,?,?,?,?,?) RETURNING category_id",Long.class,schemeId,parent,code,name,sort,status,remark,LoginHelper.getUserId());
         else jdbc.update("UPDATE base_category SET parent_id=?,category_code=?,category_name=?,sort_order=?,status=?,remark=?,update_by=?,update_time=now() WHERE category_id=?",parent,code,name,sort,status,remark,LoginHelper.getUserId(),id);
-        audit(before.isEmpty()?"新增分类":"修改分类",id,before,category(id)); return id.toString();
+        var after = category(id);
+        audit(categoryAction("分类", before, after), id, before, after);
+        return id.toString();
     }
 
     /** 删除独立单位；显式外键引用和任何未删除换算单位均阻止删除。 / Soft-delete an unreferenced unit under the shared dictionary lock. */
@@ -179,14 +239,16 @@ public class FoundationDataService {
         Map<String,Object> before;
         if(isScheme) {
             before=scheme(id);
-            if(count("SELECT count(*) FROM base_category WHERE scheme_id=? AND del_flag='0'",id)>0 || referenced("base_category_scheme",id)) fail("体系存在分类或业务引用，不能删除");
+            if(count("SELECT count(*) FROM base_category WHERE scheme_id=?",id)>0 || referenced("base_category_scheme",id)) fail("分类类型存在分类记录或业务引用，不能删除；可停用分类类型");
+            jdbc.update("DELETE FROM base_category_scheme WHERE scheme_id=?",id);
+            audit("永久删除分类类型",id,before,Map.of());
+            return;
         } else {
             var raw=one(CATEGORY_SELECT+" WHERE category_id=? AND del_flag='0'",id); scheme(requiredId(raw.get("schemeId"))); before=category(id);
             if(count("SELECT count(*) FROM base_category WHERE parent_id=? AND del_flag='0'",id)>0 || referenced("base_category",id)) fail("分类存在下级或业务引用，不能删除，可改为停用");
         }
-        String table=isScheme?"base_category_scheme":"base_category",column=isScheme?"scheme_id":"category_id";
-        jdbc.update("UPDATE "+table+" SET del_flag='1',update_by=?,update_time=now() WHERE "+column+"=?",LoginHelper.getUserId(),id);
-        audit(isScheme?"删除分类体系":"删除分类",id,before,Map.of());
+        jdbc.update("UPDATE base_category SET del_flag='1',update_by=?,update_time=now() WHERE category_id=?",LoginHelper.getUserId(),id);
+        audit("删除分类",id,before,Map.of());
     }
 
     /** 扫描数据库声明的单列外键，历史引用同样保护；表名仅来自可信系统目录。 / Guard incoming foreign keys using quoted catalog identifiers. */
@@ -226,6 +288,15 @@ public class FoundationDataService {
     }
     /** 统一抛出可读业务异常，触发事务回滚。 / Abort invalid mutations with a readable domain error. */
     private void fail(String message) {throw new ServiceException(message);}
+    /** 按落库状态识别启停动作，同时保留其他字段差异。 / Label status changes from persisted snapshots. */
+    private String categoryAction(String object, Map<String, Object> before, Map<String, Object> after) {
+        if (before.isEmpty()) return "新增" + object;
+        if (!Objects.equals(before.get("status"), after.get("status"))) {
+            return ("0".equals(after.get("status")) ? "启用" : "停用") + object;
+        }
+        return "修改" + object;
+    }
+
     /** 以真实落库字段构建中文业务审计，不记录无关请求正文。 / Record actual persisted changes with Chinese field labels. */
     private void audit(String action,Long id,Map<String,Object> before,Map<String,Object> after) {
         BusinessAudit.record(action,id,"名称",auditFields(before),auditFields(after));

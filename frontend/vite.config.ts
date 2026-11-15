@@ -52,6 +52,12 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
+      // MinIO 静态文件（公司档案图片等）：直连 5273 开发时也可显示，不经 nginx
+      '/minio': {
+        target: 'http://127.0.0.1:9000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/minio/, ''),
+      },
     },
   },
 })

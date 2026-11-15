@@ -267,7 +267,7 @@ function openCard(c: CardState) {
 .fc-card.over { border-color: #1E5EFF; box-shadow: 0 0 0 2px #E8F0FF; transform: none; }
 .fc-card.top { border: 1px solid #FF9500; }
 .fc-top-tag { position: absolute; top: 8px; left: 8px; background: #FF9500; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 4px; z-index: 2; }
-.fc-todo { position: absolute; top: 8px; right: 8px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
+.fc-todo { position: absolute; top: 8px; left: 8px; background: #F53F3F; color: #fff; font-size: 10px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-style: normal; z-index: 2; }
 /* 图标区：撑满上方剩余空间，居中；柔和渐变背景做卡片底 */
 .fc-ico { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #F4F7FF 0%, #EEF2FB 100%); overflow: hidden; }
 .fc-ico-txt { line-height: 1; filter: grayscale(0.12); opacity: .9; }

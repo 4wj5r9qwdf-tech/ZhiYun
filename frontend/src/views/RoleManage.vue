@@ -410,9 +410,9 @@ onMounted(() => { loadList(); loadColState() })
     <!-- 页头行：查询条件左置（对齐组织架构定版布局，无标题无返回） -->
     <div class="page-header">
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索角色名称" allow-clear style="width:200px" @press-enter="onSearch">
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索角色名称" allow-clear style="width:200px" @press-enter="onSearch">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
-        </a-input>
+        </a-input></label>
       </div>
     </div>
 

@@ -184,8 +184,13 @@ try:
     rejected(request('DELETE',f'/system/unit/{mass}'));rejected(request('DELETE',f'/system/category/{c}'))
     rejected(request('PUT',f'/system/unit/{mass}',{**mass_body,'decimalPlaces':4}))
     sql(f'DROP TABLE {REF};')
-    ok(request('DELETE',f'/system/category/{c}'));ok(request('DELETE',f'/system/category/{b}'));ok(request('DELETE',f'/system/category/{a}'));ok(request('DELETE',f'/system/category/schemes/{s1}'))
-    print('PASS 引用保护与删除：真实外键阻止删除/语义变更，清空节点后允许删除体系')
+    ok(request('DELETE',f'/system/category/{c}'));ok(request('DELETE',f'/system/category/{b}'));ok(request('DELETE',f'/system/category/{a}'))
+    rejected(request('DELETE',f'/system/category/schemes/{s1}'))
+    empty_id,empty_body=create_scheme('EMPTY')
+    ok(request('DELETE',f'/system/category/schemes/{empty_id}'))
+    reused_id=ok(request('POST','/system/category/schemes',empty_body));SCHEME_IDS.append(reused_id)
+    ok(request('DELETE',f'/system/category/schemes/{reused_id}'))
+    print('PASS 引用保护与删除：真实外键阻止删除/语义变更；含历史节点类型拒绝删除；空类型物理删除且编码可复用')
 
     import bcrypt
     password=secrets.token_urlsafe(20); hashed=bcrypt.hashpw(password.encode(),bcrypt.gensalt()).decode()

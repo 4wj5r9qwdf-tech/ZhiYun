@@ -473,12 +473,12 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
     <template #filters>
     <!-- A. 筛选栏：左筛选 + 查询/重置，右操作 -->
     <div class="customer-filter filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索编号/名称/简称" allow-clear style="width:200px" @press-enter="onSearch">
+      <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索编号/名称/简称" allow-clear style="width:200px" @press-enter="onSearch">
         <template #prefix><SearchOutlined style="color:#86909C" /></template>
-      </a-input>
-      <a-select v-model:value="statusFilter" placeholder="状态" allow-clear style="width:110px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" />
-      <a-select v-model:value="salesFilter" :options="salesOptions" show-search option-filter-prop="label" placeholder="业务员" allow-clear style="width:160px" />
-      <a-select v-model:value="tagFilter" :options="tagOptions" placeholder="客户标签" allow-clear style="width:160px" />
+      </a-input></label>
+      <label class="zy-filter-field"><span>状态</span><a-select v-model:value="statusFilter" placeholder="状态" allow-clear style="width:110px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" /></label>
+      <label class="zy-filter-field"><span>业务员</span><a-select v-model:value="salesFilter" :options="salesOptions" show-search option-filter-prop="label" placeholder="业务员" allow-clear style="width:160px" /></label>
+      <label class="zy-filter-field"><span>客户标签</span><a-select v-model:value="tagFilter" :options="tagOptions" placeholder="客户标签" allow-clear style="width:160px" /></label>
     </div>
 
     </template>

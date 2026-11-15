@@ -22,11 +22,16 @@ import org.dromara.common.redis.utils.CacheUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * 参数配置 信息操作处理
@@ -41,6 +46,7 @@ public class SysConfigController extends BaseController {
 
     private final ISysConfigService configService;
     private final SysConfigMapper configMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     /**
      * 分页查询参数配置列表。
@@ -304,6 +310,134 @@ public class SysConfigController extends BaseController {
         audit.put("参数名称", "仓库自动编码规则");
         audit.put("自动生成", Boolean.TRUE.equals(rule.get("enabled")) ? "开启" : "关闭");
         audit.put("仓库编码前缀", rule.get("prefix")); audit.put("序号位数", rule.get("digits"));
+        return audit;
+    }
+
+    /** 保存分类编码规则；前缀动态取类型编码，记录实际参数前后值并清除配置缓存。 / Save the rule, audit its effective values, and evict cached configuration. */
+    @SaCheckPermission("system:config:edit")
+    @Log(title = "分类编码规则", businessType = BusinessType.UPDATE)
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/category-code-rule")
+    public R<Void> updateCategoryCodeRule(@RequestBody Map<String, Object> rule) {
+        Object enabled=rule.get("enabled"), separator=rule.get("separator"), digits=rule.get("digits");
+        if(!(enabled instanceof Boolean) || !(separator instanceof String separatorValue)
+            || !Set.of("-","_",".","").contains(separatorValue)
+            || !(digits instanceof Number number) || number.intValue()<1 || number.intValue()>8 || number.doubleValue()!=number.intValue()) {
+            return R.fail("分类编码规则无效：请检查自动生成开关、分隔符和1到8位序号长度");
+        }
+        String key="base.category.codeRule";
+        try {
+            SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+            String value=JsonUtils.toJsonString(Map.of("enabled",enabled,"separator",separatorValue,"digits",number.intValue()));
+            boolean updated=configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();
+            if(!updated) {
+                SysConfig config=new SysConfig(); config.setConfigName("分类编码自动生成规则"); config.setConfigKey(key);
+                config.setConfigValue(value); config.setConfigType("Y"); config.setRemark("分类类型编码前缀、分类编码自动生成开关、分隔符及序号位数");
+                configMapper.insert(config);
+            }
+            SysConfig current=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+            BusinessAudit.record(previous==null?"新增分类编码规则":"修改分类编码规则",current==null?null:current.getConfigId(),"参数名称",
+                previous==null?Map.of():categoryCodeRuleAudit(previous.getConfigValue()),categoryCodeRuleAudit(value));
+            CacheUtils.evict(CacheNames.SYS_CONFIG,key);
+            return R.ok();
+        } catch(Exception e) { return R.fail("保存分类编码自动生成规则失败"); }
+    }
+
+    /** 保存物料自动编码规则并清理缓存；自动生成只提供建议值，保存时后端仍会重分配未编辑建议。 / Persist the editable material-code rule and evict cached configuration. */
+    @SaCheckPermission("system:config:edit")
+    @Log(title = "物料编码规则", businessType = BusinessType.UPDATE)
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/material-code-rule")
+    public R<Void> updateMaterialCodeRule(@RequestBody Map<String, Object> rule) {
+        Object enabled=rule.get("enabled"),prefix=rule.get("prefix"),digits=rule.get("digits");
+        if(!(enabled instanceof Boolean)||!(prefix instanceof String p)||p.isBlank()||p.trim().length()>30||!p.trim().matches("[A-Za-z0-9_.-]+")
+            ||!(digits instanceof Number n)||n.intValue()<1||n.intValue()>10||n.doubleValue()!=n.intValue())return R.fail("物料编码规则无效，请检查自动生成开关、编码前缀和序号位数");
+        String key="inventory.material.codeRule";
+        try{
+            SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+            String value=JsonUtils.toJsonString(Map.of("enabled",enabled,"prefix",p.trim().toUpperCase(Locale.ROOT),"digits",n.intValue()));
+            boolean updated=configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();
+            if(!updated){SysConfig config=new SysConfig();config.setConfigName("物料自动编码规则");config.setConfigKey(key);config.setConfigValue(value);config.setConfigType("Y");config.setRemark("物料编码自动生成开关、前缀和序号位数；建议编码可以人工修改");configMapper.insert(config);}
+            SysConfig current=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+            BusinessAudit.record(previous==null?"新增物料编码规则":"修改物料编码规则",current==null?null:current.getConfigId(),"参数名称",previous==null?Map.of():materialCodeRuleAudit(previous.getConfigValue()),materialCodeRuleAudit(value));
+            CacheUtils.evict(CacheNames.SYS_CONFIG,key);return R.ok();
+        }catch(Exception e){return R.fail("保存物料自动编码规则失败");}
+    }
+
+    /** 将规则转成可读审计字段。 / Convert a persisted rule to readable audit values. */
+    private Map<String,Object> materialCodeRuleAudit(String value){Map<String,Object> rule=JsonUtils.parseMap(value);Map<String,Object> audit=new LinkedHashMap<>();audit.put("参数名称","物料自动编码规则");audit.put("自动生成",Boolean.TRUE.equals(rule.get("enabled"))?"开启":"关闭");audit.put("编码前缀",rule.get("prefix"));audit.put("序号位数",rule.get("digits"));return audit;}
+
+    /** 配置物料页面默认定位的分类类型；空值代表展示员工全部授权分类，不是权限白名单。 / Configure a display default, never a category allowlist. */
+    @SaCheckPermission("system:config:edit")
+    @Log(title="物料默认分类类型",businessType=BusinessType.UPDATE)
+    @Transactional(rollbackFor=Exception.class)
+    @PostMapping("/material-default-category")
+    public R<Void> updateMaterialDefaultCategory(@RequestBody Map<String,Object> body){
+        String raw=Objects.toString(body.get("schemeId"),"").trim();Long schemeId=null;
+        if(!raw.isEmpty()){try{schemeId=Long.valueOf(raw);}catch(Exception e){return R.fail("分类类型编号无效");}if(jdbcTemplate.queryForList("SELECT scheme_id FROM base_category_scheme WHERE scheme_id=? AND status='0' AND del_flag='0'",schemeId).isEmpty())return R.fail("所选分类类型已停用或不存在");}
+        String key="inventory.material.defaultCategoryScheme";String value=schemeId==null?"":schemeId.toString();
+        try{SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));String previousValue=previous==null?"":previous.getConfigValue();if(previous==null||!Objects.equals(previousValue,value)){if(previous==null){SysConfig config=new SysConfig();config.setConfigName("物料默认分类类型");config.setConfigKey(key);config.setConfigValue(value);config.setConfigType("Y");config.setRemark("物料档案页面的默认分类类型；留空时展示当前员工全部分类授权范围");configMapper.insert(config);}else configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();String oldName=schemeName(previousValue),newName=schemeName(value);BusinessAudit.record(previous==null?"设置物料默认分类类型":"修改物料默认分类类型",key,"业务参数",Map.of("分类类型",oldName),Map.of("分类类型",newName));CacheUtils.evict(CacheNames.SYS_CONFIG,key);}return R.ok();}catch(Exception e){return R.fail("保存物料默认分类类型失败");}
+    }
+    /** 设置订单下线建议提前天数，已保存订单的日期不随参数改变。 */
+    @SaCheckPermission("system:config:edit")
+    @Log(title="订单默认下线日期",businessType=BusinessType.UPDATE)
+    @Transactional(rollbackFor=Exception.class)
+    @PostMapping("/order-offline-lead-days")
+    public R<Void> updateOrderOfflineLeadDays(@RequestBody Map<String,Object> body) {
+        int days;
+        try { days=Integer.parseInt(Objects.toString(body.get("days"),"")); }
+        catch (NumberFormatException e) { return R.fail("提前天数须为整数"); }
+        if (days<0 || days>3650) return R.fail("提前天数须在 0 至 3650 天之间");
+        String key="order.customer.offlineLeadDays", value=Integer.toString(days);
+        SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+        String old=previous==null ? "0" : previous.getConfigValue();
+        if (previous==null) { SysConfig config=new SysConfig(); config.setConfigName("客户订单默认下线提前天数"); config.setConfigKey(key); config.setConfigValue(value); config.setConfigType("Y"); config.setRemark("默认下线日期比 PO 默认交期提前的自然日天数，日期可人工修改"); configMapper.insert(config); }
+        else if (!Objects.equals(old,value)) configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();
+        if (previous==null || !Objects.equals(old,value)) { BusinessAudit.record("设置订单默认下线日期",key,"业务参数",Map.of("提前天数",old),Map.of("提前天数",value)); CacheUtils.evict(CacheNames.SYS_CONFIG,key); }
+        return R.ok();
+    }
+
+    /** 设置款式页面的默认展示分类；权限仍由人员分类授权控制。 */
+    @SaCheckPermission("system:config:edit")
+    @Log(title="款式默认分类类型",businessType=BusinessType.UPDATE)
+    @Transactional(rollbackFor=Exception.class)
+    @PostMapping("/style-default-category")
+    public R<Void> updateStyleDefaultCategory(@RequestBody Map<String,Object> body) {
+        String raw=Objects.toString(body.get("schemeId"),"").trim();
+        Long schemeId=null;
+        if (!raw.isEmpty()) {
+            try { schemeId=Long.valueOf(raw); } catch (NumberFormatException e) { return R.fail("分类类型编号无效"); }
+            if (jdbcTemplate.queryForList("SELECT scheme_id FROM base_category_scheme WHERE scheme_id=? AND status='0' AND del_flag='0'",schemeId).isEmpty()) return R.fail("所选分类类型已停用或不存在");
+        }
+        String key="rd.style.defaultCategoryScheme", value=schemeId==null ? "" : schemeId.toString();
+        SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+        String previousValue=previous==null ? "" : previous.getConfigValue();
+        if (!Objects.equals(previousValue,value)) {
+            if (previous==null) {
+                SysConfig config=new SysConfig();
+                config.setConfigName("款式默认分类类型"); config.setConfigKey(key); config.setConfigValue(value);
+                config.setConfigType("Y"); config.setRemark("款式档案初始展示分类类型，留空时显示全部授权分类");
+                configMapper.insert(config);
+            } else {
+                configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();
+            }
+            BusinessAudit.record(previous==null ? "设置款式默认分类类型" : "修改款式默认分类类型",key,"业务参数",
+                Map.of("分类类型",schemeName(previousValue)),Map.of("分类类型",schemeName(value)));
+            CacheUtils.evict(CacheNames.SYS_CONFIG,key);
+        }
+        return R.ok();
+    }
+
+    /** 审计中使用分类类型名称，缺失或已删除时仅展示空值。 / Resolve an auditable scheme label without exposing unrelated data. */
+    private String schemeName(String id){if(id==null||id.isBlank())return "全部授权分类";List<String> names=jdbcTemplate.queryForList("SELECT scheme_name FROM base_category_scheme WHERE scheme_id=?",String.class,Long.valueOf(id));return names.isEmpty()?"已失效分类类型":names.getFirst();}
+
+    /** 将编码规则转换为可读审计字段。 / Map the rule to business-readable audit fields. */
+    private Map<String,Object> categoryCodeRuleAudit(String value) {
+        Map<String,Object> rule=JsonUtils.parseMap(value); Map<String,Object> audit=new LinkedHashMap<>();
+        audit.put("参数名称","分类编码自动生成规则");
+        audit.put("自动生成",Boolean.TRUE.equals(rule.get("enabled"))?"开启":"关闭");
+        audit.put("分类类型编码前缀","按当前分类类型动态生成");
+        audit.put("分隔符",rule.get("separator")); audit.put("序号位数",rule.get("digits"));
         return audit;
     }
 

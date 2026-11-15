@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import message from 'ant-design-vue/es/message'
 import { ensureTag, getTagOptions } from '../api/tag'
 
@@ -14,11 +14,25 @@ const props = defineProps<{
   moduleName: string
   placeholder?: string
   /** 已关联但现已停用的标签仍显示名称，允许移除但不允许新选。 */
-  selectedOptions?: { label: string; value: string; disabled?: boolean }[]
+  selectedOptions?: { label: string; value: string; disabled?: boolean; groupName?: string }[]
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: string[]): void }>()
-const options = ref<{ label: string; value: string; disabled?: boolean }[]>([])
+type TagOption = { label: string; value: string; disabled?: boolean; groupName: string }
+const options = ref<{ label: string; options: TagOption[] }[]>([])
+const flatOptions = computed(() => options.value.flatMap(group => group.options))
 const loading = ref(false)
+
+/** 按分组组织选项；旧接口返回的已选标签信息缺少组名时放入默认分组。 */
+function groupOptions(items: TagOption[]) {
+  const grouped = new Map<string, TagOption[]>()
+  for (const item of items) {
+    const groupName = item.groupName || '默认分组'
+    const bucket = grouped.get(groupName) || []
+    bucket.push(item)
+    grouped.set(groupName, bucket)
+  }
+  return [...grouped].map(([label, values]) => ({ label, options: values }))
+}
 
 /** 仅加载当前模块的启用标签，切换 moduleKey 时由 watch 重新拉取。 */
 async function loadOptions() {
@@ -28,8 +42,10 @@ async function loadOptions() {
     const enabled = (res.data || []).map((item: any) => ({
       label: item.tagName,
       value: String(item.tagId),
+      groupName: String(item.groupName || '默认分组'),
     }))
-    options.value = [...new Map([...(props.selectedOptions || []), ...enabled].map(item => [item.value, item])).values()]
+    const selected = (props.selectedOptions || []).map(item => ({ ...item, groupName: item.groupName || '默认分组' }))
+    options.value = groupOptions([...new Map([...selected, ...enabled].map(item => [item.value, item])).values()])
   } finally {
     loading.value = false
   }
@@ -43,15 +59,15 @@ async function loadOptions() {
 async function onChange(value: unknown) {
   const values = Array.isArray(value) ? value : []
   const entries = [...new Set(values.map(value => String(value).trim()).filter(Boolean))]
-  const byId = new Map(options.value.map(item => [item.value, item]))
+  const byId = new Map(flatOptions.value.map(item => [item.value, item]))
   const accepted = new Set(entries.filter(value => byId.has(value)))
   const newNames = entries.filter(value => !byId.has(value))
   for (const name of newNames) {
     try {
       const res: any = await ensureTag(props.moduleKey, props.moduleName, name)
       const tag = res.data
-      const option = { label: tag.tagName, value: String(tag.tagId) }
-      if (!options.value.some(item => item.value === option.value)) options.value.push(option)
+      const option = { label: tag.tagName, value: String(tag.tagId), groupName: String(tag.groupName || '默认分组') }
+      if (!flatOptions.value.some(item => item.value === option.value)) options.value = groupOptions([...flatOptions.value, option])
       accepted.add(option.value)
     } catch {
       message.error('标签“' + name + '”收录失败')
@@ -59,7 +75,7 @@ async function onChange(value: unknown) {
   }
   emit('update:modelValue', entries.map(value => {
     if (accepted.has(value)) return value
-    const matched = options.value.find(item => item.label.toLocaleLowerCase() === value.toLocaleLowerCase())
+    const matched = flatOptions.value.find(item => item.label.toLocaleLowerCase() === value.toLocaleLowerCase())
     return matched?.value
   }).filter((value): value is string => !!value))
 }

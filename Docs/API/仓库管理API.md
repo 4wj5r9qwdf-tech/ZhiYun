@@ -1,7 +1,7 @@
 # 仓库管理 API / MCP 契约
 
 > 功能英文名：`warehouse`；数据表：`inv_warehouse`；用户验收：2026-11-05 通过。
-> REST：已实现。MCP：仓库 CRUD、状态、编码规则及只读工具均已接入 `/mcp`；CSV/批量工具未注册。后端构建并重启成功；本轮未做认证 MCP 客户端工具发现烟测。
+> REST：已实现。MCP：仓库 CRUD、状态、编码规则及只读工具均已接入 `/mcp`，本轮 `tools/list` 已发现。页面 CSV 导入没有独立批量 REST API，因此未提供模拟逐行写入的 MCP 批量工具。
 > 契约依据：`WarehouseController`、`SysConfigController` 与前端实际调用。
 
 ## 1. 通用约定

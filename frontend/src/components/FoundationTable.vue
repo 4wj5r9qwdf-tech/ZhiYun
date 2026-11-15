@@ -4,11 +4,13 @@
  * Shared foundation table following the approved template, with per-user column preferences.
  */
 import '../assets/standard-list-fill.css'
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-export type FoundationColumn = { key: string; title: string; width?: number; numeric?: boolean }
-const props = defineProps<{ storageKey: string; columns: FoundationColumn[]; rows: any[]; loading?: boolean; selectedKeys?: string[]; actionWidth?: number }>()
+import { computed, inject, nextTick, onMounted, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+export type FoundationColumn = { key: string; title: string; width?: number; numeric?: boolean; defaultVisible?: boolean }
+const props = defineProps<{ storageKey: string; columns: FoundationColumn[]; rows: any[]; loading?: boolean; selectedKeys?: string[]; actionWidth?: number; pageToolbar?: boolean; serverTotal?: number; serverPage?: number; serverPageSize?: number }>()
 defineSlots<{ actions(): any; action(props: {row:any}): any; cell(props: {column:any;row:any}): any }>()
-const emit = defineEmits<{ (e: 'update:selectedKeys', keys: string[]): void }>()
+// 标准列表可将表格工具栏放到左右分栏上方。 / Mount the table toolbar above the split layout.
+const pageToolbarTarget = inject<Ref<HTMLElement | undefined>>('standard-list-table-toolbar', ref())
+const emit = defineEmits<{ (e: 'update:selectedKeys', keys: string[]): void; (e:'pageChange', page:number, size:number):void }>()
 let stopResize: (() => void) | undefined
 let suppressClickUntil = 0
 const state = ref<{ key: string; visible: boolean; width: number }[]>([])
@@ -27,16 +29,18 @@ function restore() {
   if (!Array.isArray(saved)) saved = []
   const keys = new Set(props.columns.map(c => c.key))
   state.value = saved.filter(c => keys.delete(c.key)).map(c => ({ key: c.key, visible: c.visible !== false, width: Math.max(80, Number(c.width) || 160) }))
-  props.columns.filter(c => keys.has(c.key)).forEach(c => state.value.push({ key: c.key, visible: true, width: c.width || 160 }))
+  props.columns.filter(c => keys.has(c.key)).forEach(c => state.value.push({ key: c.key, visible: c.defaultVisible !== false, width: c.width || 160 }))
   void scheduleAutoFit()
 }
 /** 持久化仅保存视图设置，失败不影响业务。 / Persist non-sensitive per-user view preferences. */
 function persist() { try { localStorage.setItem(preferenceKey.value, JSON.stringify(manualWidths.value ? state.value : state.value.map(({key,visible})=>({key,visible})))) } catch { /* 存储不可用不阻塞业务。 / Storage is optional. */ } }
-/** 未手动调整时将剩余空间分配给业务列，操作列保持紧凑。 / Fit business columns to the viewport while preserving the operation width. */
+/** 按外层列表容器宽度自适应，避免读取被表格内容撑大的滚动体宽度。 / Fit to the outer list viewport, never to the content-expanded scroll body. */
 async function scheduleAutoFit() {
   await nextTick()
   if(manualWidths.value)return
-  const available=tableRoot.value?.querySelector<HTMLElement>('.ant-table-body')?.clientWidth || tableRoot.value?.querySelector<HTMLElement>('.ant-table-container')?.clientWidth || 0
+  // 滚动体可能按列宽扩展，不能用它测视口，否则会把已有溢出继续均分放大。
+  // The scroll body may expand with its columns; measuring it would amplify existing overflow.
+  const available=Math.max(0,(tableRoot.value?.clientWidth || 0)-20)
   if(!available)return
   const visible=state.value.filter(c=>c.visible)
   const minWidth=(key:string)=>Math.max(90,Array.from(props.columns.find(c=>c.key===key)?.title||key).length*16+48)
@@ -46,8 +50,6 @@ async function scheduleAutoFit() {
   state.value.forEach(c=>{c.width=minWidth(c.key)+(c.visible?extra:0)})
   actionWidth.value=operation
 }
-/** 恢复自动列宽，并保留列顺序与显隐。 / Clear manual widths without losing column visibility or order. */
-function autoFitColumns(){manualWidths.value=false;try{localStorage.removeItem(`${preferenceKey.value}:manual-widths`);localStorage.removeItem(`${preferenceKey.value}:action-width`)}catch{/* 保持界面可用。 / Keep the view usable. */}persist();void scheduleAutoFit()}
 /** 重置到列定义默认值。 / Reset the current view to configured defaults. */
 function resetColumns() { try { localStorage.removeItem(preferenceKey.value); localStorage.removeItem(`${preferenceKey.value}:action-width`);localStorage.removeItem(`${preferenceKey.value}:manual-widths`) } catch { /* 继续恢复内存默认值。 / Continue with in-memory defaults. */ }; restore() }
 /** 调整列顺序，拖拽和设置面板共用。 / Reorder columns consistently from both controls. */
@@ -81,7 +83,7 @@ const columns = computed(() => [
   ...state.value.filter(c => c.visible).map(c => {
     const definition = props.columns.find(d => d.key === c.key)!
     return { key: c.key, dataIndex: c.key, title: definition.title, width: c.width, ellipsis: true,
-      sorter: (a: any, b: any) => definition.numeric ? Number(a[c.key] || 0) - Number(b[c.key] || 0) : String(a[c.key] ?? '').localeCompare(String(b[c.key] ?? ''), 'zh-CN'),
+      sorter: props.serverTotal === undefined ? (a: any, b: any) => definition.numeric ? Number(a[c.key] || 0) - Number(b[c.key] || 0) : String(a[c.key] ?? '').localeCompare(String(b[c.key] ?? ''), 'zh-CN') : undefined,
       customHeaderCell: () => ({ draggable: true, onClickCapture: (event: MouseEvent) => { if(Date.now()<suppressClickUntil){event.preventDefault();event.stopPropagation()} }, onMousedown: (event: MouseEvent) => resize(c.key, event),
         onDragstart: () => { dragged.value = c.key }, onDragover: (event: DragEvent) => event.preventDefault(),
         onDrop: () => { move(state.value.findIndex(s => s.key === dragged.value), state.value.findIndex(s => s.key === c.key)); dragged.value = '' } }) }
@@ -90,16 +92,16 @@ const columns = computed(() => [
 ])
 const selection = computed(() => props.selectedKeys ? { selectedRowKeys: props.selectedKeys, preserveSelectedRowKeys: true, onChange: (keys: (string | number)[]) => emit('update:selectedKeys', keys.map(String)) } : undefined)
 watch(preferenceKey, restore, { immediate: true })
-watch(() => props.rows, () => { page.value = 1 })
-onMounted(async()=>{await nextTick();const container=tableRoot.value?.querySelector<HTMLElement>('.ant-table-container');if(container){widthObserver=new ResizeObserver(()=>{void scheduleAutoFit()});widthObserver.observe(container)}void scheduleAutoFit()})
+watch(() => props.rows, () => { if (props.serverTotal === undefined) page.value = 1 })
+onMounted(async()=>{await nextTick();if(tableRoot.value){widthObserver=new ResizeObserver(()=>{void scheduleAutoFit()});widthObserver.observe(tableRoot.value)}void scheduleAutoFit()})
 onBeforeUnmount(() => {stopResize?.();widthObserver?.disconnect()})
 </script>
 <template>
   <div ref="tableRoot" class="foundation-table">
+    <Teleport :to="pageToolbarTarget || 'body'" :disabled="!pageToolbar || !pageToolbarTarget">
     <div class="foundation-actions">
       <slot name="actions" />
       <span class="spacer" />
-      <a-button @click="autoFitColumns">自适应列宽</a-button>
       <a-dropdown v-model:open="settings" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay><a-card :body-style="{ padding: '12px' }" style="min-width:240px">
@@ -108,8 +110,9 @@ onBeforeUnmount(() => {stopResize?.();widthObserver?.disconnect()})
         </a-card></template>
       </a-dropdown>
     </div>
-    <a-table class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="id" size="middle" table-layout="fixed" :row-selection="selection" :scroll="{ x: (selection ? 48 : 0)+64+actionWidth+state.filter(c=>c.visible).reduce((sum,c)=>sum+c.width,0), y: '100%' }" :pagination="{ current:page, pageSize, showSizeChanger:true, showQuickJumper:true, showTotal:(total:number)=>`共 ${total} 条`, onChange:(p:number,size:number)=>{page=p;pageSize=size} }">
-      <template #bodyCell="{ column,record,index }"><template v-if="column.key==='index'">{{ (page-1)*pageSize+index+1 }}</template><slot v-else-if="column.key==='action'" name="action" :row="record" /><slot v-else name="cell" :column="column" :row="record"><span>{{ record[String(column.key)] ?? '—' }}</span></slot></template>
+    </Teleport>
+    <a-table class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="id" size="middle" table-layout="fixed" :row-selection="selection" :scroll="{ x: (selection ? 48 : 0)+64+actionWidth+state.filter(c=>c.visible).reduce((sum,c)=>sum+c.width,0), y: '100%' }" :pagination="{ current:serverTotal === undefined ? page : serverPage, pageSize:serverTotal === undefined ? pageSize : serverPageSize, total:serverTotal, showSizeChanger:true, showQuickJumper:true, showTotal:(total:number)=>`共 ${total} 条`, onChange:(p:number,size:number)=>{if(serverTotal === undefined){page=p;pageSize=size}else emit('pageChange',p,size)} }">
+      <template #bodyCell="{ column,record,index }"><template v-if="column.key==='index'">{{ ((serverTotal === undefined ? page : (serverPage || 1))-1)*(serverTotal === undefined ? pageSize : (serverPageSize || 20))+index+1 }}</template><slot v-else-if="column.key==='action'" name="action" :row="record" /><slot v-else name="cell" :column="column" :row="record"><span>{{ record[String(column.key)] ?? '—' }}</span></slot></template>
     </a-table>
   </div>
 </template>

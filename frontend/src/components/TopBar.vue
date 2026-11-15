@@ -84,6 +84,32 @@ async function onMsgOpenChange(open: boolean) {
   }
 }
 
+/** 一键已读不影响待办状态。 / Mark notifications as read without completing tasks. */
+async function markAllMessagesRead() {
+  try {
+    const res: any = await api.post('/system/profile/messages/read-all')
+    if (res.code !== 200) throw new Error(res.msg || '操作失败')
+    messages.value.forEach(item => { item.read_flag = '1' })
+    await loadUnread()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error?.message || '标记已读失败') }
+}
+
+/** 已读状态只属于当前接收人；接口会再次检查消息接收范围。 */
+async function markMessageRead(item: any) {
+  if (item.read_flag === '1') return
+  try {
+    const res: any = await api.post(`/system/profile/messages/${item.message_id}/read`)
+    if (res.code !== 200) throw new Error(res.msg || '操作失败')
+    item.read_flag = '1'
+    await loadUnread()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error?.message || '标记已读失败') }
+}
+async function openMessage(item:any) {
+  await markMessageRead(item)
+  const path=String(item.path || '')
+  if (/^\/approve\/waiting\?taskId=\d+$/.test(path)) { showMsg.value=false; await router.push(path) }
+}
+
 // 全局搜索：输入≥1字节触发（后端支持中文），命中跳转
 // 全局搜索：合并「功能(本地匹配目录) + 人员(后端)」，单据待业务模块开发后接入
 async function onSearch(v: string) {
@@ -255,12 +281,12 @@ async function savePassword() {
         </a-badge>
         <template #overlay>
           <div class="msg-panel">
-            <div class="msg-title">通知 <span v-if="unread > 0" class="msg-unread">{{ unread }} 条未读</span></div>
+            <div class="msg-title">通知 <span v-if="unread > 0" class="msg-unread">{{ unread }} 条未读</span><a v-if="unread > 0" style="float:right" @click.stop="markAllMessagesRead">全部标记已读</a></div>
             <div v-if="messages.length === 0" class="msg-empty">暂无通知</div>
             <div v-for="m in messages" :key="m.message_id" class="msg-item" :class="{ unread: m.read_flag === '0' }">
               <div class="msg-item-title">{{ m.title || '（无标题）' }}</div>
               <div class="msg-item-body">{{ m.message || '' }}</div>
-              <div class="msg-item-time">{{ (m.create_time || '').slice(0, 16) }}</div>
+              <div class="msg-item-time">{{ (m.create_time || '').slice(0, 16) }} <a v-if="m.path && /^\/approve\/waiting\?taskId=\d+$/.test(m.path)" @click.stop="openMessage(m)">查看待办</a> <a v-if="m.read_flag === '0'" @click.stop="markMessageRead(m)">标记已读</a></div>
             </div>
           </div>
         </template>

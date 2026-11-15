@@ -19,6 +19,9 @@ import java.util.List;
  */
 public interface ISysOssService {
 
+    /** 款式主图由业务权限控制，通用文件接口不得生成直链。 / Style covers are served through business authorization. */
+    String STYLE_COVER_PREFIX = "rd-style/";
+
     /**
      * 查询OSS对象存储列表
      *

@@ -4,15 +4,20 @@ import { computed, nextTick, onActivated, onMounted, onBeforeUnmount, ref } from
 import { SearchOutlined } from '@ant-design/icons-vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
-import { addTag, deleteTag, editTag, getTagList, getTagModules } from '../api/tag'
+import { addTag, addTagGroup, deleteTag, deleteTagGroup, editTag, editTagGroup, getTagGroups, getTagList, getTagModules } from '../api/tag'
 import { MODULES, MODULE_FUNCTIONS } from '../config/modules'
 import { can } from '../utils/perms'
 
-type TagRow = { tagId: string; moduleKey: string; tagName: string; isCommon: string; status: string }
-/** 只保存服务端实际动态登记过的模块，不在前端预置空模块。 */
+type TagRow = { tagId: string; moduleKey: string; moduleName: string; groupId: string; groupName: string; tagName: string; isCommon: string; status: string }
+type TagGroup = { groupId: string; moduleKey: string; groupName: string; isDefault: string; sortOrder: number; tagCount: number }
+/** 只保存服务端实际动态登记过的功能，不在前端预置空功能。 */
 const moduleOptions = ref<{ moduleKey: string; label: string; tagCount: number }[]>([])
+/** 标签分组归属于具体功能命名空间；左侧树按系统模块→功能→分组呈现。 */
+const groupsByModule = ref<Record<string, TagGroup[]>>({})
 const moduleKey = ref('')
 const selectedModule = ref('')
+const selectedTreeKey = ref('')
+const selectedGroup = ref<{ moduleKey: string; groupId: string } | null>(null)
 const keyword = ref('')
 const status = ref('')
 const rows = ref<TagRow[]>([])
@@ -21,7 +26,14 @@ const visible = ref(false)
 const editing = ref(false)
 /** 选择已有模块或手动新建模块，避免同一名称出现两个输入框。 */
 const creatingModule = ref(false)
-const form = ref({ tagId: '', moduleKey: '', moduleName: '', tagName: '', isCommon: '0', status: '0' })
+const form = ref({ tagId: '', moduleKey: '', moduleName: '', groupId: '', tagName: '', isCommon: '0', status: '0' })
+const formGroups = ref<TagGroup[]>([])
+const groupDialogOpen = ref(false)
+const groupFormOpen = ref(false)
+const groupEditing = ref(false)
+const groupForm = ref({ groupId: '', moduleKey: '', groupName: '' })
+const managedGroups = ref<TagGroup[]>([])
+const managedModule = ref<{ moduleKey: string; label: string } | null>(null)
 const pageNum = ref(1)
 const pageSize = ref(20)
 const selectedRowKeys = ref<string[]>([])
@@ -32,6 +44,8 @@ const colSetOpen = ref(false)
 const treeCollapsed = ref(false)
 /** 表格字段定义；序号列固定显示，其余列由用户列设置控制显隐和顺序。 */
 const allColumns = [
+  { key: 'moduleName', title: '功能名称', dataIndex: 'moduleName', width: 180 },
+  { key: 'groupName', title: '标签分组', dataIndex: 'groupName', width: 170 },
   { key: 'tagName', title: '标签名称', dataIndex: 'tagName', width: 220 },
   { key: 'isCommon', title: '常用提示', dataIndex: 'isCommon', width: 140 },
   { key: 'status', title: '状态', dataIndex: 'status', width: 120 },
@@ -204,12 +218,24 @@ function functionForModuleKey(moduleKey: string) {
   const canonicalKey = legacyFunctionAliases[moduleKey] || moduleKey
   return MODULE_FUNCTIONS.find(func => func.key === canonicalKey)
 }
+const selectedManageModule = computed(() => {
+  if (selectedGroup.value) return moduleOptions.value.find(item => item.moduleKey === selectedGroup.value?.moduleKey) || null
+  const actual = moduleKey.value && !moduleKey.value.startsWith('function:')
+    ? moduleOptions.value.filter(item => item.moduleKey === moduleKey.value)
+    : moduleKey.value.startsWith('function:')
+      ? moduleOptions.value.filter(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === moduleKey.value.slice('function:'.length))
+      : []
+  return actual.length === 1 ? actual[0] : null
+})
 const tagTree = computed(() => MODULES.filter(module => module.key !== 'workbench').map(module => ({
-  title: module.label, key: `module:${module.key}`, selectable: true,
+  title: module.label, key: `module:${module.key}`, selectable: false,
   children: MODULE_FUNCTIONS.filter(func => func.module === module.key).flatMap(func => {
     const aliases = moduleOptions.value.filter(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === func.key)
     if (!aliases.length) return []
-    return [{ title: func.title, key: `function:${func.key}`, tagCount: aliases.reduce((sum, item) => sum + item.tagCount, 0) }]
+    const groupNodes = aliases.flatMap(item => (groupsByModule.value[item.moduleKey] || []).map(group => ({
+      title: group.groupName, key: `group:${group.moduleKey}:${group.groupId}`, tagCount: group.tagCount,
+    })))
+    return [{ title: func.title, key: `function:${func.key}`, tagCount: aliases.reduce((sum, item) => sum + item.tagCount, 0), children: groupNodes }]
   }),
 })).filter(module => module.children.length > 0))
 /** 从服务端刷新真实标签归属；首次收录标签的业务模块随后出现在此树中。 */
@@ -219,37 +245,92 @@ async function loadModules() {
     moduleOptions.value = (res.data || []).map((item: any) => ({
       moduleKey: String(item.moduleKey), label: String(item.moduleName), tagCount: Number(item.tagCount || 0),
     }))
+    const groupResults = await Promise.all(moduleOptions.value.map(async item => {
+      const result: any = await getTagGroups(item.moduleKey)
+      return [item.moduleKey, (result.data || []).map((group: any) => ({
+        ...group, groupId: String(group.groupId), tagCount: Number(group.tagCount || 0),
+      }))] as const
+    }))
+    groupsByModule.value = Object.fromEntries(groupResults)
     const selectedFunctionKey = moduleKey.value.startsWith('function:') ? moduleKey.value.slice('function:'.length) : ''
     const hasSelectedTarget = selectedFunctionKey
       ? moduleOptions.value.some(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === selectedFunctionKey)
       : moduleOptions.value.some(item => item.moduleKey === moduleKey.value)
     if (moduleKey.value && !hasSelectedTarget) {
       moduleKey.value = ''
+      selectedTreeKey.value = ''
+      selectedGroup.value = null
       pageNum.value = 1
     }
+    // 标签管理默认进入一个具体功能，避免首次打开时把所有功能的标签混在一起，
+    // 造成分组看起来像全局共用。没有功能可选时才展示空状态。
+    if (!moduleKey.value && moduleOptions.value.length) selectDefaultFunction()
     await loadRows()
   } catch {
     moduleOptions.value = []
+    groupsByModule.value = {}
     moduleKey.value = ''
     rows.value = []
     message.error('标签归属加载失败')
   }
 }
-/** 忽略分组节点；切换功能后重新请求对应命名空间的数据。 */
+
+/** 默认选中首个已有标签的功能；重置筛选也回到功能范围，而不是全局汇总。 */
+function selectDefaultFunction() {
+  const first = moduleOptions.value[0]
+  if (!first) return
+  const functionKey = legacyFunctionAliases[first.moduleKey] || first.moduleKey
+  moduleKey.value = `function:${functionKey}`
+  selectedModule.value = functionForModuleKey(functionKey)?.module || ''
+  selectedTreeKey.value = `function:${functionKey}`
+  selectedGroup.value = null
+}
+
+/** 每个业务功能独立维护分组；接口确保功能至少有一个默认分组。 */
+async function loadGroups(module: string) {
+  if (!module) { formGroups.value = []; return }
+  try {
+    const res: any = await getTagGroups(module)
+    formGroups.value = (res.data || []).map((item: any) => ({ ...item, groupId: String(item.groupId) }))
+  } catch {
+    formGroups.value = []
+    message.error('标签分组加载失败')
+  }
+}
+/** 功能节点查看该功能全部标签；分组节点精确筛选功能和分组。导航模块节点只负责展开。 */
 function onTreeSelect(keys: (string | number)[]) {
   const selected = String(keys[0] || '')
+  selectedTreeKey.value = selected
+  selectedGroup.value = null
   if (selected.startsWith('module:')) {
-    selectedModule.value = selected.slice('module:'.length)
-    moduleKey.value = ''
-    searchRows()
+    // 模块层仅作树目录；即使组件回传了模块节点，也定位到其首个具体功能，
+    // 不提供跨功能的混合标签/分组视图。
+    const rootModule = selected.slice('module:'.length)
+    const firstFeature = moduleOptions.value.find(item => functionForModuleKey(item.moduleKey)?.module === rootModule)
+    if (firstFeature) {
+      const functionKey = legacyFunctionAliases[firstFeature.moduleKey] || firstFeature.moduleKey
+      moduleKey.value = `function:${functionKey}`
+      selectedTreeKey.value = `function:${functionKey}`
+      selectedModule.value = rootModule
+      searchRows()
+    } else {
+      selectedTreeKey.value = ''
+      selectedGroup.value = null
+    }
   } else if (selected.startsWith('function:')) {
     const functionKey = selected.slice('function:'.length)
     moduleKey.value = `function:${functionKey}`
     selectedModule.value = functionForModuleKey(functionKey)?.module || ''
     searchRows()
-  } else if (!selected && moduleKey.value) {
-    moduleKey.value = ''
-    selectedModule.value = ''
+  } else if (selected.startsWith('group:')) {
+    const groupKey = selected.slice('group:'.length)
+    const splitAt = groupKey.lastIndexOf(':')
+    const targetModuleKey = groupKey.slice(0, splitAt)
+    const groupId = groupKey.slice(splitAt + 1)
+    const functionKey = legacyFunctionAliases[targetModuleKey] || targetModuleKey
+    selectedGroup.value = { moduleKey: targetModuleKey, groupId }
+    moduleKey.value = `function:${functionKey}`
+    selectedModule.value = functionForModuleKey(functionKey)?.module || ''
     searchRows()
   }
 }
@@ -264,7 +345,10 @@ async function loadRows() {
         const func = functionForModuleKey(item.moduleKey)
         return !selectedModule.value || func?.module === selectedModule.value
       })
-    const results = await Promise.all(selectedModules.map(item => getTagList(item.moduleKey, keyword.value, status.value)))
+    const results = await Promise.all(selectedModules.map(item => getTagList(
+      item.moduleKey, keyword.value, status.value,
+      selectedGroup.value?.moduleKey === item.moduleKey ? selectedGroup.value.groupId : '',
+    )))
     // API 的 tagId 可能以数字返回；与 rowSelection 内统一的字符串 key 对齐，
     // 否则工具栏计数会变化，但表格按严格相等匹配时无法显示勾选或取消勾选。
     rows.value = results.flatMap((res: any) => res.data || [])
@@ -281,7 +365,7 @@ async function loadRows() {
 /** 搜索或切换模块后从第一页开始，避免旧页码超出新结果集范围。 */
 function searchRows() { pageNum.value = 1; loadRows() }
 /** 搜索栏和树面板共用重置：清除文本、状态及功能筛选。 */
-function resetFilter() { keyword.value = ''; status.value = ''; moduleKey.value = ''; selectedModule.value = ''; treeCollapsed.value = false; selectedRowKeys.value = []; searchRows() }
+function resetFilter() { keyword.value = ''; status.value = ''; moduleKey.value = ''; selectedModule.value = ''; selectedTreeKey.value = ''; selectedGroup.value = null; treeCollapsed.value = false; selectedRowKeys.value = []; selectDefaultFunction(); searchRows() }
 /** Ant Design Vue 分页回调；数据由本次接口全量返回，分页仅在当前模块结果集内进行。 */
 function onPageChange(page: number, size: number) { pageNum.value = page; pageSize.value = size }
 function onTableChange(_pagination: unknown, _filters: unknown, sorter: any) {
@@ -299,27 +383,96 @@ async function toggleStatus(row: TagRow, enabled: unknown) {
 function showTotalText(count: number) { return `共 ${count} 条` }
 
 /** 新增时默认使用当前树节点；保存后允许切换到表单选定的模块查看新标签。 */
-function openAdd() {
+async function openAdd() {
   editing.value = false
   creatingModule.value = moduleOptions.value.length === 0
-  form.value = { tagId: '', moduleKey: moduleKey.value, moduleName: moduleOptions.value.find(item => item.moduleKey === moduleKey.value)?.label || '', tagName: '', isCommon: '0', status: '0' }
+  const selectedFunctionKey = moduleKey.value.startsWith('function:') ? moduleKey.value.slice('function:'.length) : ''
+  const featureMatches = selectedFunctionKey
+    ? moduleOptions.value.filter(item => (legacyFunctionAliases[item.moduleKey] || item.moduleKey) === selectedFunctionKey)
+    : []
+  const chosenModuleKey = selectedGroup.value?.moduleKey
+    || (selectedFunctionKey && featureMatches.length === 1 ? featureMatches[0].moduleKey : moduleKey.value.startsWith('function:') ? '' : moduleKey.value)
+  form.value = { tagId: '', moduleKey: chosenModuleKey, moduleName: moduleOptions.value.find(item => item.moduleKey === chosenModuleKey)?.label || '', groupId: '', tagName: '', isCommon: '0', status: '0' }
+  await loadGroups(chosenModuleKey)
+  form.value.groupId = (selectedGroup.value?.moduleKey === chosenModuleKey ? selectedGroup.value.groupId : '')
+    || formGroups.value.find(item => item.isDefault === '1')?.groupId || ''
   visible.value = true
 }
 
-/** 编辑只维护当前标签属性；模块归属在对话框中展示为不可修改。 */
-function openEdit(row: TagRow) {
+/** 编辑只维护当前标签属性；功能归属在对话框中展示为不可修改。 */
+async function openEdit(row: TagRow) {
   editing.value = true
   creatingModule.value = false
-  form.value = { tagId: String(row.tagId), moduleKey: row.moduleKey, moduleName: moduleOptions.value.find(item => item.moduleKey === row.moduleKey)?.label || '', tagName: row.tagName, isCommon: row.isCommon, status: row.status }
+  await loadGroups(row.moduleKey)
+  form.value = { tagId: String(row.tagId), moduleKey: row.moduleKey, moduleName: moduleOptions.value.find(item => item.moduleKey === row.moduleKey)?.label || '', groupId: String(row.groupId), tagName: row.tagName, isCommon: row.isCommon, status: row.status }
   visible.value = true
 }
 
-/** 切换模块录入方式时清理旧值，避免新模块误用已有标识。 */
+/** 切换功能录入方式时清理旧值，避免新功能误用已有标识。 */
 function switchModuleMode() {
   creatingModule.value = !creatingModule.value
   const selected = creatingModule.value ? undefined : (moduleOptions.value.find(item => item.moduleKey === moduleKey.value) || moduleOptions.value[0])
   form.value.moduleKey = selected?.moduleKey || ''
   form.value.moduleName = selected?.label || ''
+  void loadGroups(form.value.moduleKey).then(() => { form.value.groupId = formGroups.value.find(item => item.isDefault === '1')?.groupId || '' })
+}
+
+/** 表单切换现有功能时同步加载其分组，并默认选中兜底组。 */
+async function selectFormModule(value: string) {
+  form.value.moduleKey = value
+  form.value.moduleName = moduleOptions.value.find(item => item.moduleKey === value)?.label || ''
+  await loadGroups(value)
+  form.value.groupId = formGroups.value.find(item => item.isDefault === '1')?.groupId || ''
+}
+
+/** 只允许在单一业务功能上下文中管理分组，避免把分组误建到跨功能汇总视图。 */
+async function openGroupManager() {
+  if (!selectedManageModule.value) return
+  managedModule.value = selectedManageModule.value
+  await loadGroups(managedModule.value.moduleKey)
+  managedGroups.value = [...formGroups.value]
+  groupDialogOpen.value = true
+}
+
+function openGroupAdd() {
+  if (!managedModule.value) return
+  groupEditing.value = false
+  groupForm.value = { groupId: '', moduleKey: managedModule.value.moduleKey, groupName: '' }
+  groupFormOpen.value = true
+}
+
+function openGroupEdit(group: TagGroup) {
+  if (group.isDefault === '1') return
+  groupEditing.value = true
+  groupForm.value = { groupId: group.groupId, moduleKey: group.moduleKey, groupName: group.groupName }
+  groupFormOpen.value = true
+}
+
+async function saveGroup() {
+  const groupName = groupForm.value.groupName.trim()
+  if (!groupName) return message.warning('请输入分组名称')
+  try {
+    if (groupEditing.value) await editTagGroup({ ...groupForm.value, groupName })
+    else await addTagGroup({ moduleKey: groupForm.value.moduleKey, groupName })
+    message.success(groupEditing.value ? '分组已更新' : '分组已创建')
+    groupFormOpen.value = false
+    await loadGroups(groupForm.value.moduleKey)
+    managedGroups.value = [...formGroups.value]
+    if (form.value.moduleKey === groupForm.value.moduleKey) form.value.groupId ||= formGroups.value.find(item => item.groupName === groupName)?.groupId || ''
+  } catch (error: any) { message.error(error?.response?.data?.msg || '分组保存失败') }
+}
+
+function confirmDeleteGroup(group: TagGroup) {
+  Modal.confirm({
+    title: '删除标签分组', content: `确定删除分组“${group.groupName}”吗？分组必须为空才能删除。`,
+    okText: '确定删除', cancelText: '取消', okType: 'danger',
+    onOk: async () => {
+      await deleteTagGroup(group.groupId)
+      message.success('分组已删除')
+      if (managedModule.value) await loadGroups(managedModule.value.moduleKey)
+      managedGroups.value = [...formGroups.value]
+    },
+  })
 }
 
 /** 表格插槽将行推断为通用对象，此处收窄为标签档案类型供编辑和停用操作使用。 */
@@ -340,7 +493,7 @@ async function save() {
       if (!moduleName) return message.warning('请输入模块名称')
       if (!/^[a-z][a-z0-9_]{0,49}$/.test(form.value.moduleKey)) return message.warning('模块标识须以小写字母开头，只能包含小写字母、数字和下划线')
       if (creatingModule.value && moduleOptions.value.some(item => item.moduleKey === form.value.moduleKey)) return message.warning('模块标识已存在，请选择已有模块')
-      await addTag({ moduleKey: form.value.moduleKey, moduleName, tagName, isCommon: form.value.isCommon })
+      await addTag({ moduleKey: form.value.moduleKey, moduleName, groupId: form.value.groupId || undefined, tagName, isCommon: form.value.isCommon })
       moduleKey.value = form.value.moduleKey
     }
     message.success(editing.value ? '标签已更新' : '标签已创建')
@@ -383,7 +536,7 @@ async function saveBatchEdit() {
   if (batchStatus.value === 'unchanged' && batchIsCommon.value === 'unchanged') return message.warning('请至少选择一项要修改的内容')
   try {
     await Promise.all(selected.map(row => editTag({
-      tagId: String(row.tagId), moduleKey: row.moduleKey, tagName: row.tagName,
+      tagId: String(row.tagId), moduleKey: row.moduleKey, groupId: String(row.groupId), tagName: row.tagName,
       isCommon: batchIsCommon.value === 'unchanged' ? row.isCommon : batchIsCommon.value,
       status: batchStatus.value === 'unchanged' ? row.status : batchStatus.value,
     })))
@@ -400,8 +553,8 @@ async function saveBatchEdit() {
 /** 导出当前模块及当前筛选结果为 UTF-8 BOM CSV，供 Excel 正常识别中文。 */
 function exportCsv() {
   const quote = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`
-  const lines = [['标签名称', '常用提示', '状态'], ...rows.value.map(row => [
-    row.tagName, row.isCommon === '1' ? '是' : '否', row.status === '0' ? '启用' : '停用',
+  const lines = [['功能名称', '标签分组', '标签名称', '常用提示', '状态'], ...rows.value.map(row => [
+    row.moduleName, row.groupName, row.tagName, row.isCommon === '1' ? '是' : '否', row.status === '0' ? '启用' : '停用',
   ])].map(line => line.map(quote).join(','))
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -435,13 +588,13 @@ onBeforeUnmount(() => widthObserver?.disconnect())
     <!-- 模板布局：整行筛选条件、整行操作工具栏、下方左侧模块树与右侧列表。 -->
     <div class="page-header">
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索标签名称" allow-clear style="width: 200px" @pressEnter="searchRows">
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索标签名称" allow-clear style="width: 200px" @pressEnter="searchRows">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
-        </a-input>
-        <a-select v-model:value="status" placeholder="状态" allow-clear style="width: 110px" @change="searchRows">
+        </a-input></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="status" placeholder="状态" allow-clear style="width: 110px" @change="searchRows">
           <a-select-option value="0">启用</a-select-option>
           <a-select-option value="1">停用</a-select-option>
-        </a-select>
+        </a-select></label>
       </div>
     </div>
     <div class="filter-bar">
@@ -451,6 +604,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
       <span class="filter-spacer"></span>
       <a-button :disabled="!selectedRowKeys.length" @click="openBatchEdit">批量编辑{{ selectedRowKeys.length ? `（${selectedRowKeys.length}）` : '' }}</a-button>
       <a-button @click="exportCsv">↓ 导出</a-button>
+      <a-button v-if="selectedManageModule" @click="openGroupManager">管理当前功能分组</a-button>
       <a-dropdown v-model:open="colSetOpen" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
@@ -475,19 +629,19 @@ onBeforeUnmount(() => widthObserver?.disconnect())
     <div class="tag-layout" :class="{ 'tree-collapsed': treeCollapsed }">
       <aside class="tag-tree-panel" :class="{ collapsed: treeCollapsed }">
         <div class="tree-head">
-          <span class="tree-title">标签归属</span>
+          <span class="tree-title">模块 / 功能 / 分组</span>
           <a class="tree-clear" @click="resetFilter">重置</a>
         </div>
         <div class="tree-body">
           <a-tree :tree-data="tagTree" :field-names="{ title: 'title', key: 'key', children: 'children' }"
-            :selected-keys="[moduleKey || (selectedModule ? `module:${selectedModule}` : '')]" default-expand-all block-node @select="onTreeSelect">
+            :selected-keys="[selectedTreeKey || moduleKey || (selectedModule ? `module:${selectedModule}` : '')]" default-expand-all block-node @select="onTreeSelect">
             <template #title="{ title, key, tagCount }">
               <span class="tree-node">{{ title }}<span v-if="String(key).startsWith('module:')" class="type-tag">模块</span>
                 <span v-else class="tree-count">{{ tagCount ?? 0 }}</span></span>
             </template>
           </a-tree>
           <div v-if="!moduleOptions.length" class="tree-empty-hint">
-            <div>暂无标签归属。可在此手动创建模块和标签，也可在业务功能首次添加标签时自动登记。</div>
+            <div>暂无标签功能。可在此手动建立功能归属，也可在业务功能首次添加标签时自动登记。</div>
             <a-button type="link" size="small" @click="openAdd">立即新增标签</a-button>
           </div>
         </div>
@@ -515,17 +669,23 @@ onBeforeUnmount(() => widthObserver?.disconnect())
         </a-table>
       </main>
     </div>
-    <!-- 新增允许选归属模块；编辑锁定模块，避免迁移标签导致历史关联语义改变。 -->
+    <!-- 新增允许选择功能归属；编辑锁定功能，避免迁移标签导致历史关联语义改变。 -->
     <a-modal v-model:open="visible" :title="editing ? '编辑标签' : '新增标签'" :mask-closable="false" :keyboard="false" @ok="save">
       <a-form layout="vertical">
-        <a-form-item label="模块名称" required>
-          <a-input v-if="editing || creatingModule" v-model:value="form.moduleName" :disabled="editing" placeholder="请输入新模块名称" :maxlength="100" />
-          <a-select v-else v-model:value="form.moduleKey" show-search option-filter-prop="label" placeholder="选择已有模块" @change="value => { form.moduleName = moduleOptions.find(item => item.moduleKey === String(value))?.label || '' }">
+        <a-form-item label="功能归属" required>
+          <a-input v-if="editing || creatingModule" v-model:value="form.moduleName" :disabled="editing" placeholder="请输入新功能名称" :maxlength="100" />
+          <a-select v-else v-model:value="form.moduleKey" show-search option-filter-prop="label" placeholder="选择已有功能" @change="selectFormModule(String($event))">
             <a-select-option v-for="item in moduleOptions" :key="item.moduleKey" :value="item.moduleKey" :label="item.label">{{ item.label }}</a-select-option>
           </a-select>
-          <template v-if="!editing && moduleOptions.length" #extra><a @click="switchModuleMode">{{ creatingModule ? '选择已有模块' : '新增模块归属' }}</a></template>
+          <template v-if="!editing && moduleOptions.length" #extra><a @click="switchModuleMode">{{ creatingModule ? '选择已有功能' : '新增功能归属' }}</a></template>
         </a-form-item>
-        <a-form-item v-if="!editing" label="模块标识" required><a-input v-model:value="form.moduleKey" :disabled="!creatingModule" placeholder="英文标识，如 customer" /><div class="field-hint">供业务功能调用，使用小写字母、数字和下划线；已有模块会自动沿用。</div></a-form-item>
+        <a-form-item v-if="!editing" label="功能标识" required><a-input v-model:value="form.moduleKey" :disabled="!creatingModule" placeholder="英文标识，如 customer_master" /><div class="field-hint">供对应业务功能调用，使用小写字母、数字和下划线；选择已有功能时会自动沿用。</div></a-form-item>
+        <a-form-item label="标签分组" required>
+          <a-select v-model:value="form.groupId" :disabled="creatingModule" placeholder="请选择标签分组">
+            <a-select-option v-for="item in formGroups" :key="item.groupId" :value="item.groupId">{{ item.groupName }}</a-select-option>
+          </a-select>
+          <div v-if="creatingModule" class="field-hint">新功能和标签将先归入默认分组，创建后可在分组管理中调整。</div>
+        </a-form-item>
         <a-form-item label="标签名称" required><a-input v-model:value="form.tagName" :maxlength="100" /></a-form-item>
         <a-form-item label="常用提示"><a-switch v-model:checked="form.isCommon" checked-value="1" un-checked-value="0" /></a-form-item>
         <a-form-item v-if="editing" label="状态">
@@ -535,6 +695,26 @@ onBeforeUnmount(() => widthObserver?.disconnect())
           </a-select>
         </a-form-item>
       </a-form>
+    </a-modal>
+    <a-modal v-model:open="groupDialogOpen" :title="`管理功能分组${managedModule ? ' · ' + managedModule.label : ''}`" :footer="null" destroy-on-close>
+      <div class="group-manager-head">
+        <span class="field-hint">分组只在当前业务功能内生效。默认分组不可删除或重命名；其他分组需先移空才能删除。</span>
+        <a-button type="primary" @click="openGroupAdd">新增分组</a-button>
+      </div>
+      <a-list :data-source="managedGroups" bordered>
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <span>{{ item.groupName }}<a-tag v-if="item.isDefault === '1'" color="blue" class="default-group-tag">默认</a-tag></span>
+            <template #actions>
+              <a v-if="item.isDefault !== '1'" @click="openGroupEdit(item)">重命名</a>
+              <a v-if="item.isDefault !== '1'" class="danger-link" @click="confirmDeleteGroup(item)">删除</a>
+            </template>
+          </a-list-item>
+        </template>
+      </a-list>
+    </a-modal>
+    <a-modal v-model:open="groupFormOpen" :title="groupEditing ? '重命名分组' : '新增分组'" ok-text="保存" cancel-text="取消" @ok="saveGroup">
+      <a-form layout="vertical"><a-form-item label="分组名称" required><a-input v-model:value="groupForm.groupName" :maxlength="100" /></a-form-item></a-form>
     </a-modal>
     <a-modal v-model:open="batchEditOpen" title="批量编辑标签" ok-text="保存" cancel-text="取消" @ok="saveBatchEdit">
       <a-form layout="vertical">
@@ -601,6 +781,9 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 .ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .ops-btns .ant-btn-sm { padding-inline: 5px; }
 .summary-cell { font-weight: 600; background: #F7F8FA; }
+.group-manager-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.default-group-tag { margin-left: 8px; }
+.danger-link { color: #d9363e; }
 </style>
 
 <!-- 非 scoped：通过原生表头右侧拖拽柄调列宽，保持与功能模板实现一致。 -->

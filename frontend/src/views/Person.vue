@@ -14,8 +14,11 @@ import { useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
+import PersonCategoryScope from '../components/PersonCategoryScope.vue'
+import { perms } from '../utils/perms'
 
 const route = useRoute()
+const categoryScopePerson = ref<{ id: string; name: string }>()
 
 // ===== 列表 =====
 const rows = ref<any[]>([])
@@ -86,6 +89,7 @@ const ALL_COLUMNS = [
   { title: '部门', dataIndex: 'org_name', key: 'org_name', sorter: true },
   { title: '岗位', dataIndex: 'posts', key: 'posts', ellipsis: true },
   { title: '角色', dataIndex: 'roles', key: 'roles', ellipsis: true },
+  { title: '业务职责', dataIndex: 'business_duties', key: 'business_duties', ellipsis: true },
   { title: '状态', dataIndex: 'emp_status', key: 'emp_status', sorter: true },
   { title: '员工卡', dataIndex: 'card_no', key: 'card_no', sorter: true },
 ]
@@ -98,7 +102,7 @@ const colSetOpen = ref(false)
 const manualWidths = ref(false)
 let widthObserver: ResizeObserver | undefined   // 列设置下拉受控开关（操作期间保持打开）
 const colStoreKey = computed(() => `person_list_v2:${localStorage.getItem('userId') || 'anon'}`)
-const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 180)  // 操作列宽可拖拽并持久化
+const opsWidth = ref(Number(localStorage.getItem(`${colStoreKey.value}:ops_w`)) || 240)  // 操作列宽可拖拽并持久化
 
 function loadColState() {
   manualWidths.value = localStorage.getItem(`${colStoreKey.value}:manual_widths`) === '1'
@@ -136,7 +140,7 @@ async function scheduleAutoFit() {
   const container = document.querySelector<HTMLElement>('.person-table .ant-table-container')
   const available = Math.max(0, (body?.clientWidth || container?.clientWidth || 0) - 2)
   if (!available) return
-  opsWidth.value = 180
+  opsWidth.value = 240
   const visible = colState.value.filter(c => c.visible)
   let required = 48 + 64 + opsWidth.value
   for (const col of colState.value) {
@@ -254,6 +258,11 @@ const orgs = ref<any[]>([])
 const orgNodes = ref<any[]>([])   // 组织树（表单下拉数据源）
 const posts = ref<any[]>([])
 const roles = ref<any[]>([])
+const businessDutyOptions = ref([
+  { label: '业务员', value: 'SALES' }, { label: '跟单员', value: 'FOLLOWER' },
+  { label: '采购员', value: 'PURCHASER' }, { label: '计划员', value: 'PLANNER' },
+  { label: '仓管员', value: 'WAREHOUSE' }, { label: '质检员', value: 'QUALITY' },
+])
 
 // 所属部门树选：全部非小组节点（小组是末级不当下级部门）
 // 组织节点全树可选（万物皆部门：人员可挂任意层级节点）
@@ -274,6 +283,7 @@ const emptyForm = () => ({
   password: '',
   postIds: [] as string[],
   roleIds: [] as string[],
+  businessDuties: [] as string[],
   ext: {
     maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
@@ -377,7 +387,7 @@ function importFile(e: Event) {
           jobNo, name,
           gender: cols[idx('性别')] === '男' ? '1' : '2',
           phoneNumber: cols[idx('手机号')]?.trim() || '',
-          postIds: [], roleIds: [],
+          postIds: [], roleIds: [], businessDuties: (cols[idx('业务职责')] || '').split(/[、,，]/).map((name:string)=>businessDutyOptions.value.find(d=>d.label===name.trim())?.value).filter(Boolean),
           ext: { hireDate: new Date().toISOString().slice(0, 10), empStatus: cols[idx('状态')]?.trim() || '试用',
                  cardNo: cols[idx('员工卡')]?.trim() || '' },
         })
@@ -393,18 +403,22 @@ function importFile(e: Event) {
 }
 
 async function loadOptions() {
-  try {
-    const [d, p, r]: any[] = await Promise.all([
+  const results = await Promise.allSettled([
       api.get('/system/org/list'),
       api.get('/system/post/list', { params: { pageNum: 1, pageSize: 100 } }),
       api.get('/system/role/list', { params: { pageNum: 1, pageSize: 100 } }),
-    ])
+      api.get('/system/person/business-duty-options'),
+  ])
+  const responseAt = (index: number) => results[index].status === 'fulfilled' ? results[index].value as any : {}
+  const [d, p, r, duties] = [0, 1, 2, 3].map(responseAt)
+  try {
     if (d.code === 200) {
       orgs.value = flattenOrg(d.data || [])
       orgNodes.value = buildOrgTree(d.data || [])
     }
     if (p.code === 200) posts.value = p.data.rows || []
     if (r.code === 200) roles.value = r.data.rows || []
+    if (duties.code === 200) businessDutyOptions.value = (duties.data || []).map((d:any) => ({ label: d.name, value: d.code }))
   } catch { /* ignore */ }
 }
 
@@ -415,11 +429,13 @@ function flattenOrg(list: any[]): any[] {
   return out
 }
 
-function openAdd() {
+async function openAdd() {
+  await loadOptions()
   activeTab.value = 'base'
   isEdit.value = false; form.value = emptyForm(); showDlg.value = true }
 
 async function openEdit(row: any) {
+  await loadOptions()
   activeTab.value = 'base'
   isEdit.value = true
   const res: any = await api.get(`/system/person/${row.user_id}`)
@@ -430,6 +446,7 @@ async function openEdit(row: any) {
     email: d.email || '', phoneNumber: d.phone_number || '', orgId: d.org_id ? String(d.org_id) : undefined,
     status: d.status || '0', remark: d.remark || '', password: '',
     postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
+    businessDuties: (d.businessDuties || []).map(String),
     ext: {
       maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
       nation: d.nation || '', education: d.education || '', birthDate: dateOnly(d.birth_date),
@@ -605,22 +622,22 @@ function resetFilter() {
     <!-- 页头行：查询条件左置（对齐组织架构定版布局，无标题无返回） -->
     <div class="page-header">
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" />
-        <a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索工号/姓名/手机号" allow-clear style="width:180px" @press-enter="loadList" /></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="empStatus" placeholder="状态" allow-clear style="width:110px" @change="loadList">
           <a-select-option value="试用">试用</a-select-option>
           <a-select-option value="在职">在职</a-select-option>
           <a-select-option value="离职">离职</a-select-option>
           <a-select-option value="长假">长假</a-select-option>
-        </a-select>
-        <a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
+        </a-select></label>
+        <label class="zy-filter-field"><span>部门</span><a-select v-model:value="orgId" placeholder="部门" allow-clear style="width:140px" @change="loadList">
           <a-select-option v-for="d in orgs" :key="String(d.orgId)" :value="String(d.orgId)">{{ d.orgName }}</a-select-option>
-        </a-select>
-        <a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
+        </a-select></label>
+        <label class="zy-filter-field"><span>性别</span><a-select v-model:value="gender" placeholder="性别" allow-clear style="width:90px" @change="loadList">
           <a-select-option value="1">男</a-select-option>
           <a-select-option value="2">女</a-select-option>
-        </a-select>
-        <a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" />
-        <a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" />
+        </a-select></label>
+        <label class="zy-filter-field"><span>岗位</span><a-input v-model:value="postsFilter" placeholder="岗位" allow-clear style="width:110px" @press-enter="loadList" /></label>
+        <label class="zy-filter-field"><span>角色</span><a-input v-model:value="rolesFilter" placeholder="角色" allow-clear style="width:110px" @press-enter="loadList" /></label>
         <a-checkbox v-model:checked="showDeleted" @change="loadList">查看已删除</a-checkbox>
         <a-checkbox v-model:checked="includeSystem" @change="loadList">含系统账号</a-checkbox>
       </div>
@@ -725,6 +742,8 @@ function resetFilter() {
             </template>
             <template v-else>
               <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
+              <a-button v-if="perms.set.has('*')" size="small"
+                @click="categoryScopePerson = { id: record.user_id_text, name: record.name }">分类权限</a-button>
               <a-button size="small" @click="resetPwd(record)">重置密码</a-button>
               <a-button danger size="small" @click="removePerson(record)">删除</a-button>
             </template>
@@ -734,6 +753,9 @@ function resetFilter() {
     </a-table>
     </div>
     </div>
+
+    <PersonCategoryScope v-if="categoryScopePerson" :user-id="categoryScopePerson.id"
+      :name="categoryScopePerson.name" @close="categoryScopePerson = undefined" />
 
     <!-- 新增/编辑（a-modal + a-form 校验/分组） -->
     <a-modal
@@ -797,6 +819,12 @@ function resetFilter() {
                 <a-tag v-if="!form.roleIds.length" class="pick-empty">未选择</a-tag>
                 <a class="pick-btn" @click="openPick('role')">选择角色</a>
               </div>
+            </a-form-item>
+          </a-col>
+          <a-col :span="24">
+            <a-form-item label="业务职责（可多选）">
+              <a-checkbox-group v-model:value="form.businessDuties" :options="businessDutyOptions" />
+              <div class="form-tip">用于筛选客户和业务单据中的责任人员；不代表系统权限。没有对应职责的人员不会出现在业务员、跟单员或采购员选择项中。</div>
             </a-form-item>
           </a-col>
         </a-row>
@@ -917,6 +945,7 @@ function resetFilter() {
 .person-tabs :deep(.ant-tabs-nav) { margin-bottom: 0; }
 .person-tabs :deep(.ant-tabs-content-holder) { padding-top: 16px; }
 .person-tabs :deep(.ant-tabs-tab) { font-size: 14px; padding: 10px 2px; }
+.form-tip { margin-top: 6px; color: #86909c; font-size: 12px; line-height: 1.6; }
 
 .pick-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 32px; padding: 3px 8px; border: 1px solid #E5E8EF; border-radius: 6px; background: #fff; }
 .pick-box .pick-empty { color: #C9CDD4; background: #F7F8FA; border-style: dashed; }

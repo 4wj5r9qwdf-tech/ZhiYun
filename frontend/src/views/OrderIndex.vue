@@ -35,7 +35,7 @@ async function loadTodo() {
 <template>
   <div>
     <div class="group">
-      <a-typography-title :level="4" class="group-title">客户</a-typography-title>
+      <a-typography-title :level="4" class="group-title">订单业务</a-typography-title>
       <p class="tip">拖拽卡片调顺序 · 手柄自由拉伸 · ⤒置顶 · ★加工作台 · 配置自动保存</p>
       <FunctionCardGrid module-key="order" :cards="cards" :todo="todoByMenu" />
     </div>

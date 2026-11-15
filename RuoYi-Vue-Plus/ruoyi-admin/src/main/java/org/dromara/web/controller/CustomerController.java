@@ -60,7 +60,7 @@ public class CustomerController {
         row.put("contacts",jdbc.queryForList("SELECT * FROM customer_contact WHERE customer_id=? ORDER BY contact_id",id));
         row.put("addresses",jdbc.queryForList("SELECT * FROM customer_address WHERE customer_id=? ORDER BY address_id",id));
         row.put("tagIds",jdbc.queryForList("SELECT tag_id::text FROM sys_tag_relation WHERE module_key='customer_master' AND record_id=?",String.class,id));
-        row.put("tagOptions",jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,(t.status<>'0') AS disabled FROM sys_tag_relation r JOIN sys_tag t ON t.tag_id=r.tag_id WHERE r.module_key='customer_master' AND r.record_id=?",id));
+        row.put("tagOptions",jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,g.group_name AS \"groupName\",(t.status<>'0') AS disabled FROM sys_tag_relation r JOIN sys_tag t ON t.tag_id=r.tag_id JOIN sys_tag_group g ON g.group_id=t.tag_group_id WHERE r.module_key='customer_master' AND r.record_id=?",id));
         // 列表只读权限不赋予完整联系方式；能维护客户的人员才可读取原值。
         if(!StpUtil.hasPermission("system:customer:edit")) {
             maskChildren(row,"contacts",List.of("phone_number","email"));
@@ -76,11 +76,11 @@ public class CustomerController {
         return R.ok(jdbc.queryForObject("SELECT count(*) FROM customer_master WHERE lower(trim(customer_name))=lower(trim(?)) AND customer_id<>?",Long.class,name,id));
     }
 
-    /** 业务员选择仅返回人员身份及岗位/组织/小组筛选项，不暴露人员敏感字段，不限制特定岗位。 */
+    /** 仅返回具备业务员职责的在职人员；职责资格不授予客户档案操作权限。 */
     @SaCheckPermission("system:customer:list")
     @GetMapping("/sales-options")
     public R<List<Map<String,Object>>> salesOptions() {
-        return R.ok(jdbc.queryForList("SELECT u.user_id::text AS value,u.nick_name AS label,u.org_id::text AS org_id,o.org_name,e.group_id::text AS group_id,g.org_name AS group_name,COALESCE((SELECT string_agg(p.post_name,'、') FROM sys_user_post up JOIN sys_post p ON p.post_id=up.post_id WHERE up.user_id=u.user_id),'') AS posts FROM sys_user u LEFT JOIN sys_org o ON o.org_id=u.org_id LEFT JOIN sys_person_ext e ON e.user_id=u.user_id LEFT JOIN sys_org g ON g.org_id=e.group_id WHERE u.del_flag='0' AND u.user_name<>'admin' ORDER BY u.nick_name"));
+        return R.ok(jdbc.queryForList("SELECT u.user_id::text AS value,u.nick_name AS label,u.org_id::text AS org_id,o.org_name,e.group_id::text AS group_id,g.org_name AS group_name,COALESCE((SELECT string_agg(p.post_name,'、') FROM sys_user_post up JOIN sys_post p ON p.post_id=up.post_id WHERE up.user_id=u.user_id),'') AS posts FROM sys_user u LEFT JOIN sys_org o ON o.org_id=u.org_id LEFT JOIN sys_person_ext e ON e.user_id=u.user_id LEFT JOIN sys_org g ON g.org_id=e.group_id WHERE u.del_flag='0' AND u.status='0' AND u.user_name<>'admin' AND EXISTS(SELECT 1 FROM sys_user_business_duty d WHERE d.user_id=u.user_id AND d.duty_code='SALES') ORDER BY u.nick_name"));
     }
 
     /** 新业务只能选择启用客户；详情接口继续允许读取停用档案。 */
@@ -178,7 +178,7 @@ public class CustomerController {
         if(name.isBlank()) return R.fail("客户名称不能为空");
         if(!credit.isEmpty() && !credit.matches("[0-9A-Z]{18}")) return R.fail("统一社会信用代码应为18位大写字母或数字");
         Long sales=number(b.get("sales_representative_id"));
-        if(sales==null || jdbc.queryForObject("SELECT count(*) FROM sys_user WHERE user_id=? AND del_flag='0' AND user_name<>'admin'",Long.class,sales)==0) return R.fail("请选择人员信息中的业务员");
+        if(sales==null || jdbc.queryForObject("SELECT count(*) FROM sys_user u WHERE u.user_id=? AND u.del_flag='0' AND u.user_name<>'admin' AND ((u.status='0' AND EXISTS(SELECT 1 FROM sys_user_business_duty d WHERE d.user_id=u.user_id AND d.duty_code='SALES')) OR EXISTS(SELECT 1 FROM customer_master old WHERE old.customer_id=? AND old.sales_representative_id=u.user_id))",Long.class,sales,id==null?0L:id)==0) return R.fail("请选择具有“业务员”职责的在职人员");
         // 在写入之前读取原有地区与地址，用于允许保留停用地区和无法自动匹配的历史手填值。
         Map<String,Object> oldCustomer = Map.of();
         Map<Long,Map<String,Object>> oldAddresses = new HashMap<>();

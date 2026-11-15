@@ -9,7 +9,7 @@ import ImportResultTable from './ImportResultTable.vue'
 import BatchResultModal from './BatchResultModal.vue'
 import { parseCsv, encodeCsv } from '../utils/csv'
 import { foundationError, downloadFoundationFile } from '../utils/foundation'
-const props = defineProps<{ open: boolean; title: string; headers: string[]; help: string; parse: (fields: string[]) => Record<string, any>; submit: (payload: Record<string, any>) => Promise<unknown> }>()
+const props = defineProps<{ open: boolean; title: string; headers: string[]; legacyHeaders?: string[] | string[][]; help: string; parse: (fields: string[]) => Record<string, any>; submit: (payload: Record<string, any>) => Promise<unknown>; duplicateKey?: (payload: Record<string, any>) => string }>()
 const emit = defineEmits<{ (e: 'update:open', value: boolean): void; (e: 'done'): void }>()
 type ImportRow = { line: number; code: string; name: string; error: string; fields: string[]; payload: Record<string, any>; imported?: boolean }
 const rows = ref<ImportRow[]>([]), saving = ref(false), resultOpen = ref(false), succeeded = ref(0), failures = ref<{ name: string; reason: string }[]>([])
@@ -20,13 +20,26 @@ async function selectFile(event: Event) {
   try {
     if (file.size > 2 * 1024 * 1024) throw new Error('文件不能超过2MB')
     const records = parseCsv(await file.text()), header = records.shift()
-    if (!header || (header.fields.join('|') !== props.headers.join('|') && header.fields.join('|') !== [...props.headers, '失败原因'].join('|'))) throw new Error('表头与模板不一致，请下载当前模板')
+    const hasFailureColumn = header?.fields.at(-1) === '失败原因'
+    const inputHeaders = hasFailureColumn ? header?.fields.slice(0, -1) : header?.fields
+    const sameHeaders = (expected: string[]) => inputHeaders?.length === expected.length &&
+      expected.every((name, index) => name === inputHeaders[index])
+    const previous = props.legacyHeaders ?? []
+    const legacyCandidates: string[][] = typeof previous[0] === 'string' ? [previous as string[]] : previous as string[][]
+    const legacy = legacyCandidates.find(sameHeaders)
+    if (!sameHeaders(props.headers) && !legacy) throw new Error('表头与模板不一致，请下载当前模板')
     if (records.length > 1000) throw new Error('单次最多导入1000条')
     const seen = new Set<string>()
-    if (header.fields.length === props.headers.length + 1) records.forEach(record => { record.fields.pop() })
+    if (hasFailureColumn) records.forEach(record => { record.fields.pop() })
     rows.value = records.map(record => {
+      const validLength = record.fields.length === (legacy ?? props.headers).length
+      // 旧模板只缺末尾新增列，补空值后仍走相同的业务校验。
+      // Older templates omit trailing fields; validate those rows through the same parser.
+      if (legacy && validLength) {
+        record.fields.push(...Array<string>(props.headers.length - legacy.length).fill(''))
+      }
       let payload: Record<string, any> = {}, error = ''
-      try { if (record.fields.length !== props.headers.length) throw new Error('列数与模板不一致'); payload = props.parse(record.fields); if (!payload.code || !payload.name) throw new Error('编码和名称不能为空'); if (seen.has(payload.code)) throw new Error('文件内编码重复'); seen.add(payload.code) } catch (e) { error = foundationError(e) }
+      try { if (!validLength) throw new Error('列数与模板不一致'); payload = props.parse(record.fields); if (!payload.code || !payload.name) throw new Error('编码和名称不能为空'); const key=props.duplicateKey?.(payload)||payload.code; if (seen.has(key)) throw new Error('文件内业务键重复'); seen.add(key) } catch (e) { error = foundationError(e) }
       return { line: record.line, code: payload.code || record.fields[0] || '', name: payload.name || record.fields[1] || '', fields: record.fields, payload, error }
     })
   } catch (e) { message.error(foundationError(e)) }

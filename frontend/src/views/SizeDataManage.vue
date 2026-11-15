@@ -241,7 +241,7 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 <template>
   <StandardListLayout>
     <template #filters>
-      <div class="head-filters"><a-input v-model:value="keyword" placeholder="搜索编号 / 名称 / 英文名称" allow-clear style="width:240px" @press-enter="search"><template #prefix><SearchOutlined style="color:#86909C" /></template></a-input><a-select v-model:value="status" allow-clear placeholder="状态" style="width:110px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" @change="search" /></div>
+      <div class="head-filters"><label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索编号 / 名称 / 英文名称" allow-clear style="width:240px" @press-enter="search"><template #prefix><SearchOutlined style="color:#86909C" /></template></a-input></label><label class="zy-filter-field"><span>状态</span><a-select v-model:value="status" allow-clear placeholder="状态" style="width:110px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" @change="search" /></label></div>
     </template>
     <template #actions>
       <div class="filter-bar"><a-button v-if="permission('add')" type="primary" @click="openAdd"><PlusOutlined />新增</a-button><a-button type="primary" @click="search">查询</a-button><a-button @click="resetFilters">重置</a-button><a-button v-if="props.kind === 'size' && permission('edit')" :disabled="!selectedRowKeys.length" @click="openBatchTags">批量修改<span v-if="selectedRowKeys.length">（{{ selectedRowKeys.length }}）</span></a-button><span class="filter-spacer" />

@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 import './style.css'
+import { installTableHover } from './utils/tableHover'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { changeConfirmLocale } from 'ant-design-vue/es/modal/locale'
 
@@ -13,3 +14,4 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(router)
 app.mount('#app')
+installTableHover(document.body)

@@ -3,8 +3,8 @@
 > 功能英文名：`size`
 > 对应数据：`sys_size` 与 `sys_tag_relation(module_key='size')`
 > 用户验收：2026-11-04 通过
-> REST 状态：已实现；MCP 运行时：未注册，以下 MCP 工具名为契约映射，不可直接调用。
-> 契约依据：核对后端源码与页面调用；本次文档整理未另行执行接口烟测。
+> REST 状态：已实现；MCP：已在 `SizeMcpTools` 注册，实际发现与调用情况见《测试与验收清单》。
+> 契约依据：后端源码与页面调用；MCP 适配直接复用 `SizeDataController` 和固定参数键对应的 `SysConfigController`。
 > 尺码组管理未验收，不属于本文档范围。
 
 ## 1. 通用约定
@@ -15,21 +15,21 @@
 - ID 在接口路径及 JSON 数组中使用十进制字符串，避免 bigint 精度丢失。
 - 当前尺码接口没有 `@RepeatSubmit` 防重注解；写请求超时后先核对结果再决定是否重试，尤其不得盲目重试新增。
 - 接口由 `SizeDataController` 提供：`/system/size-data/{kind}`，本文只使用 `kind=size`。
-- **机器审批要求**：涉及新增、修改、启停、删除、标签替换或规则修改时，智能体必须先展示待执行内容并等员工确认；查询无需确认。系统当前未提供 MCP 工具，以下契约不是可运行的 agent tool。
+- **机器审批要求**：涉及新增、修改、启停、删除、标签替换或规则修改时，智能体必须先展示待执行内容并等员工确认；查询无需确认。MCP 工具入口会显式复核当前员工权限。
 
-## 2. MCP 工具映射（待注册）
+## 2. MCP 工具映射（已注册）
 
 | MCP 工具名 | REST 映射 | 权限 | 接入状态 |
 |---|---|---|---|
-| `size_list` | `GET /system/size-data/size/list` | `system:size:list` | 未注册 |
-| `size_options` | `GET /system/size-data/size/options` | 已登录 | 未注册 |
-| `size_create` | `POST /system/size-data/size` | `system:size:add` | 未注册 |
-| `size_update` | `PUT /system/size-data/size/{id}` | `system:size:edit` | 未注册 |
-| `size_set_status` | `PUT /system/size-data/size/{id}/status` | `system:size:edit` | 未注册 |
-| `size_delete` | `DELETE /system/size-data/size/{id}` | `system:size:delete` | 未注册 |
-| `size_batch_set_tags` | `POST /system/size-data/size/batch-tags` | `system:size:edit` | 未注册 |
-| `size_get_code_rule` | `GET /system/config/configKey/system.code.size` | 已登录（固定参数键） | 未注册 |
-| `size_set_code_rule` | `POST /system/config/size-code-rule` | `system:config:edit` | 未注册 |
+| `size_list` | `GET /system/size-data/size/list` | `system:size:list` | 已注册 |
+| `size_options` | `GET /system/size-data/size/options` | 已登录 | 已注册 |
+| `size_create` | `POST /system/size-data/size` | `system:size:add` | 已注册 |
+| `size_update` | `PUT /system/size-data/size/{id}` | `system:size:edit` | 已注册 |
+| `size_set_status` | `PUT /system/size-data/size/{id}/status` | `system:size:edit` | 已注册 |
+| `size_delete` | `DELETE /system/size-data/size/{id}` | `system:size:delete` | 已注册 |
+| `size_batch_set_tags` | `POST /system/size-data/size/batch-tags` | `system:size:edit` | 已注册 |
+| `size_get_code_rule` | `GET /system/config/configKey/system.code.size` | 已登录（固定参数键） | 已注册 |
+| `size_set_code_rule` | `POST /system/config/size-code-rule` | `system:config:edit` | 已注册 |
 
 ## 3. 查询尺码列表
 
@@ -219,4 +219,4 @@
 | `403` | 当前员工缺少对应权限 |
 | `500` + 业务消息 | 名称/编码无效或重复、标签不可用、尺码不存在或仍被尺码组引用等 |
 
-所有变更以当前员工本人身份执行并留审计。Skill 和 MCP 工具未注册前，智能体不得绕过工具目录直接调用这些 REST 路由。
+所有变更以当前员工本人身份执行并留审计。MCP 工具仅委托已存在控制器，不提供通用 HTTP 或 SQL 能力；调用仍须遵守对应权限及员工确认要求。

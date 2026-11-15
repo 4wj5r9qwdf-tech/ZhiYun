@@ -9,6 +9,11 @@ import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.satoken.utils.LoginHelper;
 import org.dromara.system.event.OnlineUserCleanEvent;
+import org.dromara.system.controller.system.BusinessAudit;
+import org.dromara.common.core.exception.ServiceException;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.HashSet;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +37,123 @@ public class PersonController {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** 业务职责是单据责任人资格，不等同于岗位、系统角色或权限。 */
+    private static final Map<String, String> BUSINESS_DUTIES = Map.of(
+        "SALES", "业务员", "FOLLOWER", "跟单员", "PURCHASER", "采购员",
+        "PLANNER", "计划员", "WAREHOUSE", "仓管员", "QUALITY", "质检员");
+
+    @SaCheckPermission("system:person:list")
+    @GetMapping("/business-duty-options")
+    public R<List<Map<String, String>>> businessDutyOptions() {
+        return R.ok(List.of(
+            Map.of("code", "SALES", "name", "业务员"),
+            Map.of("code", "FOLLOWER", "name", "跟单员"),
+            Map.of("code", "PURCHASER", "name", "采购员"),
+            Map.of("code", "PLANNER", "name", "计划员"),
+            Map.of("code", "WAREHOUSE", "name", "仓管员"),
+            Map.of("code", "QUALITY", "name", "质检员")));
+    }
+
+    /** 分类授权请求，全部可见为默认值。 / Represent employee category scope with full visibility by default. */
+    public record CategoryScope(String mode, List<CategoryGrant> grants) {}
+
+    /** 授权对象使用稳定主键。 / Identify a scheme or category with a stable ID. */
+    public record CategoryGrant(Long schemeId, Long categoryId, boolean includeChildren) {}
+
+    /** 返回人员当前授权及分类目录。 / Load the current employee scope and taxonomy. */
+    @GetMapping("/{userId}/category-scope")
+    public R<Map<String, Object>> categoryScope(@PathVariable Long userId) {
+        String name = checkCategoryScopeTarget(userId, false);
+        return R.ok(Map.of(
+            "scope", readCategoryScope(userId, name),
+            "schemes", jdbcTemplate.queryForList("""
+                SELECT scheme_id::text AS id, scheme_name AS name, status
+                FROM base_category_scheme WHERE del_flag='0' ORDER BY sort_order, scheme_id
+                """),
+            "categories", jdbcTemplate.queryForList("""
+                SELECT category_id::text AS id, scheme_id::text AS "schemeId",
+                       parent_id::text AS "parentId", category_name AS name, status
+                FROM base_category WHERE del_flag='0' ORDER BY sort_order, category_id
+                """)));
+    }
+
+    /** 在同一事务替换授权并记录真实前后值。 / Replace grants and audit the persisted change atomically. */
+    @PutMapping("/{userId}/category-scope")
+    @Transactional
+    @Log(title = "人员分类权限", businessType = BusinessType.UPDATE)
+    public R<Void> saveCategoryScope(@PathVariable Long userId, @RequestBody CategoryScope scope) {
+        String name = checkCategoryScopeTarget(userId, true);
+        if (scope.mode() == null || !Set.of("ALL", "NONE", "SELECTED").contains(scope.mode())
+            || scope.grants() == null || "SELECTED".equals(scope.mode()) == scope.grants().isEmpty()) {
+            throw new ServiceException("请选择授权模式；指定范围须至少添加一项，其他模式不提交授权项");
+        }
+        Set<Long> schemes = new HashSet<>();
+        Set<Long> categories = new HashSet<>();
+        for (CategoryGrant grant : scope.grants()) {
+            if (grant == null || (grant.schemeId() == null) == (grant.categoryId() == null)) {
+                throw new ServiceException("每项授权须选择一个分类类型或分类节点");
+            }
+            if (grant.schemeId() != null) {
+                if (!grant.includeChildren() || !schemes.add(grant.schemeId()) || jdbcTemplate.queryForList(
+                    "SELECT scheme_id FROM base_category_scheme WHERE scheme_id=? AND del_flag='0' FOR SHARE",
+                    grant.schemeId()).isEmpty()) {
+                    throw new ServiceException("分类类型无效、重复或未包含下级");
+                }
+            } else if (!categories.add(grant.categoryId()) || jdbcTemplate.queryForList(
+                "SELECT category_id FROM base_category WHERE category_id=? AND del_flag='0' FOR SHARE",
+                grant.categoryId()).isEmpty()) {
+                throw new ServiceException("分类节点已删除、不存在或重复");
+            }
+        }
+        var before = readCategoryScope(userId, name);
+        jdbcTemplate.update("DELETE FROM sys_person_category_scope WHERE user_id=?", userId);
+        if (!"ALL".equals(scope.mode())) {
+            jdbcTemplate.update("INSERT INTO sys_person_category_scope VALUES (?,?)", userId, scope.mode());
+            for (CategoryGrant grant : scope.grants()) {
+                jdbcTemplate.update("INSERT INTO sys_person_category_grant VALUES (?,?,?,?)",
+                    userId, grant.schemeId(), grant.categoryId(), grant.includeChildren());
+            }
+        }
+        BusinessAudit.record("设置人员分类权限", userId, "人员",
+            categoryScopeAudit(before), categoryScopeAudit(readCategoryScope(userId, name)));
+        return R.ok();
+    }
+
+    /** 首期仅超管维护普通人员授权，锁定人员以串行化保存。 / Restrict administration and serialize writes per employee. */
+    private String checkCategoryScopeTarget(Long userId, boolean lock) {
+        Long actor = LoginHelper.getUserId();
+        if (actor == null || !LoginHelper.isSuperAdmin(actor)) {
+            throw new ServiceException("仅超级管理员可以维护人员分类权限");
+        }
+        var names = jdbcTemplate.queryForList(
+            "SELECT nick_name FROM sys_user WHERE user_id=? AND del_flag='0'" + (lock ? " FOR UPDATE" : ""),
+            String.class, userId);
+        if (names.isEmpty() || LoginHelper.isSuperAdmin(userId)) {
+            throw new ServiceException("人员不存在或不适用分类授权");
+        }
+        return names.getFirst();
+    }
+
+    /** 回显历史授权名称，包含已停用或删除的授权目标。 / Preserve labels for stale grants during review. */
+    private Map<String, Object> readCategoryScope(Long userId, String name) {
+        var modes = jdbcTemplate.queryForList(
+            "SELECT scope_mode FROM sys_person_category_scope WHERE user_id=?", String.class, userId);
+        var grants = jdbcTemplate.queryForList("""
+            SELECT g.scheme_id::text AS "schemeId", g.category_id::text AS "categoryId",
+                   g.include_children AS "includeChildren", coalesce(s.scheme_name,c.category_name) AS name
+            FROM sys_person_category_grant g
+            LEFT JOIN base_category_scheme s ON s.scheme_id=g.scheme_id
+            LEFT JOIN base_category c ON c.category_id=g.category_id
+            WHERE g.user_id=? ORDER BY g.scheme_id, g.category_id
+            """, userId);
+        return Map.of("name", name, "mode", modes.isEmpty() ? "ALL" : modes.getFirst(), "grants", grants);
+    }
+
+    /** 转换业务审计字段。 / Label the employee scope snapshot for audit. */
+    private Map<String, Object> categoryScopeAudit(Map<String, Object> scope) {
+        return Map.of("人员", scope.get("name"), "授权模式", scope.get("mode"), "分类授权", scope.get("grants"));
+    }
+
     private static final String DEFAULT_PASSWORD = "123456";
 
     /**
@@ -47,6 +169,7 @@ public class PersonController {
                                        @RequestParam(required = false) String gender,
                                        @RequestParam(required = false) String posts,
                                        @RequestParam(required = false) String roles,
+                                       @RequestParam(required = false) String businessDuty,
                                        @RequestParam(required = false) String orderBy,
                                        @RequestParam(defaultValue = "0") String delFlag,
                                        @RequestParam(defaultValue = "0") String includeSystem,
@@ -59,7 +182,7 @@ public class PersonController {
         // 默认隐藏内置系统账号 admin（它不是工厂员工）；includeSystem=1 才显示
         if (!"1".equals(includeSystem)) where.append(" AND u.user_name<>'admin'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : orgId, gender, posts, roles);
+        applyFilters(where, args, keyword, empStatus, "1".equals(subtree) ? null : orgId, gender, posts, roles, businessDuty);
         // 树节点筛选：orgId 按"含下级"展开（组织节点，与数据范围同款）
         if (orgId != null && "1".equals(subtree)) {
             appendSubtreeFilter(where, orgId);
@@ -92,10 +215,11 @@ public class PersonController {
                                          @RequestParam(required = false) Long orgId,
                                          @RequestParam(required = false) String gender,
                                          @RequestParam(required = false) String posts,
-                                         @RequestParam(required = false) String roles) {
+                                         @RequestParam(required = false) String roles,
+                                         @RequestParam(required = false) String businessDuty) {
         StringBuilder where = new StringBuilder("WHERE u.del_flag='0'");
         java.util.List<Object> args = new java.util.ArrayList<>();
-        applyFilters(where, args, keyword, empStatus, orgId, gender, posts, roles);
+        applyFilters(where, args, keyword, empStatus, orgId, gender, posts, roles, businessDuty);
         if (orgId != null) {
             appendSubtreeFilter(where, orgId);
         }
@@ -105,7 +229,7 @@ public class PersonController {
         for (Map<String, Object> r : rows) {
             r.put("phone_masked", mask(str(r.get("phone_number"))));
         }
-        StringBuilder sb = new StringBuilder("﻿工号,姓名,性别,手机号,部门,岗位,角色,状态,员工卡\r\n");
+        StringBuilder sb = new StringBuilder("﻿工号,姓名,性别,手机号,部门,岗位,角色,业务职责,状态,员工卡\r\n");
         for (Map<String, Object> r : rows) {
             sb.append(csv(str(r.get("job_no")))).append(',')
               .append(csv(str(r.get("name")))).append(',')
@@ -114,6 +238,7 @@ public class PersonController {
               .append(csv(str(r.get("org_name")))).append(',')
               .append(csv(str(r.get("posts")))).append(',')
               .append(csv(str(r.get("roles")))).append(',')
+              .append(csv(str(r.get("business_duties")))).append(',')
               .append(csv(str(r.get("emp_status")))).append(',')
               .append(csv(str(r.get("card_no")))).append("\r\n");
         }
@@ -127,11 +252,12 @@ public class PersonController {
 
     /** 列表/导出共用 SELECT。 */
     private String selectSql() {
-        return "SELECT u.user_id, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
-            "  u.phone_number, u.org_id, d.org_name, e.emp_status, e.emp_type, " +
+        return "SELECT u.user_id, u.user_id::text AS user_id_text, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
+            "  u.status AS account_status, u.phone_number, u.org_id, d.org_name, e.emp_status, e.emp_type, " +
             "  e.hire_date, e.card_no, e.is_dorm, " +
             "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
-            "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles " +
+            "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles, " +
+            "  (SELECT string_agg(CASE d.duty_code WHEN 'SALES' THEN '业务员' WHEN 'FOLLOWER' THEN '跟单员' WHEN 'PURCHASER' THEN '采购员' WHEN 'PLANNER' THEN '计划员' WHEN 'WAREHOUSE' THEN '仓管员' WHEN 'QUALITY' THEN '质检员' END, '、' ORDER BY d.duty_code) FROM sys_user_business_duty d WHERE d.user_id=u.user_id) AS business_duties " +
             "FROM sys_user u " +
             "LEFT JOIN sys_person_ext e ON u.user_id=e.user_id " +
             "LEFT JOIN sys_org d ON u.org_id=d.org_id ";
@@ -271,7 +397,7 @@ public class PersonController {
 
     /** 组装筛选条件（列表/导出共用）。 */
     private void applyFilters(StringBuilder where, java.util.List<Object> args,
-                              String keyword, String empStatus, Long orgId, String gender, String posts, String roles) {
+                              String keyword, String empStatus, Long orgId, String gender, String posts, String roles, String businessDuty) {
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND (u.user_name LIKE ? OR u.nick_name LIKE ? OR u.phone_number LIKE ?)");
             String kw = "%" + keyword.trim() + "%";
@@ -287,6 +413,10 @@ public class PersonController {
         if (roles != null && !roles.isBlank()) {
             where.append(" AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id AND r.role_name LIKE ?)");
             args.add("%" + roles.trim() + "%");
+        }
+        if (businessDuty != null && !businessDuty.isBlank() && BUSINESS_DUTIES.containsKey(businessDuty)) {
+            where.append(" AND EXISTS (SELECT 1 FROM sys_user_business_duty bd WHERE bd.user_id=u.user_id AND bd.duty_code=?)");
+            args.add(businessDuty);
         }
     }
 
@@ -331,6 +461,8 @@ public class PersonController {
             "SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, userId);
         row.put("postIds", postIds);
         row.put("roleIds", roleIds);
+        row.put("businessDuties", jdbcTemplate.queryForList(
+            "SELECT duty_code FROM sys_user_business_duty WHERE user_id=? ORDER BY duty_code", String.class, userId));
         return R.ok(row);
     }
 
@@ -498,6 +630,7 @@ public class PersonController {
         }
         // 先清关联行（含角色占用），再删本体
         jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
+        jdbcTemplate.update("DELETE FROM sys_user_business_duty WHERE user_id=?", userId);
         jdbcTemplate.update("DELETE FROM sys_user_post WHERE user_id=?", userId);
         jdbcTemplate.update("DELETE FROM sys_user_menu_config WHERE user_id=?", userId);
         jdbcTemplate.update("DELETE FROM sys_user_workbench WHERE user_id=?", userId);
@@ -559,6 +692,8 @@ public class PersonController {
             "SELECT post_id::text FROM sys_user_post WHERE user_id=? ORDER BY post_id",String.class,userId));
         snapshot.put("角色 ID",jdbcTemplate.queryForList(
             "SELECT role_id::text FROM sys_user_role WHERE user_id=? ORDER BY role_id",String.class,userId));
+        snapshot.put("业务职责",jdbcTemplate.queryForList(
+            "SELECT CASE duty_code WHEN 'SALES' THEN '业务员' WHEN 'FOLLOWER' THEN '跟单员' WHEN 'PURCHASER' THEN '采购员' WHEN 'PLANNER' THEN '计划员' WHEN 'WAREHOUSE' THEN '仓管员' WHEN 'QUALITY' THEN '质检员' END FROM sys_user_business_duty WHERE user_id=? ORDER BY duty_code",String.class,userId));
         return snapshot;
     }
 
@@ -608,6 +743,9 @@ public class PersonController {
     private void saveRelations(Long userId, Map<String, Object> body) {
         jdbcTemplate.update("DELETE FROM sys_user_post WHERE user_id=?", userId);
         jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
+        // 职责也是人员的多值关联，必须先清理旧值再重建，避免编辑未变更职责时触发联合主键冲突。
+        // Business duties are multi-value person relations; clear them before rebuilding to avoid duplicate keys.
+        jdbcTemplate.update("DELETE FROM sys_user_business_duty WHERE user_id=?", userId);
         if (body.get("postIds") instanceof List<?> posts) {
             for (Object p : posts) {
                 jdbcTemplate.update("INSERT INTO sys_user_post (user_id, post_id) VALUES (?,?)", userId, Long.valueOf(p.toString()));
@@ -616,6 +754,16 @@ public class PersonController {
         if (body.get("roleIds") instanceof List<?> roles) {
             for (Object r : roles) {
                 jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?,?)", userId, Long.valueOf(r.toString()));
+            }
+        }
+        Object rawDuties = body.get("businessDuties");
+        if (rawDuties != null && !(rawDuties instanceof List<?>)) throw new ServiceException("业务职责格式无效");
+        if (rawDuties instanceof List<?> duties) {
+            Set<String> unique = new HashSet<>();
+            for (Object duty : duties) {
+                String code = duty == null ? "" : duty.toString();
+                if (!BUSINESS_DUTIES.containsKey(code) || !unique.add(code)) throw new ServiceException("业务职责无效或重复");
+                jdbcTemplate.update("INSERT INTO sys_user_business_duty(user_id,duty_code) VALUES (?,?)", userId, code);
             }
         }
     }

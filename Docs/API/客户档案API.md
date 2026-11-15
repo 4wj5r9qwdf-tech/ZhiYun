@@ -18,7 +18,7 @@
 | `customer_category_counts` | `system:customer:list` | 只读统计 |
 | `customer_get` | `system:customer:list` | 详情；无编辑权限时联系方式脱敏 |
 | `customer_check_duplicate` | `system:customer:list` | 只读同名检查，仅提醒 |
-| `customer_sales_options` | `system:customer:list` | 只读业务员及组织/岗位/小组选项 |
+| `customer_sales_options` | `system:customer:list` | 只读具有业务员职责的在职人员及组织/岗位/小组选项 |
 | `customer_options` | `system:customer:list` | 只读启用客户选项 |
 | `customer_create` | `system:customer:add` | 写；先展示客户、联系人、地址、标签并确认 |
 | `customer_update` | `system:customer:edit` | 写；先展示完整变更并确认 |
@@ -33,7 +33,7 @@
 | `GET /system/customer/category-counts` | 无 | `system:customer:list` | 只读幂等；无副作用；无需审批 |
 | `GET /system/customer/{id}` | 客户详情、联系人、地址、标签 | `system:customer:list` | 只读幂等；按 edit 权限脱敏；无需审批 |
 | `GET /system/customer/duplicates?name=...&id=0` | 同名数量；`id` 排除当前记录 | `system:customer:list` | 只读幂等；无副作用；无需审批 |
-| `GET /system/customer/sales-options` | 业务员、组织、岗位、小组筛选数据 | `system:customer:list` | 只读幂等；返回非敏感人员信息；无需审批 |
+| `GET /system/customer/sales-options` | 具有业务员职责的在职人员、组织/岗位/小组筛选数据 | `system:customer:list` | 只读幂等；返回非敏感人员信息；无需审批 |
 | `GET /system/customer/options` | 启用客户选项 | `system:customer:list` | 只读幂等；无副作用；无需审批 |
 | `POST /system/customer` | 新增客户及联系人/地址/标签 | `system:customer:add` | 非幂等；写主子表及审计；需员工确认 |
 | `PUT /system/customer/{id}` | 更新主档并整体替换联系人、地址、标签集合 | `system:customer:edit` | 目标状态幂等、仍写审计；需员工确认 |
@@ -59,7 +59,7 @@
 
 `contacts` 和 `addresses` 可省略或为空；每类最多100条。联系人姓名/电话必填；每客户最多一个默认联系人。地址用途及详细地址必填；用途包含“样衣”时收件人和电话必填；同一用途最多一个默认地址。地区编码必须有效；原有停用地区或无法匹配的历史手填值可保留原样，不能把停用编码新增给其他客户/地址。
 
-成功响应示例：`{"code":200,"msg":"操作成功","data":31001}`。错误包括必填/格式错误、无效业务员或标签、地区编码停用或不存在、重复默认项、客户被业务引用。
+成功响应示例：`{"code":200,"msg":"操作成功","data":31001}`。错误包括必填/格式错误、未设置业务员职责或非在职人员、无效标签、地区编码停用或不存在、重复默认项、客户被业务引用。
 
 ### 写操作机器契约
 

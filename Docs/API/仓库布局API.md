@@ -1,7 +1,7 @@
 # 仓库布局 API / MCP 契约
 
 > 功能英文名：`warehouse_layout`；位置数据表：`inv_warehouse_location`；用户验收：2026-11-05 通过。
-> REST：已实现。MCP：只读、位置 CRUD、状态和规则维护工具均已接入 `/mcp`；CSV/批量导入工具未注册。后端构建并重启成功；本轮未做认证 MCP 客户端工具发现烟测。
+> REST：已实现。MCP：只读、位置 CRUD、状态、规则维护和逐条结果的批量新增均已接入 `/mcp`，本轮 `tools/list` 已发现。CSV 文件仍由调用方解析为位置对象数组；批量写入逐条提交，允许部分成功。
 > 库区/货架/货位是一个仓库布局功能内的三级位置；`location_level` 分别为 1/2/3。AGV 字段只记录能力及外部映射，本功能不执行调度。
 
 ## 1. 通用约定
@@ -21,12 +21,13 @@
 | `warehouse_layout_get` | `inventory:location:query` | 已注册，只读 |
 | `warehouse_layout_next_code` | `inventory:location:add` | 已注册，只读建议 |
 | `warehouse_layout_create` | `inventory:location:add` | 已注册，写；调用前确认 |
+| `warehouse_layout_batch_create` | `inventory:location:add` | 已注册，最多1000条逐条新增；部分成功；调用前确认 |
 | `warehouse_layout_update` | `inventory:location:edit` | 已注册，写；调用前确认 |
 | `warehouse_layout_set_status` | `inventory:location:edit` | 已注册，写；调用前确认 |
 | `warehouse_layout_delete` | `inventory:location:remove` | 已注册，写；调用前确认 |
 | `warehouse_layout_set_code_rule` | `system:config:edit` | 已注册，写；调用前确认 |
 
-未注册工具：`warehouse_layout_import`。当前 CSV 导入由页面读取文件并逐条调用新增 REST，不存在独立服务端批量导入端点，MCP 暂不模拟批量写入。
+当前没有文件上传型 `warehouse_layout_import` 工具或 REST 批量端点。MCP 的 `warehouse_layout_batch_create` 接收调用方解析后的规范位置对象数组，逐条复用单条新增控制器，按页面行为返回成功数、失败数及逐行原因；已成功行不会随其他行失败而回滚。
 
 ## 3. REST 接口
 
@@ -103,7 +104,7 @@
 
 常见业务错误包括仓库停用/不存在、父级跨仓或层级不符、父级停用、编码重复、父子状态冲突、仍有子级或已被单据引用。保留服务端中文错误原因，不自动改码或递归删除。
 
-CSV 导入由前端解析并逐条调用 `POST /system/warehouse-location`，部分失败可能留下已成功记录；这不是事务型批量导入 API。Skill 仅可在 MCP 注册批量写工具后执行导入。
+CSV 文件由调用方解析成规范位置对象后，可调用 `warehouse_layout_batch_create`。每一行分别执行仓库/父级/层级/编码校验、事务和业务审计；行与行之间不组成单一事务，因此可能部分成功。返回结果会标出每行的最终编码或失败原因；连接异常行应先查询核实，不能盲目重试。
 
 ## 权限目录与初始化（2026-11-05）
 

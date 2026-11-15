@@ -4,7 +4,8 @@
  * 内容区按子路由渲染：'' → SystemIndex(功能卡片)，'company' → Company(公司档案)
  * 左侧导航和顶栏常驻，子页面切换不丢导航。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { approvalTodoCount } from '../utils/approvalTodo'
 import { useRouter, useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import * as AntIcons from '@ant-design/icons-vue'
@@ -15,6 +16,11 @@ import { useTabsStore } from '../store/tabs'
 const router = useRouter()
 const route = useRoute()
 const tabsStore = useTabsStore()
+const approvalCount = ref(0)
+let approvalTimer: ReturnType<typeof setInterval> | undefined
+async function refreshApprovalCount() { try { approvalCount.value = await approvalTodoCount() } catch { /* 保留上次结果。 */ } }
+onMounted(() => { void refreshApprovalCount(); approvalTimer = setInterval(refreshApprovalCount, 60000) })
+onBeforeUnmount(() => { if (approvalTimer) clearInterval(approvalTimer) })
 
 // 左侧模块导航（目录统一维护在 config/modules.ts）
 const modules = visibleModules()
@@ -23,6 +29,7 @@ const modules = visibleModules()
 const Icon = (name: string) => (AntIcons as any)[name]
 
 const activeModule = computed(() => {
+  if (route.path.startsWith('/approve')) return 'approve'
   if (route.path.startsWith('/order')) return 'order'
   if (route.path.startsWith('/person')) return 'person'
   if (route.path.startsWith('/property')) return 'property'
@@ -37,6 +44,7 @@ function navModule(key: string) {
   else if (key === 'system') router.push({ name: 'SystemIndex' })
   else if (key === 'person') router.push({ name: 'PersonIndex' })
   else if (key === 'order') router.push({ name: 'OrderIndex' })
+  else if (key === 'approve') router.push({ name: 'ApprovalIndex' })
   else if (key === 'property') router.push({ name: 'PropertyIndex' })
   else if (key === 'stock') router.push({ name: 'StockIndex' })
   else if (key === 'rd') router.push({ name: 'RAndDIndex' })
@@ -67,6 +75,7 @@ function closeTab(name: string) {
 
 // 当前所在模块的首页路由（关完所有 tab 回这里）
 const moduleHomeRoute = computed(() => {
+  if (route.path.startsWith('/approve')) return 'ApprovalIndex'
   if (route.path.startsWith('/order')) return 'OrderIndex'
   if (route.path.startsWith('/person')) return 'PersonIndex'
   if (route.path.startsWith('/property')) return 'PropertyIndex'
@@ -118,7 +127,7 @@ function menuAction(action: string) {
         :class="{ active: activeModule === m.key }"
         @click="navModule(m.key)"
       >
-        <component :is="Icon(m.icon)" class="ico" />
+        <a-badge :count="m.key === 'approve' ? approvalCount : 0" :overflow-count="99"><component :is="Icon(m.icon)" class="ico" /></a-badge>
         <span class="lbl">{{ m.label }}</span>
       </div>
     </aside>
@@ -175,7 +184,7 @@ function menuAction(action: string) {
 .nav-item .lbl { font-size: 11px; }
 
 .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 20px; }
+.content { flex: 1; overflow: auto; background: #F5F7FA; padding: 16px 12px; }
 
 /* 多标签页 */
 .tab-bar { display: flex; align-items: center; gap: 4px; background: #fff; border-bottom: 1px solid #E5E8EF; padding: 6px 12px 0; flex-shrink: 0; overflow-x: auto; }

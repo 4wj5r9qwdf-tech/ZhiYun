@@ -53,33 +53,58 @@ public class ProfileController {
         return R.ok(new java.util.LinkedHashSet<>(cn.dev33.satoken.stp.StpUtil.getPermissionList()));
     }
 
-    /**
-     * 通知列表（铃铛下拉，读 sys_message 表）。
-     */
+    /** 通知按完整接收人编号匹配；公共消息由每个人分别确认已读。 */
     @GetMapping("/messages")
     public R<List<Map<String, Object>>> messages() {
         Long userId = LoginHelper.getUserId();
-        // update_by=0 未读，=用户ID 已读（RuoYi 已读约定）；send_user_ids 或 create_by 命中本人
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT message_id, title, message, type, create_time, " +
-            "  CASE WHEN update_by IS NULL OR update_by=0 THEN '0' ELSE '1' END AS read_flag " +
-            "FROM sys_message " +
-            "WHERE send_user_ids LIKE ? OR create_by=? " +
-            "ORDER BY create_time DESC LIMIT 50", "%" + userId + "%", userId);
-        return R.ok(rows);
+        return R.ok(jdbcTemplate.queryForList(
+            "SELECT m.message_id, m.title, m.message, m.type, m.category, m.path, m.create_time, " +
+            "CASE WHEN r.user_id IS NULL THEN '0' ELSE '1' END AS read_flag " +
+            "FROM sys_message m LEFT JOIN sys_message_receipt r ON r.message_id=m.message_id AND r.user_id=? " +
+            "WHERE (m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),','))) " +
+            "AND COALESCE(m.message,'') NOT LIKE '%欢迎登录 RuoYi-Vue-Plus 后台管理系统' " +
+            "ORDER BY m.create_time DESC,m.message_id DESC LIMIT 50", userId, userId.toString()));
     }
 
-    /**
-     * 通知未读数（铃铛角标）。
-     */
+    /** 未读统计使用与消息列表相同的人员范围，不能按发送人或编号子串匹配。 */
     @GetMapping("/messages/unread")
     public R<Long> unread() {
         Long userId = LoginHelper.getUserId();
         Long count = jdbcTemplate.queryForObject(
-            "SELECT count(*) FROM sys_message " +
-            "WHERE (send_user_ids LIKE ? OR create_by=?) AND (update_by IS NULL OR update_by=0)",
-            Long.class, "%" + userId + "%", userId);
+            "SELECT count(*) FROM sys_message m WHERE " +
+            "(m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),','))) " +
+            "AND COALESCE(m.message,'') NOT LIKE '%欢迎登录 RuoYi-Vue-Plus 后台管理系统' " +
+            "AND NOT EXISTS (SELECT 1 FROM sys_message_receipt r WHERE r.message_id=m.message_id AND r.user_id=?)",
+            Long.class, userId.toString(), userId);
         return R.ok(count == null ? 0L : count);
+    }
+
+    /** 只能标记本人收到的消息；其他人的消息不存在于本人的可操作范围。 */
+    @PostMapping("/messages/{id}/read")
+    public R<Void> readMessage(@PathVariable Long id) {
+        Long userId = LoginHelper.getUserId();
+        int count = jdbcTemplate.update(
+            "INSERT INTO sys_message_receipt(message_id,user_id) " +
+            "SELECT m.message_id,? FROM sys_message m WHERE m.message_id=? " +
+            "AND (m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),','))) " +
+            "ON CONFLICT (message_id,user_id) DO NOTHING", userId, id, userId.toString());
+        if (count == 0) {
+            Integer visible = jdbcTemplate.queryForObject("SELECT count(*) FROM sys_message m WHERE m.message_id=? " +
+                "AND (m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),',')))", Integer.class, id, userId.toString());
+            if (visible == null || visible == 0) return R.fail("通知不存在或无权查看");
+        }
+        return R.ok();
+    }
+
+    /** 一键已读仅影响当前人员可接收的通知，不改变审批待办。 */
+    @PostMapping("/messages/read-all")
+    public R<Void> readAllMessages() {
+        Long userId = LoginHelper.getUserId();
+        jdbcTemplate.update("INSERT INTO sys_message_receipt(message_id,user_id) " +
+            "SELECT m.message_id,? FROM sys_message m WHERE " +
+            "(m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),','))) " +
+            "ON CONFLICT (message_id,user_id) DO NOTHING", userId, userId.toString());
+        return R.ok();
     }
 
     /**

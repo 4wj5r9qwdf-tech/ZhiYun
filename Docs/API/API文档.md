@@ -1,7 +1,7 @@
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-11-05
+> 更新日期：2026-11-08
 > 说明：功能 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
 
 ---
@@ -49,20 +49,57 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 功能分组 | 英文键 | 分组文档 | 状态 | 验收日期 |
 |---|---|---|---|---|
+| 标签管理 | `tag` | [标签管理API.md](标签管理API.md) | 导航模块→功能→分组已实现，开发库及前后端构建完成，待用户验收；暂无独立 MCP 管理工具 | — |
 | 计量单位 | `unit` | [计量单位API.md](计量单位API.md) | REST/MCP已实现；工具发现、单位读写及低权限拒绝已验证 | 用户验收通过（2026-11-05） |
-| 分类管理 | `category` | [分类管理API.md](分类管理API.md) | 体系与节点REST/MCP已实现并完成发现/读写验证；待用户验收 | 未验收 |
-| 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST 已实现；MCP 工具未注册 | 2026-11-04 |
-| 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
-| 公司档案 | `company` | [公司档案API.md](公司档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
-| 组织架构 | `org` | [组织架构API.md](组织架构API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
-| 岗位管理 | `post` | [岗位管理API.md](岗位管理API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
-| 建筑档案 | `building` | [建筑档案API.md](建筑档案API.md) | REST 已实现；MCP 工具已构建并随服务重启，客户端发现待核对 | 2026-11-05 |
-| 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST 已实现；MCP 查询与写工具已接入并随后端构建重启，CSV 工具未注册 | 2026-11-05 |
-| 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST 已实现；MCP 查询/写入工具已接入并随后端构建重启，批量导入工具未注册 | 2026-11-05 |
+| 分类管理 | `category` | [分类管理API.md](分类管理API.md) | 体系与节点 REST/MCP 已实现，已有发现及读写验证记录 | 2026-11-06 用户验收通过 |
+| 颜色管理 | `color` | [颜色管理API.md](颜色管理API.md) | 用户验收通过（2026-11-07）；8个MCP工具发现，目录/选项/编码建议及颜色CRUD/启停真实调用通过 | 2026-11-07 |
+| 物料档案 | `material` | [物料档案API.md](物料档案API.md) | 一期、二期用户验收通过；运行时发现 9/9 MCP 工具，物料列表、业务选项、属性模板已实调，写工具未实调 | 2026-11-13 |
+| 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST/MCP 已实现；本轮补齐 9 个工具，运行时验证见测试清单 | 2026-11-04 |
+| 尺码组管理 | `size_group` | [尺码组管理API.md](尺码组管理API.md) | REST/MCP 已实现；本轮补齐 8 个工具，运行时验证见测试清单 | 2026-11-04 |
+| 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 公司档案 | `company` | [公司档案API.md](公司档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 组织架构 | `org` | [组织架构API.md](组织架构API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 岗位管理 | `post` | [岗位管理API.md](岗位管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 建筑档案 | `building` | [建筑档案API.md](建筑档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；CSV 导入没有独立批量 API | 2026-11-05 |
+| 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；MCP 批量新增按行提交并返回部分成功结果 | 2026-11-05 |
 
 ---
 
 ## 二、接口速查（每接口一行）
+
+### 颜色管理 color（`/system/color`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/color/list` | 查询颜色管理目录 | 只读 |
+| `GET /system/color/options` | 查询业务颜色选项，停用项带 `selectable=false` | 只读 |
+| `GET /system/color/next-code` | 获取下一颜色编码可编辑建议 | 只读 |
+| `POST /system/color` | 新增颜色 | 写 |
+| `PUT /system/color/{id}` | 修改颜色名称、色值、排序和备注 | 写 |
+| `PUT /system/color/{id}/status` | 启用或停用颜色 | 写 |
+| `DELETE /system/color/{id}` | 删除未被外键引用的颜色 | 写 |
+| `POST /system/color/code-rule` | 修改颜色编码自动生成参数 | 写 |
+
+> 权限码：`system:color:list/add/edit/remove`；编码规则复用 `system:config:edit`。MCP 工具：`color_list/options/next_code/create/update/set_status/delete/set_code_rule`；见[完整颜色管理契约](颜色管理API.md)。
+
+### 物料档案 material（`/inventory/material`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /inventory/material/list` | 按员工分类权限查询物料目录 | 只读 |
+| `GET /inventory/material/category-options` | 查询当前员工可见分类及树路径节点 | 只读 |
+| `GET /inventory/material/default-category` | 查询当前员工可见范围内的页面默认分类类型 | 只读 |
+| `GET /inventory/material/options` | 查询授权范围内启用物料 | 只读 |
+| `GET /inventory/material/spec-templates` | 查询规格模板目录及字段定义 | 只读 |
+| `GET /inventory/material/next-code` | 获取可编辑物料编码建议 | 只读 |
+| `POST /inventory/material` | 新增物料档案及颜色关联 | 写 |
+| `PUT /inventory/material/{id}` | 修改物料档案及颜色集合 | 写 |
+| `PUT /inventory/material/{id}/status` | 启用或停用物料 | 写 |
+| `DELETE /inventory/material/{id}` | 删除无业务引用物料 | 写 |
+| `POST /system/config/material-code-rule` | 保存物料编码规则 | 写 |
+
+> 权限码：`inventory:material:list/add/edit/remove`；编码及默认分类参数复用 `system:config:edit`。MCP 工具：`material_list/material_category_options/material_spec_templates/material_options/material_next_code/material_create/material_update/material_set_status/material_delete`；运行时已发现 9/9 工具，分类数据范围由服务端执行。物料档案一期、二期均已通过用户验收；详见[物料档案 API](物料档案API.md)。
 
 ### 组织架构 org（`/system/org` 复用；档案类型 org_category 由用户自选，仅展示标识）
 
@@ -90,7 +127,22 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | `POST /system/size-data/size/batch-tags` | 批量替换所选尺码的类型标签；空数组清空标签 | 写 |
 | `POST /system/config/size-code-rule` | 更新自动编码开关、前缀和数字位数 | 写 |
 
-> 权限码：尺码档案 `system:size:list/add/edit/delete`；编码规则 `system:config:edit`。REST 路由已实现；当前未注册到 MCP 动作目录，智能体不可直接调用，见[完整 API 契约](尺码管理API.md)。
+> 权限码：尺码档案 `system:size:list/add/edit/delete`；编码规则 `system:config:edit`。9 个 MCP 工具已在 `SizeMcpTools` 注册，见[完整 API 契约](尺码管理API.md)。
+
+### 尺码组管理 size_group（`/system/size-data/size-group`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/size-data/size-group/list` | 查询尺码组、成员顺序及标签 | 只读 |
+| `GET /system/size-data/size-group/options` | 查询业务选择项及历史成员 | 只读 |
+| `GET /system/config/configKey/system.code.sizeGroup` | 读取固定尺码组编码规则 | 只读 |
+| `POST /system/size-data/size-group` | 新增尺码组 | 写 |
+| `PUT /system/size-data/size-group/{id}` | 修改档案及成员顺序 | 写 |
+| `PUT /system/size-data/size-group/{id}/status` | 启用或停用尺码组 | 写 |
+| `DELETE /system/size-data/size-group/{id}` | 删除尺码组 | 写 |
+| `POST /system/config/size-group-code-rule` | 修改自动编码规则 | 写 |
+
+> 权限码：`system:size-group:list/add/edit/delete`；规则修改使用 `system:config:edit`。8 个 MCP 工具已在 `SizeMcpTools` 注册，见[完整尺码组契约](尺码组管理API.md)。
 
 ### 仓库管理 warehouse（`/system/warehouse`）
 
@@ -124,7 +176,9 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | `GET /system/config/configKey/inventory.warehouseLayout.codeRule` | 读取固定的布局编码规则 | 只读 |
 | `POST /system/config/warehouse-layout-code-rule` | 设置库区/货架/货位编码规则 | 写 |
 
-> 权限码：位置查询 `inventory:location:list/query`，维护 `inventory:location:add/edit/remove`；规则设置 `system:config:edit`。MCP 查询/写入工具均已接入代码；CSV 无专用批量 API，也未提供 MCP 批量工具；见[完整仓库布局契约](仓库布局API.md)。
+> 权限码：位置查询 `inventory:location:list/query`，维护 `inventory:location:add/edit/remove`；规则设置 `system:config:edit`。MCP 支持单条及逐行部分成功的批量新增；见[完整仓库布局契约](仓库布局API.md)。
+
+> 2026-11-07 认证 MCP 会话 `tools/list` 共发现 102 个工具；尺码、尺码组和仓库布局本轮新增的 18 个工具均可发现。本索引已列出的业务 REST 能力均有对应 MCP 工具映射；仓库布局 CSV 文件由调用方解析后可使用逐条提交的批量新增工具。实际调用核验范围见[测试与验收清单](../测试与验收清单.md)。
 
 ### 客户档案 customer_master（`/system/customer`）
 
@@ -137,23 +191,39 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | `POST /system/customer`、`PUT /system/customer/{id}` | 新增、修改 | 写 |
 | `PUT /system/customer/{id}/status`、`DELETE /system/customer/{id}` | 启停、删除未被引用档案 | 写 |
 
-> 权限及联系人脱敏规则见[客户档案 API 契约](客户档案API.md)。MCP 工具已加入代码，待运行时发现核对。
+> 权限及联系人脱敏规则见[客户档案 API 契约](客户档案API.md)。本轮 MCP `tools/list` 已发现客户档案工具；写操作仍须按员工权限及确认要求执行。
+
+### 人员业务职责（`/system/person`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /system/person/business-duty-options` | 查询可多选业务职责代码与名称 | 只读；`system:person:list` |
+| `GET /system/person/{userId}` | 人员详情增加 `businessDuties` 字符串数组 | 只读；沿用人员数据范围 |
+| `POST /system/person`、`PUT /system/person` | 新增/修改请求支持 `businessDuties` 多选数组 | 写；沿用 `system:person:add/edit`，业务审计记录职责前后值 |
+
+一期职责代码：`SALES` 业务员、`FOLLOWER` 跟单员、`PURCHASER` 采购员、`PLANNER` 计划员、`WAREHOUSE` 仓管员、`QUALITY` 质检员。职责仅用于单据责任人候选过滤和服务端引用校验，不授予菜单/操作/数据权限。客户订单业务员、跟单员候选分别按 `SALES`、`FOLLOWER` 过滤；采购单实现时按 `PURCHASER` 过滤，采购操作权限仍单独校验。
+
+客户订单 PO 支持 `offlineDate` 默认下线日期；`GET /order/customer-orders/options` 返回 `offlineLeadDays`，由系统参数 `order.customer.offlineLeadDays` 设置，未设置时为 0 个自然日。前端按 PO 默认交期计算建议日期，允许手动修改，保存后作为订单快照。`POST /system/config/order-offline-lead-days` 接收整数 `days`（0–3650），需要系统参数编辑权限。款式规格行支持 `unitPrice` 加工单价（可空、非负、最多两位小数），服务端以精确十进制计算 `processingAmount`；空单价代表待填写，不等同零。单款单价按件，套装单价按套。订单总额按各规格金额汇总，缺失单价时标记金额未完整。
+
+客户订单 `POST /order/customer-orders/{id}/transition` 支持 `action=unsubmit`（待审核转草稿，需要制单权限，清除需求快照）和 `action=unapprove`（已审核转待审核，需要审核权限，保留需求快照），均要求提交当前 `revision`、符合订单访问范围，并记录业务审计。后续下游单据接入后须在反审核事务中检查有效引用，阻止已执行订单被直接反审核。
+
+客户订单提交和审核不以 BOM 完成作为前置条件；草稿中的用料试算是临时预览。已审核订单可调用 `POST /order/customer-orders/{id}/demand/calculate`，提交当前 `revision`；已有快照时还须明确传入 `recalculate=true`。接口要求订单列表及制单权限和订单数据访问范围；存在有效关联物料需求计划时阻止计算，避免覆盖计划调整。BOM 缺失或用料不完整时返回 `saved=false` 和带缺失原因的 `plans`，不写入正式快照；全部完整时返回 `saved=true`、`plans` 和最新 `order`，事务内归档旧用料快照、保存新快照并记录业务审计。订单列表 `demandState` 区分未算料、已算料、BOM 更新、BOM 不可用和待核对。历史表增量见 `sql/订单算料快照历史_20261114.sql`；独立物料需求计划单的重生成及统一审批联动仍待实现。
 
 ### 公司档案 company（`/system/company`）
 
-列表、详情、OSS 文件引用查询、新增、修改、设置默认公司、软删除接口和权限见[公司档案 API 契约](公司档案API.md)。切换默认公司会影响登录页及首页展示，智能体须在写入前展示影响并取得确认。MCP 工具已加入代码，待运行时发现核对。
+列表、详情、OSS 文件引用查询、新增、修改、设置默认公司、软删除接口和权限见[公司档案 API 契约](公司档案API.md)。切换默认公司会影响登录页及首页展示，智能体须在写入前展示影响并取得确认。本轮 MCP `tools/list` 已发现公司档案工具。
 
 ### 组织架构 org（`/system/org`）
 
-组织树、详情、组织选项、业务管辖查询与全量替换、新增、修改、删除接口及数据范围约束见[组织架构 API 契约](组织架构API.md)。MCP 工具已加入代码，待运行时发现核对。
+组织树、详情、组织选项、业务管辖查询与全量替换、新增、修改、删除接口及数据范围约束见[组织架构 API 契约](组织架构API.md)。本轮 MCP `tools/list` 已发现组织架构工具。
 
 ### 岗位管理 post（`/system/post`）
 
-岗位分页、详情、选项、组织树、新增、修改、启停、批量删除接口及权限见[岗位管理 API 契约](岗位管理API.md)。MCP 工具已加入代码，待运行时发现核对。
+岗位分页、详情、选项、组织树、新增、修改、启停、批量删除接口及权限见[岗位管理 API 契约](岗位管理API.md)。本轮 MCP `tools/list` 已发现岗位管理工具。
 
 ### 建筑档案 building（`/system/building`）
 
-建筑列表、详情、新增、修改和删除接口及权限见[建筑档案 API 契约](建筑档案API.md)。MCP 工具已加入代码，待运行时发现核对。
+建筑列表、详情、新增、修改和删除接口及权限见[建筑档案 API 契约](建筑档案API.md)。本轮 MCP `tools/list` 已发现建筑档案工具。
 
 ---
 
@@ -187,3 +257,6 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 - PUT `/system/country-region/{code}`：修改名称；PUT `/system/country-region/{code}/status`：启停；均需 `system:country:edit`。不提供物理删除。
 - 客户主档与地址分别提交 `country_region_code`；名称 `country_region` 由服务端按编码保存快照。已停用编码仅允许原记录保留；未能唯一匹配的旧手填值可原样保留或清除，修改为其他地区时必须选择有效编码。
 - 客户列表 `country_display` 优先显示标准资料的当前中文名；详情中的 `country_region` 是保存时名称或未匹配旧值。订单目的地和实际发货目的地不读取客户所在地区作为事实。
+
+- [款式档案 API](款式档案API.md)：单款、套装、规格、附件及 MCP 契约。
+- [款式 BOM API](款式BOMAPI.md)：BOM 版本、用料规则、覆盖核对、试算及 MCP。

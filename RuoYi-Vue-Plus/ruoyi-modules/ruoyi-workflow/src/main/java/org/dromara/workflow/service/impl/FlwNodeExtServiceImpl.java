@@ -50,8 +50,8 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
                 "label", "抄送对象",
                 "type", 5,
                 "must", false,
-                "multiple", false,
-                "desc", "设置该节点的抄送办理人"
+                "multiple", true,
+                "desc", "选择节点办理后接收抄送的人员"
             ),
             VariablesEnum.class.getSimpleName(),
             Map.of(

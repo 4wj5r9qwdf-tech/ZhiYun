@@ -28,6 +28,11 @@ export const MODULES: ModuleDef[] = [
 export interface FunctionDef { key: string; title: string; desc: string; icon: string; route: string; module: string; perm?: string }
 
 export const MODULE_FUNCTIONS: FunctionDef[] = [
+  { key: 'approval_definitions', title: '流程定义', desc: '查看审批流程', icon: 'ApartmentOutlined', route: 'ApprovalDefinitions', module: 'approve', perm: 'workflow:definition:list' },
+  { key: 'approval_waiting', title: '我的待办', desc: '查看待处理审批任务', icon: 'ClockCircleOutlined', route: 'ApprovalWaiting', module: 'approve' },
+  { key: 'approval_initiated', title: '我发起的', desc: '查看我提交的审批进度', icon: 'SendOutlined', route: 'ApprovalInitiated', module: 'approve' },
+  { key: 'approval_finished', title: '我的已办', desc: '查看已处理审批任务', icon: 'CheckCircleOutlined', route: 'ApprovalFinished', module: 'approve' },
+  { key: 'approval_bindings', title: '审批对象配置', desc: '配置业务单据使用的审批流程', icon: 'SettingOutlined', route: 'ApprovalBindingManage', module: 'approve', perm: 'system:config:list' },
   { key: 'monitor_online', title: '在线用户', desc: '系统维护查询', icon: 'TeamOutlined', route: 'OnlineUsers', module: 'system', perm: 'monitor:online:list' },
   { key: 'monitor_operlog', title: '系统日志', desc: '系统维护查询', icon: 'AuditOutlined', route: 'OperationLogs', module: 'system', perm: 'system-logs' },
   { key: 'menu-directory', title: '菜单管理', desc: '查看系统维护资料', icon: 'MenuOutlined', route: 'MenuDirectory', module: 'system', perm: 'system:menu:list' },
@@ -42,11 +47,13 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'system_role', title: '角色管理', desc: '权限/数据范围分配', icon: 'SafetyCertificateOutlined', route: 'RoleManage', module: 'system' , perm: 'system:role:list' },
   { key: 'system_template', title: '功能模板', desc: '标准件展览：树/列表/列设置/分页等，后期按需搬', icon: 'LayoutOutlined', route: 'SystemTemplate', module: 'system' , perm: 'system:template:list' },
   { key: 'system_tag', title: '标签管理', desc: '按模块维护标签与常用提示', icon: 'TagsOutlined', route: 'TagManage', module: 'system' , perm: 'system:tag:list' },
+  { key: 'system_color', title: '颜色管理', desc: '维护物料和款式共用颜色', icon: 'BgColorsOutlined', route: 'ColorManage', module: 'system', perm: 'system:color:list' },
   { key: 'system_size', title: '尺码管理', desc: '尺码档案与类型标签', icon: 'ColumnWidthOutlined', route: 'SizeManage', module: 'system', perm: 'system:size:list' },
   { key: 'system_size_group', title: '尺码组管理', desc: '维护尺码组合与顺序', icon: 'GroupOutlined', route: 'SizeGroupManage', module: 'system', perm: 'system:size-group:list' },
   { key: 'system_unit', title: '计量单位', desc: '全局单位档案与固定换算', icon: 'ColumnWidthOutlined', route: 'UnitManage', module: 'system', perm: 'system:unit:list' },
   { key: 'system_category', title: '分类管理', desc: '按业务体系维护多级分类', icon: 'ApartmentOutlined', route: 'CategoryManage', module: 'system', perm: 'system:category:list' },
   { key: 'system_country_region', title: '国家/地区', desc: '维护国家和地区基础资料', icon: 'GlobalOutlined', route: 'CountryRegionManage', module: 'system', perm: 'system:country:list' },
+  { key: 'customer_orders', title: '客户订单', desc: '客户 PO、配码、交期和物料需求', icon: 'FileTextOutlined', route: 'CustomerOrderManage', module: 'order', perm: 'order:customer-order:list' },
   { key: 'customer_master', title: '客户档案', desc: '客户主档/联系人/地址', icon: 'TeamOutlined', route: 'CustomerManage', module: 'order', perm: 'system:customer:list' },
   // 人员模块
   { key: 'person_info', title: '人员信息', desc: '员工档案/建登录账号', icon: 'TeamOutlined', route: 'Person', module: 'person' , perm: 'system:person:list' },
@@ -54,9 +61,12 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'person_post', title: '岗位管理', desc: '裁剪/缝纫/后整等岗位', icon: 'IdcardOutlined', route: 'PostManage', module: 'person' , perm: 'system:post:list' },
   // 物业资产模块
   { key: 'property_building', title: '建筑档案', desc: '厂房/行政楼/宿舍楼', icon: 'ShopOutlined', route: 'BuildingManage', module: 'property' , perm: 'system:building:list' },
+  { key: 'rd_style', title: '款式档案', desc: '维护研发、样衣与订单共用款式', icon: 'TagsOutlined', route: 'StyleManage', module: 'rd', perm: 'rd:style:list' },
+  { key: 'rd_bom', title: '款式 BOM', desc: '维护款式用料、核对颜色尺码并试算需求', icon: 'FileTextOutlined', route: 'StyleBomManage', module: 'rd', perm: 'rd:bom:list' },
   // 库存模块
   { key: 'inventory_warehouse', title: '仓库管理', desc: '维护仓库档案、类型标签与负责人', icon: 'DatabaseOutlined', route: 'WarehouseManage', module: 'stock', perm: 'inventory:warehouse:list' },
   { key: 'inventory_location', title: '仓库布局', desc: '维护库区、货架、货位及所属关系', icon: 'EnvironmentOutlined', route: 'WarehouseLayoutManage', module: 'stock', perm: 'inventory:location:list' },
+  { key: 'inventory_material', title: '物料档案', desc: '维护库存、采购和BOM共用物料资料', icon: 'InboxOutlined', route: 'MaterialManage', module: 'stock', perm: 'inventory:material:list' },
 ]
 
 // 取某模块的功能卡片

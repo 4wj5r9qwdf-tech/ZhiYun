@@ -1,0 +1,12 @@
+BEGIN;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS create_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS create_time timestamptz;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS update_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_time timestamptz;
+COMMENT ON COLUMN rd_style_bom.create_by IS '创建本版本的用户 ID，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.create_time IS '本版本首次保存时间，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.update_by IS '最近一次保存本版本的用户 ID';
+COMMENT ON COLUMN rd_style_bom.release_by IS '发布本版本的用户 ID，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.release_time IS '本版本发布时间，历史版本可能未记录';
+COMMIT;

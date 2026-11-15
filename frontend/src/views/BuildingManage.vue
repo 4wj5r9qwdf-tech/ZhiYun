@@ -222,15 +222,15 @@ onMounted(loadList)
 
     <!-- 筛选（a-input/a-select 统一控件，与人员信息风格一致） -->
     <div class="filter-bar">
-      <a-input v-model:value="keyword" placeholder="搜索编号/名称/地址" allow-clear style="width:200px" @press-enter="loadList" />
-      <a-select v-model:value="buildingType" placeholder="用途类别" allow-clear style="width:120px" @change="loadList">
+      <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索编号/名称/地址" allow-clear style="width:200px" @press-enter="loadList" /></label>
+      <label class="zy-filter-field"><span>用途类别</span><a-select v-model:value="buildingType" placeholder="用途类别" allow-clear style="width:120px" @change="loadList">
         <a-select-option v-for="t in typeOptions" :key="t" :value="t">{{ t }}</a-select-option>
-      </a-select>
-      <a-select v-model:value="statusFilter" placeholder="状态" allow-clear style="width:110px" @change="loadList">
+      </a-select></label>
+      <label class="zy-filter-field"><span>状态</span><a-select v-model:value="statusFilter" placeholder="状态" allow-clear style="width:110px" @change="loadList">
         <a-select-option value="0">在用</a-select-option>
         <a-select-option value="1">闲置</a-select-option>
         <a-select-option value="2">维修</a-select-option>
-      </a-select>
+      </a-select></label>
       <a-button type="primary" @click="loadList">查询</a-button>
       <a-button @click="resetFilter">重置</a-button>
     </div>

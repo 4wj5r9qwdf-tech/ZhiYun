@@ -32,7 +32,7 @@ public class SizeDataController {
   for(Map<String,Object> row:rows) {
    Long id=((Number)row.get("id")).longValue();
    row.put("tagIds",jdbc.queryForList("SELECT tag_id::text FROM sys_tag_relation WHERE module_key=? AND record_id=?",String.class,kind.equals("size")?"size":"size_group",id));
-   row.put("tagOptions",jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,(t.status<>'0') AS disabled FROM sys_tag_relation r JOIN sys_tag t ON t.tag_id=r.tag_id WHERE r.module_key=? AND r.record_id=?",kind.equals("size")?"size":"size_group",id));
+   row.put("tagOptions",jdbc.queryForList("SELECT t.tag_id::text AS value,t.tag_name AS label,g.group_name AS \"groupName\",(t.status<>'0') AS disabled FROM sys_tag_relation r JOIN sys_tag t ON t.tag_id=r.tag_id JOIN sys_tag_group g ON g.group_id=t.tag_group_id WHERE r.module_key=? AND r.record_id=?",kind.equals("size")?"size":"size_group",id));
    if(kind.equals("size-group")) row.put("items",jdbc.queryForList("SELECT s.*,i.sort_order AS group_order FROM sys_size_group_item i JOIN sys_size s ON s.id=i.size_id WHERE i.group_id=? ORDER BY i.sort_order",id));
   }
   return R.ok(rows);

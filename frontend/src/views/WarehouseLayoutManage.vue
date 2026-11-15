@@ -479,9 +479,9 @@ onMounted(async () => { loadColState(); await Promise.all([loadOptions(), loadCo
       </a-tabs>
       <div class="location-context"><span>建档顺序：仓库 <span class="hierarchy-arrow">›</span> 库区 <span class="hierarchy-arrow">›</span> 货架 <span class="hierarchy-arrow">›</span> 货位</span><span>当前查看：{{ scopeLabel }} · {{ activeTypeName }}</span></div>
       <div class="head-filters">
-        <a-select v-model:value="selectedWarehouseId" allow-clear show-search option-filter-prop="label" :options="warehouses.map(item => ({ label: `${item.warehouse_code} / ${item.warehouse_name}`, value: item.warehouse_id }))" placeholder="全部仓库" style="width: 260px" @change="onWarehouseChange" />
-        <a-input v-model:value="keyword" allow-clear :placeholder="`搜索${activeTypeName}编码、名称或上级名称`" style="width: 280px" @press-enter="reload" />
-        <a-select v-model:value="statusFilter" allow-clear placeholder="状态" style="width: 130px" :options="statusOptions" />
+        <label class="zy-filter-field"><span>仓库</span><a-select v-model:value="selectedWarehouseId" allow-clear show-search option-filter-prop="label" :options="warehouses.map(item => ({ label: `${item.warehouse_code} / ${item.warehouse_name}`, value: item.warehouse_id }))" placeholder="全部仓库" style="width: 260px" @change="onWarehouseChange" /></label>
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" allow-clear :placeholder="`搜索${activeTypeName}编码、名称或上级名称`" style="width: 280px" @press-enter="reload" /></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="statusFilter" allow-clear placeholder="状态" style="width: 130px" :options="statusOptions" /></label>
       </div>
       </div>
     </template>

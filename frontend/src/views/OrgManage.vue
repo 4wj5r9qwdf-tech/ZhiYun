@@ -63,7 +63,7 @@ const ALL_COLUMNS = [
   { title: '位置', key: 'location', width: 160 },
   { title: '管辖', key: 'manages', width: 80 },
   { title: '负责人', dataIndex: 'leader', key: 'leader', width: 110 },
-  { title: '电话', dataIndex: 'phone', key: 'phone', width: 130 },
+  { title: '部门电话', dataIndex: 'phone', key: 'phone', width: 130 },
   { title: '状态', key: 'status', width: 100 },
   { title: '排序', dataIndex: 'orderNum', key: 'orderNum', width: 80 },
 ]
@@ -319,7 +319,7 @@ function typeColorOf(t: string) { return t === '小组' ? 'green' : t === '科�
 const persons = ref<any[]>([])
 const personNameMap = computed(() => {
   const m: Record<string, string> = {}
-  for (const p of persons.value) m[String(p.user_id)] = String(p.nick_name || p.user_name || '')
+  for (const p of persons.value) m[String(p.user_id_text ?? p.user_id)] = String(p.name || p.job_no || '')
   return m
 })
 function personLabel(id: any) {
@@ -333,7 +333,7 @@ async function loadPersons() {
   } catch { /* ignore */ }
 }
 
-function personFilter(input: string, option: any) { return String(option.children).includes(input) }
+function personFilter(input: string, option: any) { return String(option.label || '').toLowerCase().includes(input.toLowerCase()) }
 
 const showDlg = ref(false)
 const isEdit = ref(false)
@@ -548,18 +548,18 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
     <!-- 页头行：← 组织架构 + 查询条件（搜索/类型/状态） -->
     <div class="page-header">
       <div class="head-filters">
-        <a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px" @press-enter="loadTree">
+        <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" placeholder="搜索组织名称" allow-clear style="width:200px" @press-enter="loadTree">
           <template #prefix><SearchOutlined style="color:#86909C" /></template>
-        </a-input>
-        <a-select v-model:value="filterCategory" allow-clear placeholder="类型" style="width:110px" @change="loadTree">
+        </a-input></label>
+        <label class="zy-filter-field"><span>类型</span><a-select v-model:value="filterCategory" allow-clear placeholder="类型" style="width:110px" @change="loadTree">
           <a-select-option value="部门">部门</a-select-option>
           <a-select-option value="科室">科室</a-select-option>
           <a-select-option value="小组">小组</a-select-option>
-        </a-select>
-        <a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px" @change="loadTree">
+        </a-select></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="filterStatus" allow-clear placeholder="状态" style="width:100px" @change="loadTree">
           <a-select-option value="0">启用</a-select-option>
           <a-select-option value="1">停用</a-select-option>
-        </a-select>
+        </a-select></label>
       </div>
     </div>
 
@@ -697,30 +697,30 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
       :keyboard="false"
       v-model:open="showDlg"
       :title="isEdit ? '编辑组织' : '新增组织'"
-      width="640px"
+      width="800px"
       :confirm-loading="saving"
       ok-text="保存"
       cancel-text="取消"
       @ok="save"
     >
-      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
+      <a-form ref="formRef" :model="form" :rules="rules" layout="vertical" class="org-editor">
         <a-row :gutter="12">
-          <a-col :span="12">
+          <a-col :span="24"><div class="org-section">基本信息</div></a-col>
+          <a-col :xs="24" :sm="8">
             <a-form-item label="组织名称" name="orgName">
               <a-input v-model:value="form.orgName" :maxlength="30" placeholder="请输入" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="档案类型">
               <a-select v-model:value="form.orgCategory">
                 <a-select-option value="部门">部门</a-select-option>
                 <a-select-option value="科室">科室</a-select-option>
                 <a-select-option value="小组">小组</a-select-option>
               </a-select>
-              <div class="form-tip">仅作档案标识与展示区分，不影响数据权限逻辑</div>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="上级组织">
               <a-tree-select
                 v-model:value="form.parentId"
@@ -734,26 +734,28 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
               />
             </a-form-item>
           </a-col>
+          <a-col :span="24"><div class="org-section">所在位置</div></a-col>
           <!-- 所在位置（渐进式：选楼→选层→填车间/房间，选到哪段算哪段，均可不填） -->
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="所在建筑（哪栋楼，可不填）">
               <a-select v-model:value="form.buildingId" allow-clear placeholder="请选择建筑（建筑档案）">
                 <a-select-option v-for="b in buildings" :key="Number(b.plantId)" :value="Number(b.plantId)">{{ b.plantName }}</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
-          <a-col v-if="form.buildingId" :span="12">
+          <a-col v-if="form.buildingId" :xs="24" :sm="5">
             <a-form-item label="楼层（几层，可不填）">
               <a-input-number v-model:value="form.floor" :min="1" :max="99" style="width:100%" placeholder="如 3" />
             </a-form-item>
           </a-col>
-          <a-col :span="24">
+          <a-col :xs="24" :sm="form.buildingId ? 11 : 16">
             <a-form-item label="位置（车间/房间，可不填；如 裁剪车间 / 302室）">
               <a-input v-model:value="form.location" :maxlength="100" placeholder="选到哪填到哪，不强制" />
               <div v-if="composeLocation()" class="loc-preview">📍 {{ composeLocation() }}</div>
             </a-form-item>
           </a-col>
           <!-- 业务管辖（管理部门管哪些部门，与组织树无关，可不填） -->
+          <a-col :span="24"><div class="org-section">管理与联系</div></a-col>
           <a-col :span="24">
             <a-form-item label="管辖范围（本部门管理哪些部门，可不填；如生产部管三个车间）">
               <a-tree-select
@@ -770,33 +772,32 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
               <div v-if="managedIds.length" class="loc-preview">🤝 管辖 {{ managedIds.length }} 个部门（业务管理关系，不改变组织树层级）</div>
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="12" :sm="4">
             <a-form-item label="排序">
               <a-input-number v-model:value="form.orderNum" :min="0" style="width:100%" placeholder="数字越小越靠前" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="24" :sm="8">
             <a-form-item label="负责人">
-              <a-select v-model:value="form.leader" allow-clear placeholder="选人员（可空）" show-search :filter-option="personFilter">
-                <a-select-option v-for="p in persons" :key="String(p.user_id)" :value="String(p.user_id)">{{ p.nick_name || p.user_name }}（{{ p.user_name }}）</a-select-option>
-              </a-select>
+              <a-select v-model:value="form.leader" allow-clear placeholder="选择负责人（可空）" show-search :filter-option="personFilter" :options="persons.filter(p => p.account_status === '0').map(p => ({ value: String(p.user_id_text ?? p.user_id), label: `${p.name || p.job_no}（${p.job_no}）` }))" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="电话">
-              <a-input v-model:value="form.phone" :maxlength="11" placeholder="请输入" />
+          <a-col :xs="24" :sm="6">
+            <a-form-item label="部门电话">
+              <a-input v-model:value="form.phone" :maxlength="11" placeholder="请输入部门电话" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="邮箱">
-              <a-input v-model:value="form.email" :maxlength="50" placeholder="请输入" />
+          <a-col :xs="24" :sm="6">
+            <a-form-item label="部门邮箱">
+              <a-input v-model:value="form.email" :maxlength="50" placeholder="请输入部门公共邮箱" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :xs="12" :sm="4">
             <a-form-item label="状态">
               <a-switch v-model:checked="form.status" checked-value="0" un-checked-value="1" checked-children="启用" un-checked-children="停用" />
             </a-form-item>
           </a-col>
+          <a-col :span="24"><div class="org-editor-hint">档案类型用于标识组织；部门邮箱当前不自动发送审批通知。审批选择部门时匹配部门人员。</div></a-col>
         </a-row>
       </a-form>
     </a-modal>
@@ -804,6 +805,10 @@ onMounted(() => { loadTree(); loadBuildings(); loadManageCounts(); loadColState(
 </template>
 
 <style scoped>
+.org-editor { max-height:calc(100vh - 210px); overflow:auto; padding:0 8px 0 0; }
+.org-section { font-weight:600; color:#1d2129; border-bottom:1px solid #e5e8ef; padding:5px 0; margin:0 0 10px; }
+.org-editor :deep(.ant-form-item) { margin-bottom:10px; }
+.org-editor-hint { color:#86909c; font-size:12px; line-height:1.5; }
 .zy-list-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .org-body { flex: 1 1 0; min-height: 0 !important; }
 .org-main { display: flex; flex-direction: column; min-height: 0; }

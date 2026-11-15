@@ -5,10 +5,10 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { foundationRequest, foundationError } from '../utils/foundation'
-const props=defineProps<{value?:string;dimension?:string;disabled?:boolean;placeholder?:string}>()
+const props=defineProps<{value?:string;dimension?:string;inventoryOnly?:boolean;disabled?:boolean;placeholder?:string}>()
 const emit=defineEmits<{(e:'update:value',value:string|undefined):void}>()
-const rows=ref<{id:string;code:string;name:string;symbol:string;dimension:string;selectable:boolean}[]>([]),loading=ref(false),error=ref('')
-const options=computed(()=>rows.value.filter(r=>!props.dimension||r.dimension===props.dimension||r.id===props.value).map(r=>({value:r.id,label:`${r.name}${r.symbol?`（${r.symbol}）`:''}${!r.selectable?'（停用）':''}`,disabled:!r.selectable||Boolean(props.dimension&&r.dimension!==props.dimension)})))
+const rows=ref<{id:string;code:string;name:string;symbol:string;dimension:string;baseUnitId:string|null;selectable:boolean}[]>([]),loading=ref(false),error=ref('')
+const options=computed(()=>rows.value.filter(r=>(!props.inventoryOnly||!r.baseUnitId||r.id===props.value)&&(!props.dimension||r.dimension===props.dimension||r.id===props.value)).map(r=>({value:r.id,label:`${r.name}${r.symbol?`（${r.symbol}）`:''}${r.baseUnitId?'（辅助单位）':''}${!r.selectable?'（停用）':''}`,disabled:!r.selectable||Boolean(props.dimension&&r.dimension!==props.dimension)||Boolean(props.inventoryOnly&&r.baseUnitId&&r.id!==props.value)})))
 /** 按登录员工读取公共选项，失败明确提示并允许重试。 / Load authenticated dictionary options without hiding request failures. */
 async function reload(){loading.value=true;error.value='';try{rows.value=await foundationRequest('get','/system/unit/options')}catch(e){error.value=foundationError(e)}finally{loading.value=false}}
 /** 规范化ID为字符串，不经Number丢精度。 / Preserve exact identifiers during selection. */

@@ -30,6 +30,7 @@ const router = createRouter({
         { path: 'role', name: 'RoleManage', component: () => import('../views/RoleManage.vue'), meta: { title: '角色管理', tab: true } },
         { path: 'template', name: 'SystemTemplate', component: () => import('../views/SystemTemplate.vue'), meta: { title: '功能模板', tab: true } },
         { path: 'tag', name: 'TagManage', component: () => import('../views/TagManage.vue'), meta: { title: '标签管理', tab: true } },
+        { path: 'color', name: 'ColorManage', component: () => import('../views/ColorManage.vue'), meta: { title: '颜色管理', tab: true } },
         { path: 'size', name: 'SizeManage', component: () => import('../views/SizeManage.vue'), meta: { title: '尺码管理', tab: true } },
         { path: 'size-group', name: 'SizeGroupManage', component: () => import('../views/SizeGroupManage.vue'), meta: { title: '尺码组管理', tab: true } },
         { path: 'unit', name: 'UnitManage', component: () => import('../views/UnitManage.vue'), meta: { title: '计量单位', tab: true } },
@@ -37,15 +38,26 @@ const router = createRouter({
         { path: 'country-region', name: 'CountryRegionManage', component: () => import('../views/CountryRegionManage.vue'), meta: { title: '国家/地区', tab: true } },
       ],
     },
-    { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }] },
+    { path: '/approve', component: () => import('../views/Home.vue'), children: [
+      { path: '', name: 'ApprovalIndex', component: () => import('../views/ApprovalIndex.vue'), meta: { title: '审批' } },
+      { path: 'definitions', name: 'ApprovalDefinitions', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'definition' }, meta: { title: '流程定义', tab: true } },
+      { path: 'waiting', name: 'ApprovalWaiting', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'waiting' }, meta: { title: '我的待办', tab: true } },
+      { path: 'initiated', name: 'ApprovalInitiated', component: () => import('../views/ApprovalInitiated.vue'), meta: { title: '我发起的', tab: true } },
+      { path: 'finished', name: 'ApprovalFinished', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'finished' }, meta: { title: '我的已办', tab: true } },
+      { path: 'bindings', name: 'ApprovalBindingManage', component: () => import('../views/ApprovalBindingManage.vue'), meta: { title: '审批对象配置', tab: true } },
+    ] },
+    { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'manage', name: 'CustomerOrderManage', component: () => import('../views/CustomerOrderManage.vue'), meta: { title: '客户订单', tab: true } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }] },
     { path: '/stock', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'StockIndex', component: () => import('../views/StockIndex.vue'), meta: { title: '库存' } },
       { path: 'warehouse', name: 'WarehouseManage', component: () => import('../views/WarehouseManage.vue'), meta: { title: '仓库管理', tab: true } },
       { path: 'layout', name: 'WarehouseLayoutManage', component: () => import('../views/WarehouseLayoutManage.vue'), meta: { title: '仓库布局', tab: true } },
+      { path: 'materials', name: 'MaterialManage', component: () => import('../views/MaterialManage.vue'), meta: { title: '物料档案', tab: true } },
       { path: 'locations', name: 'WarehouseLocationManage', redirect: to => ({ name: 'WarehouseLayoutManage', query: to.query, hash: to.hash }) },
     ] },
     { path: '/rd', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'RAndDIndex', component: () => import('../views/RAndDIndex.vue'), meta: { title: '研发' } },
+      { path: 'styles', name: 'StyleManage', component: () => import('../views/StyleManage.vue'), meta: { title: '款式档案', tab: true } },
+      { path: 'style-boms', name: 'StyleBomManage', component: () => import('../views/StyleBomManage.vue'), meta: { title: '款式 BOM', tab: true } },
     ] },
     { path: '/welfare', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'WelfareIndex', component: () => import('../views/WelfareIndex.vue'), meta: { title: '后勤' } },
@@ -84,6 +96,8 @@ const ROUTE_PERMS: Record<string, string> = {
   StorageDirectory: 'system:ossConfig:list',
   FileDirectory: 'system:oss:list',
   ParameterDirectory: 'system:config:list',
+  ApprovalBindingManage: 'system:config:list',
+  ApprovalDefinitions: 'workflow:definition:list',
   DictionaryDirectory: 'system:dict:list',
   CacheOverview: 'monitor:cache:list',
   MenuDirectory: 'system:menu:list',
@@ -91,12 +105,15 @@ const ROUTE_PERMS: Record<string, string> = {
   OnlineUsers: 'monitor:online:list',
   Person: 'system:person:list', OrgManage: 'system:org:list',
   PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', TagManage: 'system:tag:list', BuildingManage: 'system:building:list',
-  WarehouseManage: 'inventory:warehouse:list', WarehouseLayoutManage: 'inventory:location:list',
-  SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list',
+  StyleManage: 'rd:style:list',
+  CustomerOrderManage: 'order:customer-order:list',
+  StyleBomManage: 'rd:bom:list',
+  WarehouseManage: 'inventory:warehouse:list', WarehouseLayoutManage: 'inventory:location:list', MaterialManage: 'inventory:material:list',
+  SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list', ColorManage: 'system:color:list',
   UnitManage: 'system:unit:list', CategoryManage: 'system:category:list',
   Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'OrderIndex', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'RAndDIndex', 'WelfareIndex']
+const needAuth = ['UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'ColorManage', 'OrderIndex', 'CustomerOrderManage', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'MaterialManage', 'RAndDIndex', 'StyleManage', 'StyleBomManage', 'WelfareIndex']
 router.beforeEach(async (to) => {
   const token = sessionStorage.getItem('token')
   if (needAuth.includes(to.name as string) && !token) {

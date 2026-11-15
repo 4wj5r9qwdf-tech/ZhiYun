@@ -383,7 +383,7 @@ COMMENT ON COLUMN sys_org_manage.create_time     IS '创建时间';
 -- ------------------------------------------------------------
 -- 15. 通用属性标签档案与业务记录关联
 --     模块隔离：同名标签可在不同模块分别存在
---     不预置业务模块或标签；业务内首次输入标签时动态登记模块归属
+--     不预置业务功能或标签；业务内首次输入标签时动态登记功能归属
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS sys_tag_module (
     module_key   varchar(50)   NOT NULL,
@@ -395,13 +395,66 @@ CREATE TABLE IF NOT EXISTS sys_tag_module (
     CONSTRAINT sys_tag_module_pk PRIMARY KEY (module_key)
 );
 
-COMMENT ON TABLE sys_tag_module IS '动态标签归属模块目录；仅业务功能首次添加标签时自动登记，不预置空模块';
-COMMENT ON COLUMN sys_tag_module.module_key IS '业务功能提供的稳定模块标识';
-COMMENT ON COLUMN sys_tag_module.module_name IS '标签管理页面显示的业务模块名称';
+COMMENT ON TABLE sys_tag_module IS '动态标签归属功能目录；仅业务功能首次添加标签时自动登记，不预置空功能';
+COMMENT ON COLUMN sys_tag_module.module_key IS '业务功能提供的稳定标签命名空间标识';
+COMMENT ON COLUMN sys_tag_module.module_name IS '标签管理页面显示的业务功能名称；导航模块由前端功能目录映射';
 COMMENT ON COLUMN sys_tag_module.create_by IS '首次登记模块的操作人用户ID';
-COMMENT ON COLUMN sys_tag_module.create_time IS '模块归属首次登记时间';
-COMMENT ON COLUMN sys_tag_module.update_by IS '最后修改模块名称的操作人用户ID';
-COMMENT ON COLUMN sys_tag_module.update_time IS '模块归属最后修改时间';
+COMMENT ON COLUMN sys_tag_module.create_time IS '功能归属首次登记时间';
+COMMENT ON COLUMN sys_tag_module.update_by IS '最后修改功能名称的操作人用户ID';
+COMMENT ON COLUMN sys_tag_module.update_time IS '功能归属最后修改时间';
+
+CREATE SEQUENCE IF NOT EXISTS sys_tag_group_id_seq;
+COMMENT ON SEQUENCE sys_tag_group_id_seq IS '通用标签分组主键序列';
+
+CREATE TABLE IF NOT EXISTS sys_tag_group (
+    group_id     bigint        NOT NULL DEFAULT nextval('sys_tag_group_id_seq'),
+    module_key   varchar(50)   NOT NULL,
+    group_name   varchar(100)  NOT NULL,
+    is_default   char(1)       NOT NULL DEFAULT '0',
+    sort_order   integer       NOT NULL DEFAULT 10,
+    create_by    bigint,
+    create_time  timestamp     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_by    bigint,
+    update_time  timestamp,
+    CONSTRAINT sys_tag_group_pk PRIMARY KEY (group_id),
+    CONSTRAINT sys_tag_group_module_fk FOREIGN KEY (module_key)
+        REFERENCES sys_tag_module (module_key),
+    CONSTRAINT sys_tag_group_id_module_uk UNIQUE (group_id, module_key),
+    CONSTRAINT sys_tag_group_default_ck CHECK (is_default IN ('0','1'))
+);
+
+DO $$
+DECLARE
+    tag_table_owner text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO tag_table_owner
+    FROM pg_class WHERE oid = 'sys_tag_group'::regclass;
+    EXECUTE format('ALTER SEQUENCE sys_tag_group_id_seq OWNER TO %I', tag_table_owner);
+END $$;
+ALTER SEQUENCE sys_tag_group_id_seq OWNED BY sys_tag_group.group_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_tag_group_module_name
+    ON sys_tag_group (module_key, lower(group_name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_tag_group_one_default
+    ON sys_tag_group (module_key) WHERE is_default='1';
+CREATE INDEX IF NOT EXISTS idx_sys_tag_group_module_order
+    ON sys_tag_group (module_key, is_default DESC, sort_order, group_id);
+
+COMMENT ON TABLE sys_tag_group IS '通用属性标签分组；分组按业务功能隔离，每个功能保留默认分组';
+COMMENT ON COLUMN sys_tag_group.group_id IS '标签分组主键，由 PostgreSQL 序列生成';
+COMMENT ON COLUMN sys_tag_group.module_key IS '标签分组所属业务功能标识';
+COMMENT ON COLUMN sys_tag_group.group_name IS '标签分组名称；同功能内不区分大小写唯一';
+COMMENT ON COLUMN sys_tag_group.is_default IS '是否为系统默认分组：0否/1是；默认分组不可删除或重命名';
+COMMENT ON COLUMN sys_tag_group.sort_order IS '分组显示顺序；默认分组优先展示';
+COMMENT ON COLUMN sys_tag_group.create_by IS '创建分组的操作人用户ID';
+COMMENT ON COLUMN sys_tag_group.create_time IS '分组创建时间';
+COMMENT ON COLUMN sys_tag_group.update_by IS '最后修改分组的操作人用户ID';
+COMMENT ON COLUMN sys_tag_group.update_time IS '分组最后修改时间';
+
+-- 为已有动态标签功能建立兜底分组；功能仍只在业务首次录入标签时登记。
+INSERT INTO sys_tag_group(module_key,group_name,is_default,sort_order,create_time)
+SELECT module_key,'默认分组','1',0,now() FROM sys_tag_module
+ON CONFLICT (module_key, lower(group_name)) DO UPDATE SET is_default='1';
 
 CREATE SEQUENCE IF NOT EXISTS sys_tag_id_seq;
 COMMENT ON SEQUENCE sys_tag_id_seq IS '通用标签档案主键序列';
@@ -409,6 +462,7 @@ COMMENT ON SEQUENCE sys_tag_id_seq IS '通用标签档案主键序列';
 CREATE TABLE IF NOT EXISTS sys_tag (
     tag_id       bigint        NOT NULL DEFAULT nextval('sys_tag_id_seq'),
     module_key   varchar(50)   NOT NULL,
+    tag_group_id bigint        NOT NULL,
     tag_name     varchar(100)  NOT NULL,
     is_common    char(1)       NOT NULL DEFAULT '0',
     status       char(1)       NOT NULL DEFAULT '0',
@@ -419,7 +473,9 @@ CREATE TABLE IF NOT EXISTS sys_tag (
     remark       varchar(500),
     CONSTRAINT sys_tag_pk PRIMARY KEY (tag_id),
     CONSTRAINT sys_tag_module_fk FOREIGN KEY (module_key)
-        REFERENCES sys_tag_module (module_key)
+        REFERENCES sys_tag_module (module_key),
+    CONSTRAINT sys_tag_group_module_fk FOREIGN KEY (tag_group_id, module_key)
+        REFERENCES sys_tag_group (group_id, module_key)
 );
 DO $$
 DECLARE
@@ -431,15 +487,16 @@ BEGIN
 END $$;
 ALTER SEQUENCE sys_tag_id_seq OWNED BY sys_tag.tag_id;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_tag_module_name
-    ON sys_tag (module_key, lower(tag_name));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sys_tag_group_tag_name
+    ON sys_tag (module_key, tag_group_id, lower(tag_name));
 CREATE INDEX IF NOT EXISTS idx_sys_tag_module_status
     ON sys_tag (module_key, status, is_common);
 
 COMMENT ON TABLE sys_tag IS '通用属性标签档案；按模块命名空间隔离';
 COMMENT ON COLUMN sys_tag.tag_id IS '标签档案主键，由 PostgreSQL 序列生成';
-COMMENT ON COLUMN sys_tag.module_key IS '标签命名空间模块标识';
-COMMENT ON COLUMN sys_tag.tag_name IS '标签名称；所属模块名称通过 module_key 关联 sys_tag_module 获取';
+COMMENT ON COLUMN sys_tag.module_key IS '标签命名空间功能标识';
+COMMENT ON COLUMN sys_tag.tag_group_id IS '标签所属分组ID，必须与标签功能归属一致';
+COMMENT ON COLUMN sys_tag.tag_name IS '标签名称；所属功能名称通过 module_key 关联 sys_tag_module 获取';
 COMMENT ON COLUMN sys_tag.is_common IS '是否作为常用提示：0否/1是';
 COMMENT ON COLUMN sys_tag.status IS '状态：0正常/1停用';
 COMMENT ON COLUMN sys_tag.create_by IS '创建人用户ID';
@@ -468,6 +525,16 @@ COMMENT ON COLUMN sys_tag_relation.tag_id IS '标签档案ID';
 COMMENT ON COLUMN sys_tag_relation.create_by IS '建立关联的操作人用户ID';
 COMMENT ON COLUMN sys_tag_relation.create_time IS '标签与业务记录建立关联的时间';
 
+-- 标签分组表及其序列需要由应用角色访问；角色从既有标签档案所有者动态识别。
+DO $$
+DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    IF app_role IS NULL THEN RAISE EXCEPTION '无法从 public.sys_tag 识别应用数据库角色'; END IF;
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.sys_tag_group TO %I',app_role);
+    EXECUTE format('GRANT USAGE,SELECT,UPDATE ON SEQUENCE public.sys_tag_group_id_seq TO %I',app_role);
+END $$;
+
 -- 兼容重复执行主建表脚本以及从旧版毫秒ID迁移的数据库；新标签从当前最大ID之后取值。
 SELECT setval(
     'sys_tag_id_seq',
@@ -493,6 +560,7 @@ SELECT 1762400000000000104, '标签停用', 5, 103, '#', '', '', 'N', 'Y', 'F', 
 WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms = 'system:tag:remove');
 
 COMMIT;
+
 
 -- 公司档案删除权限：与现有公司列表及新增/修改操作同级。
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
@@ -1118,10 +1186,14 @@ CREATE INDEX IF NOT EXISTS idx_inv_warehouse_building ON inv_warehouse (building
 INSERT INTO sys_tag_module(module_key,module_name,create_time)
 VALUES('warehouse_master','仓库管理',now())
 ON CONFLICT(module_key) DO UPDATE SET module_name=EXCLUDED.module_name,update_time=now();
-INSERT INTO sys_tag(module_key,tag_name,is_common,status,remark)
-SELECT 'warehouse_master',v.tag_name,'1','0','仓库类型常用标签（可继续添加自定义类型）'
+INSERT INTO sys_tag_group(module_key,group_name,is_default,sort_order,create_time)
+VALUES('warehouse_master','默认分组','1',0,now())
+ON CONFLICT(module_key,lower(group_name)) DO UPDATE SET is_default='1';
+INSERT INTO sys_tag(module_key,tag_group_id,tag_name,is_common,status,remark)
+SELECT 'warehouse_master',g.group_id,v.tag_name,'1','0','仓库类型常用标签（可继续添加自定义类型）'
 FROM (VALUES ('成品仓'),('面料仓'),('辅料仓'),('消耗品仓'),('设备仓'),('样衣仓')) AS v(tag_name)
-WHERE NOT EXISTS (SELECT 1 FROM sys_tag t WHERE t.module_key='warehouse_master' AND lower(t.tag_name)=lower(v.tag_name));
+JOIN sys_tag_group g ON g.module_key='warehouse_master' AND g.is_default='1'
+WHERE NOT EXISTS (SELECT 1 FROM sys_tag t WHERE t.module_key='warehouse_master' AND t.tag_group_id=g.group_id AND lower(t.tag_name)=lower(v.tag_name));
 
 COMMENT ON TABLE inv_warehouse IS '库存模块仓库基础档案，记录仓库编码、名称、所属建筑及楼层区域、负责人和状态；仓库类型通过通用标签关联，仓库不是组织节点或建筑档案。';
 COMMENT ON COLUMN inv_warehouse.warehouse_id IS '仓库档案稳定主键，供库存及后续出入库业务通过ID关联，不作为对外展示编码。';
@@ -1370,4 +1442,725 @@ WITH RECURSIVE ancestors AS (
  UNION SELECT a.role_id,m.parent_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE m.parent_id<>0
 )
 INSERT INTO sys_role_menu(role_id,menu_id) SELECT DISTINCT a.role_id,a.menu_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE a.menu_id<>0 AND NOT EXISTS(SELECT 1 FROM sys_role_menu rm WHERE rm.role_id=a.role_id AND rm.menu_id=a.menu_id);
+
+-- 分类管理（2026-11-06 用户验收通过）
+CREATE TABLE IF NOT EXISTS base_category_scheme (
+ scheme_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ scheme_code varchar(40) NOT NULL,
+ scheme_name varchar(80) NOT NULL,
+ max_depth integer NOT NULL DEFAULT 5 CHECK(max_depth BETWEEN 1 AND 20),
+ sort_order integer NOT NULL DEFAULT 0,
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(500) NOT NULL DEFAULT '',
+ del_flag char(1) NOT NULL DEFAULT '0' CHECK(del_flag IN ('0','1')),
+ create_by bigint, create_time timestamp NOT NULL DEFAULT now(), update_by bigint, update_time timestamp
+);
+-- 分类类型编码只要求有效类型内唯一；删除后可重建同编码类型。兼容已执行旧版约束。
+ALTER TABLE base_category_scheme DROP CONSTRAINT IF EXISTS base_category_scheme_scheme_code_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_category_type_code_active ON base_category_scheme(scheme_code) WHERE del_flag='0';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_category_scheme_name ON base_category_scheme(lower(scheme_name)) WHERE del_flag='0';
+CREATE TABLE IF NOT EXISTS base_category (
+ category_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ scheme_id bigint NOT NULL REFERENCES base_category_scheme(scheme_id),
+ parent_id bigint REFERENCES base_category(category_id),
+ category_code varchar(40) NOT NULL,
+ category_name varchar(80) NOT NULL,
+ sort_order integer NOT NULL DEFAULT 0,
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(500) NOT NULL DEFAULT '',
+ del_flag char(1) NOT NULL DEFAULT '0' CHECK(del_flag IN ('0','1')),
+ create_by bigint, create_time timestamp NOT NULL DEFAULT now(), update_by bigint, update_time timestamp,
+ CHECK(parent_id IS NULL OR parent_id<>category_id)
+);
+-- 兼容已执行旧版增量：有效分类编码唯一；逻辑删除后可重新使用编码，历史记录仍保留原稳定ID。
+ALTER TABLE base_category DROP CONSTRAINT IF EXISTS base_category_scheme_id_category_code_key;
+DROP INDEX IF EXISTS uq_category_scheme_code_active;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_category_node_code_active ON base_category(scheme_id,category_code) WHERE del_flag='0';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_category_sibling_name ON base_category(scheme_id,coalesce(parent_id,0),lower(category_name)) WHERE del_flag='0';
+CREATE INDEX IF NOT EXISTS idx_category_parent ON base_category(parent_id);
+COMMENT ON TABLE base_category_scheme IS '公共分类体系；物料和款式等按体系隔离，业务通过稳定体系编码引用';
+COMMENT ON COLUMN base_category_scheme.scheme_id IS '分类体系稳定主键';
+COMMENT ON COLUMN base_category_scheme.scheme_code IS '有效分类类型内唯一稳定业务编码，创建后不可修改；逻辑删除后可重新使用';
+COMMENT ON COLUMN base_category_scheme.scheme_name IS '分类体系中文名称';
+COMMENT ON COLUMN base_category_scheme.max_depth IS '允许的最大分类深度，根节点为第1级，范围1至20';
+COMMENT ON COLUMN base_category_scheme.sort_order IS '显示排序，数字越小越靠前';
+COMMENT ON COLUMN base_category_scheme.status IS '状态：0启用，1停用；停用保留历史引用';
+COMMENT ON COLUMN base_category_scheme.remark IS '业务备注，不存凭据或敏感信息';
+COMMENT ON COLUMN base_category_scheme.del_flag IS '旧版逻辑删除兼容标记：0正常，1历史已删除；当前空分类类型执行物理删除';
+COMMENT ON COLUMN base_category_scheme.create_by IS '创建员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_category_scheme.create_time IS '创建时间';
+COMMENT ON COLUMN base_category_scheme.update_by IS '最后修改员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_category_scheme.update_time IS '最后修改时间';
+COMMENT ON TABLE base_category IS '公共多级分类节点，归属单个体系，业务以稳定节点ID引用';
+COMMENT ON COLUMN base_category.category_id IS '分类节点稳定主键，业务引用本ID';
+COMMENT ON COLUMN base_category.scheme_id IS '所属分类体系，关联base_category_scheme.scheme_id；创建后不可变更';
+COMMENT ON COLUMN base_category.parent_id IS '上级分类，关联base_category.category_id；空表示根节点，禁止跨体系及循环';
+COMMENT ON COLUMN base_category.category_code IS '分类类型内有效分类的唯一业务编码；逻辑删除后允许重新使用，历史通过稳定分类ID区分';
+COMMENT ON COLUMN base_category.category_name IS '分类中文名称，同一父级下不允许同名';
+COMMENT ON COLUMN base_category.sort_order IS '显示排序，数字越小越靠前';
+COMMENT ON COLUMN base_category.status IS '状态：0启用，1停用；停用保留历史引用';
+COMMENT ON COLUMN base_category.remark IS '业务备注，不存凭据或敏感信息';
+COMMENT ON COLUMN base_category.del_flag IS '逻辑删除标记：0正常，1已删除';
+COMMENT ON COLUMN base_category.create_by IS '创建员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_category.create_time IS '创建时间';
+COMMENT ON COLUMN base_category.update_by IS '最后修改员工ID，关联sys_user.user_id的身份语义';
+COMMENT ON COLUMN base_category.update_time IS '最后修改时间';
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time) SELECT 1762700000000000010,'分类管理',1761400000000000001,170,'category','system/CategoryManage','N','Y','C','0','0','system:category:list','#',now() WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:category:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time) SELECT x.id,x.name,(SELECT menu_id FROM sys_menu WHERE perms='system:category:list'),x.sort,'#','','N','Y','F','0','0',x.perms,'#',now() FROM (VALUES (1762700000000000011::bigint,'分类管理新增',171,'system:category:add'),(1762700000000000012::bigint,'分类管理修改与启停',172,'system:category:edit'),(1762700000000000013::bigint,'分类管理删除',173,'system:category:remove')) x(id,name,sort,perms) WHERE NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.perms=x.perms);
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='分类管理',menu_type='C',path='category',component='system/CategoryManage',visible='0',status='0' WHERE perms='system:category:list';
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='system:category:list'),menu_type='F',visible='0',status='0' WHERE perms IN ('system:category:add','system:category:edit','system:category:remove');
+-- 管理员执行迁移时，复用既有业务表所有者识别应用角色，避免新表/序列无权限。
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ IF app_role IS NULL THEN RAISE EXCEPTION '无法识别应用数据库角色'; END IF;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.base_category_scheme,public.base_category TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.base_category_scheme_scheme_id_seq,public.base_category_category_id_seq TO %I',app_role);
+END $$;
+COMMENT ON SEQUENCE base_category_scheme_scheme_id_seq IS '生成分类体系稳定主键的序列';
+COMMENT ON SEQUENCE base_category_category_id_seq IS '生成分类节点稳定主键的序列';
+
+-- 颜色管理：全局可复用颜色基础资料
+CREATE TABLE IF NOT EXISTS base_color (
+ color_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ color_code varchar(40) NOT NULL,
+ color_name varchar(80) NOT NULL,
+ color_value varchar(7) NOT NULL DEFAULT '',
+ sort_order integer NOT NULL DEFAULT 0 CHECK(sort_order BETWEEN 0 AND 999999),
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(500) NOT NULL DEFAULT '',
+ create_by bigint,
+ create_time timestamptz NOT NULL DEFAULT now(),
+ update_by bigint,
+ update_time timestamptz,
+ CONSTRAINT ck_base_color_code CHECK(color_code ~ '^[A-Za-z0-9][A-Za-z0-9_.-]*$'),
+ CONSTRAINT ck_base_color_name CHECK(length(trim(color_name))>0),
+ CONSTRAINT ck_base_color_value CHECK(color_value='' OR color_value ~ '^#[0-9A-Fa-f]{6}$')
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_base_color_code_ci ON base_color(lower(color_code));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_base_color_name_ci ON base_color(lower(color_name));
+CREATE INDEX IF NOT EXISTS idx_base_color_status_sort ON base_color(status,sort_order,color_name);
+COMMENT ON TABLE base_color IS '全局颜色基础资料，供物料、款式等业务复用；停用保留历史引用';
+COMMENT ON COLUMN base_color.color_id IS '颜色稳定主键，跨业务引用此ID';
+COMMENT ON COLUMN base_color.color_code IS '颜色稳定业务编码，新增时自动建议且可编辑，创建后不可修改';
+COMMENT ON COLUMN base_color.color_name IS '颜色中文名称，忽略大小写后全局唯一';
+COMMENT ON COLUMN base_color.color_value IS '可选屏幕色样值，空表示未设置；填写时格式为#RRGGBB，不替代实物色卡或供应商色号';
+COMMENT ON COLUMN base_color.sort_order IS '显示排序，范围0至999999，数字越小越靠前';
+COMMENT ON COLUMN base_color.status IS '状态：0启用，可供新业务选择；1停用，只供历史引用显示';
+COMMENT ON COLUMN base_color.remark IS '颜色补充说明，不存供应商色号、缸号或业务批次信息';
+COMMENT ON COLUMN base_color.create_by IS '创建人用户ID，关联当前登录用户身份';
+COMMENT ON COLUMN base_color.create_time IS '创建时间';
+COMMENT ON COLUMN base_color.update_by IS '最后修改人用户ID，关联当前登录用户身份';
+COMMENT ON COLUMN base_color.update_time IS '最后修改时间';
+COMMENT ON SEQUENCE base_color_color_id_seq IS '生成颜色基础资料稳定主键';
+INSERT INTO sys_config(config_id,config_name,config_key,config_value,config_type,create_time,remark)
+SELECT COALESCE((SELECT MAX(config_id) FROM sys_config),0)+1,'颜色自动编码规则','base.color.codeRule','{"enabled":true,"prefix":"CLR","digits":4}','Y',now(),'颜色编码自动生成开关、前缀及数字位数；生成值可人工编辑'
+WHERE NOT EXISTS(SELECT 1 FROM sys_config WHERE config_key='base.color.codeRule');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762700000000000030,'颜色管理',1761400000000000001,180,'color','system/ColorManage','N','Y','C','0','0','system:color:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:color:list');
+INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT x.id,x.name,(SELECT menu_id FROM sys_menu WHERE perms='system:color:list'),x.sort,'#','','N','Y','F','0','0',x.perms,'#',now()
+FROM (VALUES (1762700000000000031::bigint,'颜色新增',1,'system:color:add'),(1762700000000000032::bigint,'颜色修改与启停',2,'system:color:edit'),(1762700000000000033::bigint,'颜色删除',3,'system:color:remove')) x(id,name,sort,perms)
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.perms=x.perms);
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='颜色管理',menu_type='C',path='color',component='system/ColorManage',visible='0',status='0' WHERE perms='system:color:list';
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='system:color:list'),menu_type='F',visible='0',status='0' WHERE perms IN ('system:color:add','system:color:edit','system:color:remove');
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ IF app_role IS NULL THEN RAISE EXCEPTION '无法识别应用数据库角色'; END IF;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.base_color TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.base_color_color_id_seq TO %I',app_role);
+END $$;
+
+COMMIT;
+
+
+-- 物料档案一期：2026-11-08 用户验收通过后并入主建表。规格模板目录可按稳定字段键继续扩展。
+-- 物料档案一期：仅维护可跨库存、采购、BOM复用的主数据，不在本批次记库存数量或收货流水。
+BEGIN;
+CREATE TABLE IF NOT EXISTS inv_material (
+ material_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ material_code varchar(50) NOT NULL,
+ material_name varchar(120) NOT NULL,
+ category_id bigint NOT NULL REFERENCES base_category(category_id),
+ specification varchar(200) NOT NULL DEFAULT '',
+ model varchar(120) NOT NULL DEFAULT '',
+ brand varchar(100) NOT NULL DEFAULT '',
+ material_desc varchar(1000) NOT NULL DEFAULT '',
+ inventory_unit_id bigint NOT NULL REFERENCES base_unit(unit_id),
+ sort_order integer NOT NULL DEFAULT 0 CHECK(sort_order BETWEEN 0 AND 999999),
+ status char(1) NOT NULL DEFAULT '0' CHECK(status IN ('0','1')),
+ remark varchar(500) NOT NULL DEFAULT '',
+ del_flag char(1) NOT NULL DEFAULT '0' CHECK(del_flag IN ('0','1')),
+ create_by bigint, create_time timestamptz NOT NULL DEFAULT now(), update_by bigint, update_time timestamptz,
+ CHECK(length(trim(material_code))>0), CHECK(length(trim(material_name))>0)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_code_active ON inv_material(lower(material_code)) WHERE del_flag='0';
+CREATE INDEX IF NOT EXISTS idx_inv_material_category_status ON inv_material(category_id,status) WHERE del_flag='0';
+CREATE INDEX IF NOT EXISTS idx_inv_material_name ON inv_material(lower(material_name)) WHERE del_flag='0';
+COMMENT ON TABLE inv_material IS '物料主档，供库存、采购、BOM及领退料共享；不保存库存数量、客户归属或供应商批号';
+COMMENT ON COLUMN inv_material.material_id IS '物料稳定主键，采购、库存、BOM等业务通过此ID引用';
+COMMENT ON COLUMN inv_material.material_code IS '物料业务编码；未删除物料中忽略大小写唯一，自动建议值可在保存前编辑';
+COMMENT ON COLUMN inv_material.material_name IS '物料通用名称，不包含批次、供应商或单据特有信息';
+COMMENT ON COLUMN inv_material.category_id IS '物料所属分类节点，关联base_category.category_id；人员分类授权按此节点校验';
+COMMENT ON COLUMN inv_material.specification IS '物料规格尺寸或包装规格；历史记录可能包含改版前的综合规格描述';
+COMMENT ON COLUMN inv_material.model IS '物料型号或款式标识；没有型号时为空，不替代物料编码';
+COMMENT ON COLUMN inv_material.brand IS '物料品牌；无品牌或暂无信息时为空';
+COMMENT ON COLUMN inv_material.material_desc IS '物料材质或关键属性补充说明，不存批次、色号、供应商和收货结果';
+COMMENT ON COLUMN inv_material.inventory_unit_id IS '库存基本单位，关联base_unit.unit_id；物料数量按此单位记账，禁止用辅助单位替代';
+COMMENT ON COLUMN inv_material.sort_order IS '列表显示排序，范围0至999999，数字越小越靠前';
+COMMENT ON COLUMN inv_material.status IS '档案状态：0启用可供新业务选择，1停用并保留历史引用';
+COMMENT ON COLUMN inv_material.remark IS '物料档案补充备注，不存业务单据处理意见';
+COMMENT ON COLUMN inv_material.del_flag IS '逻辑删除标志：0正常，1已删除；有外键引用的物料拒绝删除';
+COMMENT ON COLUMN inv_material.create_by IS '创建物料档案的用户ID，业务身份为员工账号';
+COMMENT ON COLUMN inv_material.create_time IS '物料档案创建时间';
+COMMENT ON COLUMN inv_material.update_by IS '最后修改物料档案的用户ID，业务身份为员工账号';
+COMMENT ON COLUMN inv_material.update_time IS '物料档案最后修改时间';
+COMMENT ON INDEX uq_inv_material_code_active IS '保护未删除物料编码大小写不敏感唯一';
+COMMENT ON INDEX idx_inv_material_category_status IS '按授权分类及状态筛选物料档案';
+COMMENT ON INDEX idx_inv_material_name IS '支持忽略大小写查找物料名称';
+COMMENT ON SEQUENCE inv_material_material_id_seq IS '生成物料档案稳定主键';
+
+CREATE TABLE IF NOT EXISTS inv_material_color (
+ material_id bigint NOT NULL REFERENCES inv_material(material_id) ON DELETE CASCADE,
+ color_id bigint NOT NULL REFERENCES base_color(color_id),
+ create_by bigint, create_time timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(material_id,color_id)
+);
+COMMENT ON TABLE inv_material_color IS '物料可用颜色关联；一条物料可选多种颜色，具体收货色号、缸号和批次颜色另记在库存业务';
+COMMENT ON COLUMN inv_material_color.material_id IS '关联物料档案ID';
+COMMENT ON COLUMN inv_material_color.color_id IS '关联全局颜色基础资料ID';
+COMMENT ON COLUMN inv_material_color.create_by IS '建立物料颜色关联的员工用户ID';
+COMMENT ON COLUMN inv_material_color.create_time IS '建立物料颜色关联的时间';
+COMMENT ON CONSTRAINT inv_material_color_pkey ON inv_material_color IS '同一物料与同一颜色只能关联一次';
+
+-- 扩展物料规格并登记允许使用的公共辅助单位，兼容已执行过一期脚本的开发库。
+ALTER TABLE inv_material
+ ADD COLUMN IF NOT EXISTS fabric_weight_gsm numeric(12,4) CHECK (fabric_weight_gsm > 0),
+ ADD COLUMN IF NOT EXISTS fabric_width_cm numeric(12,4) CHECK (fabric_width_cm > 0),
+ ADD COLUMN IF NOT EXISTS composition varchar(300) NOT NULL DEFAULT '';
+COMMENT ON COLUMN inv_material.fabric_weight_gsm IS '面料克重，单位克每平方米（g/m²）；不适用时为空';
+COMMENT ON COLUMN inv_material.fabric_width_cm IS '面料幅宽，单位厘米（cm）；不适用时为空';
+COMMENT ON COLUMN inv_material.composition IS '物料成分，可填写组成比例，例如棉95%、氨纶5%';
+
+CREATE TABLE IF NOT EXISTS inv_material_aux_unit (
+ material_id bigint NOT NULL REFERENCES inv_material(material_id) ON DELETE CASCADE,
+ unit_id bigint NOT NULL REFERENCES base_unit(unit_id),
+ PRIMARY KEY (material_id, unit_id)
+);
+CREATE INDEX IF NOT EXISTS idx_inv_material_aux_unit_unit ON inv_material_aux_unit(unit_id);
+-- 物料专属单位支持固定换算和实际数量录入；旧关联按当前公共系数迁移为物料快照。
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS conversion_mode varchar(16) NOT NULL DEFAULT 'FIXED';
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS reference_unit_id bigint REFERENCES base_unit(unit_id);
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS factor numeric(30,12);
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS inventory_factor numeric(30,12);
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS purchase_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE inv_material_aux_unit ADD COLUMN IF NOT EXISTS usage_enabled boolean NOT NULL DEFAULT true;
+UPDATE inv_material_aux_unit a SET reference_unit_id=m.inventory_unit_id, factor=u.factor, inventory_factor=u.factor
+FROM inv_material m, base_unit u WHERE m.material_id=a.material_id AND u.unit_id=a.unit_id
+  AND a.conversion_mode='FIXED' AND a.factor IS NULL AND u.base_unit_id=m.inventory_unit_id;
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='inv_material_aux_unit'::regclass AND conname='ck_material_unit_conversion') THEN
+   ALTER TABLE inv_material_aux_unit ADD CONSTRAINT ck_material_unit_conversion CHECK (
+     (conversion_mode='FIXED' AND reference_unit_id IS NOT NULL AND reference_unit_id<>unit_id AND factor IS NOT NULL AND factor>0 AND inventory_factor IS NOT NULL AND inventory_factor>0)
+     OR (conversion_mode='VARIABLE' AND reference_unit_id IS NULL AND factor IS NULL AND inventory_factor IS NULL));
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='inv_material_aux_unit'::regclass AND conname='ck_material_unit_use') THEN
+   ALTER TABLE inv_material_aux_unit ADD CONSTRAINT ck_material_unit_use CHECK (purchase_enabled OR usage_enabled);
+ END IF;
+END $$;
+COMMENT ON TABLE inv_material_aux_unit IS '物料专属采购和辅助单位配置，独立保存换算关系';
+COMMENT ON COLUMN inv_material_aux_unit.material_id IS '物料档案主键';
+COMMENT ON COLUMN inv_material_aux_unit.unit_id IS '所选计量单位主键';
+COMMENT ON COLUMN inv_material_aux_unit.conversion_mode IS '换算方式：FIXED 固定系数，VARIABLE 每次录入实际库存数量';
+COMMENT ON COLUMN inv_material_aux_unit.reference_unit_id IS '固定换算的参照单位，可以是库存单位或本物料其他固定单位';
+COMMENT ON COLUMN inv_material_aux_unit.factor IS '一个当前单位等于多少参照单位，仅属于当前物料';
+COMMENT ON COLUMN inv_material_aux_unit.inventory_factor IS '一个当前单位折算成库存单位的精确系数';
+COMMENT ON COLUMN inv_material_aux_unit.purchase_enabled IS '是否允许采购使用此单位';
+COMMENT ON COLUMN inv_material_aux_unit.usage_enabled IS '是否允许生产及领用使用此单位';
+COMMENT ON INDEX idx_inv_material_aux_unit_unit IS '按辅助单位查找物料引用';
+
+-- 规格模板供物料独立选择，字段键在模板间共享时必须有同一业务含义。
+CREATE TABLE IF NOT EXISTS inv_material_spec_template (
+ template_code varchar(40) PRIMARY KEY,
+ template_name varchar(80) NOT NULL,
+ sort_order integer NOT NULL DEFAULT 0,
+ active boolean NOT NULL DEFAULT true,
+ fields jsonb NOT NULL CHECK (jsonb_typeof(fields) = 'array')
+);
+COMMENT ON TABLE inv_material_spec_template IS '物料规格模板目录，录入时直接选用，与分类节点独立';
+COMMENT ON COLUMN inv_material_spec_template.template_code IS '稳定模板编码，档案、接口和导入通过此编码引用';
+COMMENT ON COLUMN inv_material_spec_template.template_name IS '模板选择器显示名称';
+COMMENT ON COLUMN inv_material_spec_template.sort_order IS '模板在选择器中的显示顺序';
+COMMENT ON COLUMN inv_material_spec_template.active IS '是否允许新引用，停用后仍保留已建档物料的回显';
+COMMENT ON COLUMN inv_material_spec_template.fields IS '按显示顺序保存字段定义，包含稳定键、标签、类型、单位、提示和可选值；signed_decimal 表示允许正负的百分比规格';
+
+INSERT INTO inv_material_spec_template(template_code,template_name,sort_order,fields) VALUES
+ ('fabric','面料 / 里布',10,'[{"key":"fabricStructure","label":"织法 / 布面结构","type":"text","placeholder":"例如：梭织平纹、梭织斜纹、针织罗纹"},{"key":"fabricWeightGsm","label":"克重","type":"decimal","unit":"g/m²"},{"key":"fabricWidthCm","label":"幅宽","type":"decimal","unit":"cm"},{"key":"composition","label":"成分","type":"text"},{"key":"warpShrinkagePct","label":"经向标准缩率","type":"signed_decimal","unit":"%","placeholder":"允许负值，表示尺寸增长"},{"key":"weftShrinkagePct","label":"纬向标准缩率","type":"signed_decimal","unit":"%","placeholder":"允许负值，表示尺寸增长"},{"key":"shrinkageCondition","label":"缩率测试条件","type":"text","placeholder":"例如：水洗后，注明洗涤与烘干条件"},{"key":"fabricDensity","label":"密度及口径","type":"text","placeholder":"梭织填经密/纬密；针织填横列/纵行密度，并注明每英寸或每10厘米"}]'::jsonb),
+ ('interlining','衬布（含粘合衬）',20,'[{"key":"interliningType","label":"衬布类型","type":"select","options":["有纺","无纺","针织"]},{"key":"fusible","label":"是否带胶","type":"boolean"},{"key":"material","label":"材质","type":"text"},{"key":"interliningWeight","label":"克重","type":"decimal","unit":"g/m²"},{"key":"thickness","label":"厚度","type":"decimal","unit":"mm"}]'::jsonb),
+ ('thread','缝纫线',30,'[{"key":"composition","label":"成分","type":"text"},{"key":"threadStructure","label":"线结构","type":"text"},{"key":"threadSize","label":"线号","type":"text"},{"key":"threadSizeSystem","label":"线号体系","type":"select","options":["Tex","票号","支数","其他"]},{"key":"spoolLength","label":"每筒公称长度","type":"decimal","unit":"m"}]'::jsonb),
+ ('zipper','拉链',40,'[{"key":"zipperChain","label":"牙型","type":"select","options":["尼龙","树脂","金属","隐形"]},{"key":"zipperSize","label":"号数","type":"text"},{"key":"zipperLength","label":"拉链长度","type":"decimal","unit":"mm"},{"key":"zipperEnd","label":"开闭形式","type":"select","options":["闭尾","开尾","双开尾"]},{"key":"sliderType","label":"拉头类型","type":"text"}]'::jsonb),
+ ('button','钮扣与扣件',50,'[{"key":"fastenerType","label":"扣型","type":"select","options":["两孔扣","四孔扣","带脚扣","四合扣","鸡眼","铆钉","其他"]},{"key":"diameter","label":"直径","type":"decimal","unit":"mm"},{"key":"holeCount","label":"孔数","type":"integer"},{"key":"material","label":"材质","type":"text"},{"key":"surfaceFinish","label":"表面处理","type":"text"}]'::jsonb),
+ ('tape','松紧带与织带',60,'[{"key":"tapeType","label":"带型","type":"select","options":["松紧带","织带","抽绳","包边带","其他"]},{"key":"tapeWidth","label":"带宽","type":"decimal","unit":"mm"},{"key":"diameter","label":"直径","type":"decimal","unit":"mm"},{"key":"material","label":"材质","type":"text"},{"key":"elongation","label":"伸长率","type":"decimal","unit":"%"}]'::jsonb),
+ ('label','唛标与吊牌',70,'[{"key":"labelType","label":"类型","type":"select","options":["主唛","尺码唛","洗水唛","吊牌","其他"]},{"key":"labelProcess","label":"制作方式","type":"select","options":["织造","印刷","热转印","其他"]},{"key":"labelLength","label":"成品长度","type":"decimal","unit":"mm"},{"key":"labelWidth","label":"成品宽度","type":"decimal","unit":"mm"},{"key":"material","label":"材质","type":"text"},{"key":"foldType","label":"折法","type":"text"},{"key":"artworkVersion","label":"稿件版本","type":"text"}]'::jsonb),
+ ('carton','纸箱',80,'[{"key":"insideLength","label":"内长","type":"decimal","unit":"mm"},{"key":"insideWidth","label":"内宽","type":"decimal","unit":"mm"},{"key":"insideHeight","label":"内高","type":"decimal","unit":"mm"},{"key":"plyCount","label":"纸板层数","type":"integer"},{"key":"flute","label":"楞型","type":"text"}]'::jsonb),
+ ('paper_bag','纸袋',90,'[{"key":"bagWidth","label":"袋宽","type":"decimal","unit":"mm"},{"key":"bagLength","label":"袋长","type":"decimal","unit":"mm"},{"key":"gussetWidth","label":"侧褶宽","type":"decimal","unit":"mm"},{"key":"paperWeight","label":"纸张克重","type":"decimal","unit":"g/m²"},{"key":"handleType","label":"提手类型","type":"text"}]'::jsonb),
+ ('plastic_bag','塑料袋',100,'[{"key":"bagWidth","label":"袋宽","type":"decimal","unit":"mm"},{"key":"bagLength","label":"袋长","type":"decimal","unit":"mm"},{"key":"filmThickness","label":"膜厚","type":"decimal","unit":"μm"},{"key":"material","label":"材质","type":"text"},{"key":"sealType","label":"封口方式","type":"select","options":["开口","自封","自粘","热封","其他"]}]'::jsonb)
+ON CONFLICT (template_code) DO NOTHING;
+
+-- 同步已安装模板的旧展示名；按稳定字段键更新文案，保留字段顺序和已录入的规格值。
+WITH renamed(code, old_name, new_name, field_key, old_label, new_label) AS (
+ VALUES ('fabric','面料与里料','面料 / 里布','fabricStructure','组织结构','织法 / 布面结构'),
+        ('interlining','衬料','衬布（含粘合衬）','interliningType','衬料结构','衬布类型')
+)
+UPDATE inv_material_spec_template t
+SET template_name = CASE WHEN t.template_name = r.old_name THEN r.new_name ELSE t.template_name END,
+    fields = (SELECT jsonb_agg(
+        CASE WHEN f.value->>'key' = r.field_key AND f.value->>'label' = r.old_label
+             THEN jsonb_set(f.value, '{label}', to_jsonb(r.new_label))
+             ELSE f.value END ORDER BY f.position)
+        FROM jsonb_array_elements(t.fields) WITH ORDINALITY AS f(value, position))
+FROM renamed r
+WHERE t.template_code = r.code
+  AND (t.template_name = r.old_name OR EXISTS (
+    SELECT 1 FROM jsonb_array_elements(t.fields) AS f(value)
+    WHERE f.value->>'key' = r.field_key AND f.value->>'label' = r.old_label
+  ));
+
+-- 面料模板补充经纬向缩率及密度口径；仅按稳定字段键追加，不覆盖既有规格值。
+WITH additions AS (
+ SELECT 'fabric'::varchar AS template_code,
+        '[{"key":"warpShrinkagePct","label":"经向标准缩率","type":"signed_decimal","unit":"%","placeholder":"允许负值，表示尺寸增长"},{"key":"weftShrinkagePct","label":"纬向标准缩率","type":"signed_decimal","unit":"%","placeholder":"允许负值，表示尺寸增长"},{"key":"shrinkageCondition","label":"缩率测试条件","type":"text","placeholder":"例如：水洗后，注明洗涤与烘干条件"},{"key":"fabricDensity","label":"密度及口径","type":"text","placeholder":"梭织填经密/纬密；针织填横列/纵行密度，并注明每英寸或每10厘米"}]'::jsonb AS fields
+)
+UPDATE inv_material_spec_template t
+SET fields = COALESCE((
+    SELECT jsonb_agg(f.value ORDER BY f.position)
+    FROM jsonb_array_elements(t.fields) WITH ORDINALITY AS f(value, position)
+), '[]'::jsonb) || COALESCE((
+    SELECT jsonb_agg(a.value ORDER BY a.position)
+    FROM jsonb_array_elements(additions.fields) WITH ORDINALITY AS a(value, position)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM jsonb_array_elements(t.fields) AS existing(value)
+        WHERE existing.value->>'key' = a.value->>'key'
+    )
+), '[]'::jsonb)
+FROM additions
+WHERE t.template_code = additions.template_code
+  AND EXISTS (
+      SELECT 1 FROM jsonb_array_elements(additions.fields) AS a(value)
+      WHERE NOT EXISTS (
+          SELECT 1 FROM jsonb_array_elements(t.fields) AS existing(value)
+          WHERE existing.value->>'key' = a.value->>'key'
+      )
+  );
+
+ALTER TABLE inv_material
+ ADD COLUMN IF NOT EXISTS spec_template_code varchar(40) REFERENCES inv_material_spec_template(template_code),
+ ADD COLUMN IF NOT EXISTS spec_values jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(spec_values) = 'object');
+COMMENT ON COLUMN inv_material.spec_template_code IS '物料主动选择的规格模板编码，为空表示使用通用规格';
+COMMENT ON COLUMN inv_material.spec_values IS '以稳定字段键保存模板值与历史值；面料克重、幅宽、成分仍以原列为准';
+
+INSERT INTO sys_config(config_id,config_name,config_key,config_value,config_type,create_time,remark)
+SELECT COALESCE((SELECT MAX(config_id) FROM sys_config),0)+1,'物料自动编码规则','inventory.material.codeRule','{"enabled":true,"prefix":"MAT","digits":5}','Y',now(),'物料编码自动生成开关、前缀和序号位数；建议编码可以人工修改'
+WHERE NOT EXISTS(SELECT 1 FROM sys_config WHERE config_key='inventory.material.codeRule');
+INSERT INTO sys_config(config_id,config_name,config_key,config_value,config_type,create_time,remark)
+SELECT COALESCE((SELECT MAX(config_id) FROM sys_config),0)+1,'物料默认分类类型','inventory.material.defaultCategoryScheme','','Y',now(),'物料档案页面的默认分类类型；留空时展示当前员工全部分类授权范围'
+WHERE NOT EXISTS(SELECT 1 FROM sys_config WHERE config_key='inventory.material.defaultCategoryScheme');
+
+-- 页面级权限归库存模块；角色只获得用户已有权限对应的祖先，不自动授予任何新增/编辑/删除能力。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762800000000000121,1762800000000000001,'物料档案',30,'materials','stock/MaterialManage','N','Y','C','0','0','inventory:material:list','#',now()
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='inventory:material:list');
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT x.id,(SELECT menu_id FROM sys_menu WHERE perms='inventory:material:list'),x.name,x.sort,'#','','N','Y','F','0','0',x.perms,'#',now()
+FROM (VALUES (1762800000000000122::bigint,'物料新增',1,'inventory:material:add'),(1762800000000000123::bigint,'物料编辑与启停',2,'inventory:material:edit'),(1762800000000000124::bigint,'物料删除',3,'inventory:material:remove')) x(id,name,sort,perms)
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms=x.perms);
+UPDATE sys_menu SET parent_id=1762800000000000001,menu_name='物料档案',menu_type='C',path='materials',component='stock/MaterialManage',visible='0',status='0'
+WHERE perms='inventory:material:list';
+UPDATE sys_menu SET parent_id=(SELECT menu_id FROM sys_menu WHERE perms='inventory:material:list'),menu_type='F',visible='0',status='0'
+WHERE perms IN ('inventory:material:add','inventory:material:edit','inventory:material:remove');
+WITH RECURSIVE ancestors AS (
+ SELECT rm.role_id,m.parent_id AS menu_id FROM sys_role_menu rm JOIN sys_menu m ON m.menu_id=rm.menu_id WHERE m.perms IN ('inventory:material:list','inventory:material:add','inventory:material:edit','inventory:material:remove')
+ UNION SELECT a.role_id,m.parent_id FROM ancestors a JOIN sys_menu m ON m.menu_id=a.menu_id WHERE a.menu_id<>0
+)
+INSERT INTO sys_role_menu(role_id,menu_id) SELECT DISTINCT a.role_id,a.menu_id FROM ancestors a
+WHERE a.menu_id<>0 AND NOT EXISTS(SELECT 1 FROM sys_role_menu x WHERE x.role_id=a.role_id AND x.menu_id=a.menu_id);
+
+-- 使用公共标签表识别应用账号。仓库表可能由迁移管理员持有。
+DO $$ DECLARE app_role text; BEGIN
+ SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ IF app_role IS NULL THEN RAISE EXCEPTION '未找到应用数据库角色，请先建立公共标签表'; END IF;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.inv_material,public.inv_material_color,public.inv_material_aux_unit TO %I',app_role);
+ EXECUTE format('GRANT SELECT ON public.inv_material_spec_template TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.inv_material_material_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+-- 款式档案一期验收合并，按主档、套装规格、附件的依赖顺序执行。
+
+-- 款式档案_20261108.sql
+-- 研发、样衣与订单引用同一个款式ID。技术版本及样衣任务由后续功能独立建表。
+BEGIN;
+CREATE TABLE IF NOT EXISTS rd_style (
+    style_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    internal_code varchar(60) NOT NULL CHECK (btrim(internal_code) <> ''),
+    style_name varchar(120) NOT NULL CHECK (btrim(style_name) <> ''),
+    customer_id bigint REFERENCES customer_master(customer_id),
+    category_id bigint NOT NULL REFERENCES base_category(category_id),
+    season varchar(40) NOT NULL DEFAULT '',
+    description varchar(1000) NOT NULL DEFAULT '',
+    cover_oss_id bigint REFERENCES sys_oss(oss_id),
+    status char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1')),
+    remark varchar(500) NOT NULL DEFAULT '',
+    create_by bigint NOT NULL,
+    create_time timestamptz NOT NULL DEFAULT now(),
+    update_by bigint,
+    update_time timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rd_style_internal_code ON rd_style(lower(internal_code));
+CREATE INDEX IF NOT EXISTS idx_rd_style_customer ON rd_style(customer_id);
+CREATE INDEX IF NOT EXISTS idx_rd_style_category ON rd_style(category_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rd_style_cover ON rd_style(cover_oss_id) WHERE cover_oss_id IS NOT NULL;
+COMMENT ON TABLE rd_style IS '款式主档，研发、样衣任务和生产订单共用';
+COMMENT ON COLUMN rd_style.style_id IS '跨业务引用的稳定款式ID';
+COMMENT ON COLUMN rd_style.internal_code IS '款号，全局不区分大小写唯一';
+COMMENT ON COLUMN rd_style.style_name IS '款式名称';
+COMMENT ON COLUMN rd_style.customer_id IS '所属客户，无客户的自主研发可留空';
+COMMENT ON COLUMN rd_style.category_id IS '公共分类节点，执行人员分类权限';
+COMMENT ON COLUMN rd_style.season IS '季节，例如2026秋冬';
+COMMENT ON COLUMN rd_style.description IS '款式说明';
+COMMENT ON COLUMN rd_style.cover_oss_id IS '私有款式主图文件ID';
+COMMENT ON COLUMN rd_style.status IS '0启用，1停用，停用后不可新选';
+COMMENT ON COLUMN rd_style.remark IS '款式备注';
+COMMENT ON COLUMN rd_style.create_by IS '创建账号ID';
+COMMENT ON COLUMN rd_style.create_time IS '创建时间';
+COMMENT ON COLUMN rd_style.update_by IS '最后修改账号ID';
+COMMENT ON COLUMN rd_style.update_time IS '最后修改时间';
+COMMENT ON INDEX rd_style_pkey IS '款式稳定主键';
+COMMENT ON INDEX uq_rd_style_internal_code IS '款号唯一校验';
+COMMENT ON INDEX idx_rd_style_customer IS '客户维度查询与引用检查';
+COMMENT ON INDEX idx_rd_style_category IS '分类范围过滤和引用检查';
+COMMENT ON INDEX uq_rd_style_cover IS '一张私有主图只绑定一个款式';
+COMMENT ON SEQUENCE rd_style_style_id_seq IS '款式主键分配序列';
+
+-- 角色管理员按需分配页面和操作权限，迁移不自动授权。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762900000000000100,0,'研发',70,'/rd',NULL,'N','Y','M','0','0','','experiment',now()
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE parent_id=0 AND path IN ('rd','/rd'));
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762900000000000101,menu_id,'款式档案',10,'styles','rd/StyleManage','N','Y','C','0','0','rd:style:list','#',now()
+FROM sys_menu WHERE parent_id=0 AND path IN ('rd','/rd')
+AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms='rd:style:list')
+ORDER BY menu_id LIMIT 1;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT v.id,m.menu_id,v.name,v.seq,'#','','N','Y','F','0','0',v.perm,'#',now()
+FROM sys_menu m CROSS JOIN (VALUES
+    (1762900000000000102::bigint,'新增款式',1,'rd:style:add'),
+    (1762900000000000103::bigint,'编辑与启停款式',2,'rd:style:edit'),
+    (1762900000000000104::bigint,'删除款式',3,'rd:style:remove')
+) v(id,name,seq,perm)
+WHERE m.perms='rd:style:list' AND NOT EXISTS (SELECT 1 FROM sys_menu x WHERE x.perms=v.perm);
+
+DO $$
+DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.rd_style TO %I',app_role);
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE public.rd_style_style_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+
+-- 款式规格与套装_20261109.sql
+BEGIN;
+
+ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS production_mode varchar(12) NOT NULL DEFAULT 'single'
+    CHECK (production_mode IN ('single','combined','separate'));
+ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS same_hanger boolean NOT NULL DEFAULT false
+    CHECK (NOT same_hanger OR production_mode='combined');
+COMMENT ON COLUMN rd_style.production_mode IS '款式生产模式：single 单款，combined 合并生产套装，separate 分开生产套装';
+COMMENT ON COLUMN rd_style.same_hanger IS '合并生产套装是否要求所有子款在同一衣架生产';
+
+CREATE TABLE IF NOT EXISTS rd_style_member (
+    style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
+    child_id bigint NOT NULL REFERENCES rd_style(style_id),
+    role_name varchar(60) NOT NULL CHECK (btrim(role_name)<>''),
+    quantity integer NOT NULL CHECK (quantity>0),
+    sort_order integer NOT NULL,
+    PRIMARY KEY (style_id,child_id),
+    CHECK (style_id<>child_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rd_style_member_child ON rd_style_member(child_id);
+COMMENT ON TABLE rd_style_member IS '套装与独立子款的组成关系，移除关系不删除子款';
+COMMENT ON COLUMN rd_style_member.style_id IS '套装款式ID';
+COMMENT ON COLUMN rd_style_member.child_id IS '单款子款ID';
+COMMENT ON COLUMN rd_style_member.role_name IS '子款在本套装内的用途，如上衣或帽子';
+COMMENT ON COLUMN rd_style_member.quantity IS '每套含本子款的件数';
+COMMENT ON COLUMN rd_style_member.sort_order IS '套装内的展示顺序';
+
+CREATE TABLE IF NOT EXISTS rd_style_color (
+    style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
+    color_id bigint NOT NULL REFERENCES base_color(color_id),
+    PRIMARY KEY (style_id,color_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rd_style_color_color ON rd_style_color(color_id);
+COMMENT ON TABLE rd_style_color IS '单款可用颜色';
+COMMENT ON COLUMN rd_style_color.style_id IS '单款ID';
+COMMENT ON COLUMN rd_style_color.color_id IS '公共颜色ID';
+
+CREATE TABLE IF NOT EXISTS rd_style_size (
+    style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
+    size_id bigint NOT NULL REFERENCES sys_size(id),
+    PRIMARY KEY (style_id,size_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rd_style_size_size ON rd_style_size(size_id);
+COMMENT ON TABLE rd_style_size IS '单款可用尺码，保存具体尺码而非尺码组';
+COMMENT ON COLUMN rd_style_size.style_id IS '单款ID';
+COMMENT ON COLUMN rd_style_size.size_id IS '公共尺码ID';
+
+CREATE TABLE IF NOT EXISTS rd_style_spec_exclusion (
+    style_id bigint NOT NULL,
+    color_id bigint NOT NULL,
+    size_id bigint NOT NULL,
+    PRIMARY KEY (style_id,color_id,size_id),
+    FOREIGN KEY (style_id,color_id) REFERENCES rd_style_color(style_id,color_id) ON DELETE CASCADE,
+    FOREIGN KEY (style_id,size_id) REFERENCES rd_style_size(style_id,size_id) ON DELETE CASCADE
+);
+COMMENT ON TABLE rd_style_spec_exclusion IS '单款明确排除的颜色尺码组合，其余组合由所选颜色和尺码自动生成';
+COMMENT ON COLUMN rd_style_spec_exclusion.style_id IS '单款ID';
+COMMENT ON COLUMN rd_style_spec_exclusion.color_id IS '不可配对的颜色ID';
+COMMENT ON COLUMN rd_style_spec_exclusion.size_id IS '不可配对的尺码ID';
+
+-- 让款式分组可在录入首个标签之前维护。
+INSERT INTO sys_tag_module(module_key,module_name) VALUES ('rd_style','款式档案')
+ON CONFLICT (module_key) DO NOTHING;
+INSERT INTO sys_tag_group(module_key,group_name,is_default,sort_order)
+VALUES ('rd_style','默认分组','1',0) ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON rd_style_member,rd_style_color,rd_style_size,rd_style_spec_exclusion TO %I',app_role);
+END $$;
+COMMIT;
+
+
+-- 款式附件_20261109.sql
+BEGIN;
+COMMENT ON COLUMN rd_style.season IS '款式季节统计维度，新数据使用不含年份的季节选项，历史文本保留原值';
+CREATE TABLE IF NOT EXISTS rd_style_attachment (
+ style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
+ oss_id bigint NOT NULL UNIQUE REFERENCES sys_oss(oss_id),
+ category varchar(30) NOT NULL CHECK (category IN ('style_image','main_label','size_label','wash_label','hang_tag','tag_sticker','document')),
+ sort_order integer NOT NULL DEFAULT 0,
+ PRIMARY KEY(style_id,oss_id)
+);
+COMMENT ON TABLE rd_style_attachment IS '款式与子款的图片、标识及文档附件，按款式权限控制访问';
+COMMENT ON COLUMN rd_style_attachment.style_id IS '所属款式ID，套装和子款分别维护';
+COMMENT ON COLUMN rd_style_attachment.oss_id IS '私有文件ID，同一文件只可关联一个款式';
+COMMENT ON COLUMN rd_style_attachment.category IS '附件类型：款式图片、主标、尺码标、洗标、吊牌、吊牌贴纸或文档';
+COMMENT ON COLUMN rd_style_attachment.sort_order IS '同款附件展示顺序';
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON rd_style_attachment TO %I',app_role);
+END $$;
+COMMIT;
+
+BEGIN;
+-- 套装规格保存常用配色配码；订单确认后应另存本单快照。
+CREATE TABLE IF NOT EXISTS rd_style_set_spec (
+    id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    style_id BIGINT NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
+    color_name VARCHAR(120) NOT NULL,
+    size_name VARCHAR(120) NOT NULL,
+    remark VARCHAR(500) NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    CONSTRAINT rd_style_set_spec_name_unique UNIQUE (style_id, color_name, size_name) DEFERRABLE INITIALLY IMMEDIATE
+);
+COMMENT ON TABLE rd_style_set_spec IS '套装常用配色配码规格';
+COMMENT ON COLUMN rd_style_set_spec.id IS '套装规格ID';
+COMMENT ON COLUMN rd_style_set_spec.style_id IS '所属套装款式ID';
+COMMENT ON COLUMN rd_style_set_spec.color_name IS '套装配色名称';
+COMMENT ON COLUMN rd_style_set_spec.size_name IS '套装尺码名称';
+COMMENT ON COLUMN rd_style_set_spec.remark IS '规格备注';
+COMMENT ON COLUMN rd_style_set_spec.sort_order IS '展示顺序';
+CREATE TABLE IF NOT EXISTS rd_style_set_spec_item (
+    spec_id BIGINT NOT NULL REFERENCES rd_style_set_spec(id) ON DELETE CASCADE,
+    child_id BIGINT NOT NULL REFERENCES rd_style(style_id),
+    color_id BIGINT NOT NULL REFERENCES base_color(color_id),
+    size_id BIGINT NOT NULL REFERENCES sys_size(id),
+    PRIMARY KEY (spec_id, child_id)
+);
+COMMENT ON TABLE rd_style_set_spec_item IS '套装规格对应的子款颜色尺码';
+COMMENT ON COLUMN rd_style_set_spec_item.spec_id IS '所属套装规格ID';
+COMMENT ON COLUMN rd_style_set_spec_item.child_id IS '组成子款ID';
+COMMENT ON COLUMN rd_style_set_spec_item.color_id IS '子款颜色ID';
+COMMENT ON COLUMN rd_style_set_spec_item.size_id IS '子款尺码ID';
+CREATE INDEX IF NOT EXISTS idx_rd_style_set_spec_item_child ON rd_style_set_spec_item(child_id);
+
+-- 沿用款式档案的应用数据库角色。
+DO $$
+DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON rd_style_set_spec,rd_style_set_spec_item TO %I',app_role);
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE rd_style_set_spec_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+BEGIN;
+ALTER TABLE inv_material ADD COLUMN IF NOT EXISTS multi_spec boolean NOT NULL DEFAULT false;
+CREATE TABLE IF NOT EXISTS inv_material_variant (
+    variant_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    material_id bigint NOT NULL REFERENCES inv_material(material_id),
+    code varchar(64) NOT NULL,
+    name varchar(120) NOT NULL,
+    status char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_material_code ON inv_material_variant(material_id, lower(code));
+DROP INDEX IF EXISTS uq_inv_material_variant_code;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_name ON inv_material_variant(material_id,lower(name));
+COMMENT ON TABLE inv_material_variant IS '物料可独立引用的库存规格，停用保留历史标识';
+COMMENT ON COLUMN inv_material.multi_spec IS '是否要求业务明细指定物料规格，false 表示按档案引用';
+COMMENT ON COLUMN inv_material_variant.variant_id IS '物料规格主键，供BOM及后续库存单据引用';
+COMMENT ON COLUMN inv_material_variant.material_id IS '所属物料，关联 inv_material.material_id';
+COMMENT ON COLUMN inv_material_variant.code IS '物料规格编码，同一物料内不区分大小写唯一';
+COMMENT ON COLUMN inv_material_variant.name IS '规格名称，同一物料内不区分大小写唯一';
+COMMENT ON COLUMN inv_material_variant.status IS '状态：0启用，1停用';
+DO $$ DECLARE app_role text; BEGIN
+ SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.inv_material_variant TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.inv_material_variant_variant_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+BEGIN;
+ALTER TABLE inv_material ADD COLUMN IF NOT EXISTS variant_fields jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE inv_material_variant ADD COLUMN IF NOT EXISTS attributes jsonb NOT NULL DEFAULT '{}';
+COMMENT ON COLUMN inv_material.variant_fields IS '当前属性模板中按独立规格填写的字段键数组';
+COMMENT ON COLUMN inv_material_variant.attributes IS '按模板字段键保存该物料规格的属性值，单位由模板定义';
+COMMIT;
+
+BEGIN;
+-- 补充常用辅料和包材；保留已有模板编码、字段及档案值。
+INSERT INTO inv_material_spec_template(template_code,template_name,sort_order,fields) VALUES
+ ('hook_loop','粘扣带',65,'[{"key":"material","label":"材质","type":"text"},{"key":"surfaceType","label":"钩面或毛面","type":"text"},{"key":"width","label":"带宽","type":"decimal","unit":"mm"},{"key":"length","label":"裁切长度","type":"decimal","unit":"mm"},{"key":"backing","label":"背胶或背衬","type":"text"}]'::jsonb),
+ ('cord_hardware','绳扣、绳头与环扣',66,'[{"key":"hardwareType","label":"配件类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"openingWidth","label":"内口宽","type":"decimal","unit":"mm"},{"key":"cordDiameter","label":"适配绳径","type":"decimal","unit":"mm"},{"key":"surfaceFinish","label":"表面处理","type":"text"}]'::jsonb),
+ ('padding','垫肩、胸垫与定型辅料',67,'[{"key":"paddingType","label":"辅料类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"shape","label":"形状","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"thickness","label":"厚度","type":"decimal","unit":"mm"}]'::jsonb),
+ ('filling','填充料与保暖棉',68,'[{"key":"fillingType","label":"填充类型","type":"text"},{"key":"composition","label":"成分","type":"text"},{"key":"form","label":"形态","type":"text"},{"key":"weightGsm","label":"克重","type":"decimal","unit":"g/m²"},{"key":"width","label":"幅宽","type":"decimal","unit":"cm"},{"key":"thickness","label":"厚度","type":"decimal","unit":"mm"},{"key":"fillPower","label":"蓬松度","type":"decimal","unit":"cu in/oz"}]'::jsonb),
+ ('decoration','章标、贴花与装饰辅料',71,'[{"key":"decorationType","label":"装饰类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"attachment","label":"固定方式","type":"text"},{"key":"artworkVersion","label":"图案版本","type":"text"}]'::jsonb),
+ ('heat_transfer','烫画、热转印与压胶材料',72,'[{"key":"transferType","label":"材料类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"artworkVersion","label":"图案版本","type":"text"},{"key":"applicationReference","label":"供应商工艺资料编号","type":"text"}]'::jsonb),
+ ('sticker','贴纸、条码标与不干胶',73,'[{"key":"stickerType","label":"标签类型","type":"text"},{"key":"faceMaterial","label":"面材","type":"text"},{"key":"adhesive","label":"胶型","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"printVersion","label":"印刷版号","type":"text"}]'::jsonb),
+ ('tag_fastener','吊绳、胶针与吊牌扣',74,'[{"key":"fastenerType","label":"配件类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"cordDiameter","label":"绳径","type":"decimal","unit":"mm"},{"key":"closure","label":"扣合方式","type":"text"}]'::jsonb),
+ ('hanger','衣架、裤架与包装夹',101,'[{"key":"hangerType","label":"配件类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"clipSpacing","label":"夹距","type":"decimal","unit":"mm"},{"key":"hookType","label":"挂钩形式","type":"text"}]'::jsonb),
+ ('paper_insert','拷贝纸、衬纸与纸板',102,'[{"key":"paperType","label":"纸品类型","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"paperWeight","label":"克重","type":"decimal","unit":"g/m²"},{"key":"thickness","label":"厚度","type":"decimal","unit":"mm"}]'::jsonb),
+ ('packing_supply','封箱胶带、捆扎带与缠绕膜',103,'[{"key":"supplyType","label":"包材类型","type":"text"},{"key":"material","label":"材质","type":"text"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"thickness","label":"厚度","type":"decimal","unit":"μm"},{"key":"rollLength","label":"公称卷长","type":"decimal","unit":"m"}]'::jsonb),
+ ('desiccant','干燥剂与防护小包',104,'[{"key":"agentType","label":"内容物类型","type":"text"},{"key":"netWeight","label":"单包净重","type":"decimal","unit":"g"},{"key":"packMaterial","label":"外袋材质","type":"text"},{"key":"length","label":"包长","type":"decimal","unit":"mm"},{"key":"width","label":"包宽","type":"decimal","unit":"mm"}]'::jsonb),
+ ('production_supply','裁剪、缝制与印花耗材',105,'[{"key":"supplyType","label":"耗材类型","type":"text"},{"key":"material","label":"材质或成分","type":"text"},{"key":"equipmentModel","label":"适用设备或型号","type":"text"},{"key":"productGrade","label":"牌号或系列","type":"text"},{"key":"technicalReference","label":"技术资料编号","type":"text"}]'::jsonb),
+ ('general','通用物料',110,'[{"key":"material","label":"材质","type":"text"},{"key":"length","label":"长度","type":"decimal","unit":"mm"},{"key":"width","label":"宽度","type":"decimal","unit":"mm"},{"key":"height","label":"高度","type":"decimal","unit":"mm"},{"key":"thickness","label":"厚度","type":"decimal","unit":"mm"},{"key":"diameter","label":"直径","type":"decimal","unit":"mm"},{"key":"technicalReference","label":"技术资料编号","type":"text"}]'::jsonb)
+ON CONFLICT (template_code) DO NOTHING;
+
+WITH additions(code, fields) AS (VALUES
+ ('fabric','[{"key":"fabricFinish","label":"后整理","type":"text"},{"key":"fabricConstruction","label":"纱支与织物规格","type":"text"}]'::jsonb),
+ ('interlining','[{"key":"adhesiveType","label":"胶点类型","type":"text"},{"key":"applicationReference","label":"供应商压烫资料编号","type":"text"}]'::jsonb),
+ ('zipper','[{"key":"sliderLock","label":"拉头锁定形式","type":"text"},{"key":"pullerType","label":"拉片款式","type":"text"},{"key":"tapeMaterial","label":"布带材质","type":"text"}]'::jsonb),
+ ('label','[{"key":"foldType","label":"折法","type":"text"},{"key":"printVersion","label":"印刷或织造版号","type":"text"},{"key":"language","label":"标识语言","type":"text"}]'::jsonb),
+ ('carton','[{"key":"boxStyle","label":"箱型","type":"text"},{"key":"boardGrade","label":"纸板等级","type":"text"},{"key":"printVersion","label":"印刷版号","type":"text"}]'::jsonb)
+)
+UPDATE inv_material_spec_template t
+SET fields = t.fields || COALESCE((
+  SELECT jsonb_agg(f.value ORDER BY f.position)
+  FROM jsonb_array_elements(a.fields) WITH ORDINALITY f(value, position)
+  WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(t.fields) old WHERE old->>'key'=f.value->>'key')
+), '[]'::jsonb)
+FROM additions a WHERE t.template_code=a.code;
+COMMIT;
+
+-- 款式 BOM 一期：单据、版本、制单及发布信息与菜单权限。
+BEGIN;
+CREATE TABLE IF NOT EXISTS rd_style_bom (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    bom_code varchar(60) NOT NULL,
+    preparer_id bigint,
+    style_id bigint NOT NULL REFERENCES rd_style(style_id),
+    version integer NOT NULL,
+    status varchar(12) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','released')),
+    remark varchar(500) NOT NULL DEFAULT '',
+    rules jsonb NOT NULL,
+    update_time timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(style_id,version)
+);
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS create_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS create_time timestamptz;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS update_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_by bigint;
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_time timestamptz;
+COMMENT ON COLUMN rd_style_bom.create_by IS '创建本版本的用户 ID，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.create_time IS '本版本首次保存时间，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.update_by IS '最近一次保存本版本的用户 ID';
+COMMENT ON COLUMN rd_style_bom.release_by IS '发布本版本的用户 ID，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.release_time IS '本版本发布时间，历史版本可能未记录';
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS bom_code varchar(60);
+ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS preparer_id bigint;
+-- 历史记录使用专用前缀保留稳定标识，避免与新单日期流水冲突。
+UPDATE rd_style_bom SET bom_code = 'BOM-HIST-' || id WHERE bom_code IS NULL OR btrim(bom_code) = '';
+UPDATE rd_style_bom SET preparer_id = create_by WHERE preparer_id IS NULL;
+ALTER TABLE rd_style_bom ALTER COLUMN bom_code SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rd_style_bom_code ON rd_style_bom (lower(bom_code));
+COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+
+COMMENT ON TABLE rd_style_bom IS '款式用料清单版本，发布版保留用料与单位快照';
+COMMENT ON COLUMN rd_style_bom.id IS '用料清单版本主键';
+COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+COMMENT ON COLUMN rd_style_bom.style_id IS '所属款式，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_bom.version IS '同款式内唯一的正整数版本号，默认递增，草稿可编辑';
+COMMENT ON COLUMN rd_style_bom.status IS 'draft草稿、released已发布';
+COMMENT ON COLUMN rd_style_bom.remark IS '版本说明';
+COMMENT ON COLUMN rd_style_bom.rules IS '结构化用料规则，含子款、用料位置、适用色码、物料及用量单位快照';
+COMMENT ON COLUMN rd_style_bom.update_time IS '最近保存或发布时间';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762900000000000130,parent_id,'款式 BOM',20,'style-boms','rd/StyleBomManage','N','Y','C','0','0','rd:bom:list','#',now()
+FROM sys_menu WHERE perms='rd:style:list'
+AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms='rd:bom:list') LIMIT 1;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1762900000000000131,menu_id,'编辑与发布 BOM',1,'#','','N','Y','F','0','0','rd:bom:edit','#',now()
+FROM sys_menu WHERE perms='rd:bom:list'
+AND NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms='rd:bom:edit');
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE ON rd_style_bom TO %I',app_role);
+ EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE rd_style_bom_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+-- ------------------------------------------------------------
+-- 人员业务职责（多选）：责任人选择资格与岗位/系统权限分离。
+-- ------------------------------------------------------------
+BEGIN;
+CREATE TABLE IF NOT EXISTS sys_user_business_duty (
+    user_id bigint NOT NULL REFERENCES sys_user(user_id) ON DELETE CASCADE,
+    duty_code varchar(24) NOT NULL CHECK (duty_code IN ('SALES','FOLLOWER','PURCHASER','PLANNER','WAREHOUSE','QUALITY')),
+    create_time timestamp NOT NULL DEFAULT now(),
+    CONSTRAINT sys_user_business_duty_pk PRIMARY KEY(user_id,duty_code)
+);
+COMMENT ON TABLE sys_user_business_duty IS '人员业务职责，多选标识人员可担任的业务单据责任身份，不等同于岗位、系统角色或操作权限';
+COMMENT ON COLUMN sys_user_business_duty.user_id IS '人员ID，关联 sys_user.user_id';
+COMMENT ON COLUMN sys_user_business_duty.duty_code IS '业务职责代码：SALES业务员、FOLLOWER跟单员、PURCHASER采购员、PLANNER计划员、WAREHOUSE仓管员、QUALITY质检员';
+COMMENT ON COLUMN sys_user_business_duty.create_time IS '职责关联建立时间';
+CREATE INDEX IF NOT EXISTS ix_sys_user_business_duty_code ON sys_user_business_duty(duty_code,user_id);
+DO $$ DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON sys_user_business_duty TO %I',app_role);
+END $$;
 COMMIT;

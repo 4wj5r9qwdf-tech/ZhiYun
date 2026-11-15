@@ -131,6 +131,33 @@ const sizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
 const savedSizeGroupCodeRule = ref({ enabled: true, prefix: 'SG', digits: 4 })
 const sizeGroupCodeEditing = ref(false)
 const sizeGroupCodeSaving = ref(false)
+const colorCodeRule = ref({ enabled: true, prefix: 'CLR', digits: 4 })
+const savedColorCodeRule = ref({ ...colorCodeRule.value })
+const colorCodeEditing = ref(false)
+const colorCodeSaving = ref(false)
+const materialCodeRule = ref({ enabled: true, prefix: 'MAT', digits: 5 })
+const savedMaterialCodeRule = ref({ ...materialCodeRule.value })
+const materialCodeEditing = ref(false)
+const materialCodeSaving = ref(false)
+const materialDefaultSchemeId = ref('')
+const savedMaterialDefaultSchemeId = ref('')
+const materialDefaultEditing = ref(false)
+const materialDefaultSaving = ref(false)
+const materialDefaultSchemes = ref<{value:string;label:string}[]>([])
+const styleDefaultSchemeId = ref('')
+const savedStyleDefaultSchemeId = ref('')
+const styleDefaultEditing = ref(false)
+const styleDefaultSaving = ref(false)
+const offlineLeadDays = ref(0)
+const offlineLeadEditing = ref(false)
+const offlineLeadSaving = ref(false)
+async function saveOfflineLeadDays() {
+  if (!Number.isInteger(offlineLeadDays.value) || offlineLeadDays.value < 0 || offlineLeadDays.value > 3650) { message.warning('请输入 0 至 3650 的整数天数'); return }
+  offlineLeadSaving.value=true
+  try { const res:any=await api.post('/system/config/order-offline-lead-days',{days:offlineLeadDays.value}); if(res.code!==200) throw new Error(res.msg || '保存失败'); offlineLeadEditing.value=false; message.success('默认下线日期规则已保存'); await load() }
+  catch(error:any) { message.error(error?.response?.data?.msg || error.message || '保存失败') }
+  finally { offlineLeadSaving.value=false }
+}
 const layoutCodeRule = ref({ enabled: true, zonePrefix: 'Z', zoneDigits: 2, rackPrefix: 'R', rackDigits: 2, binPrefix: 'B', binDigits: 3 })
 const savedLayoutCodeRule = ref({ ...layoutCodeRule.value })
 const layoutCodeEditing = ref(false)
@@ -141,9 +168,19 @@ const savedWarehouseCodeRule = ref({ ...warehouseCodeRule.value })
 const warehouseCodeEditing = ref(false)
 const warehouseCodeSaving = ref(false)
 const warehouseCodeRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.warehouse.codeRule'))
+const categoryCodeRule = ref({ enabled: true, separator: '-', digits: 4 })
+const savedCategoryCodeRule = ref({ ...categoryCodeRule.value })
+const categoryCodeEditing = ref(false)
+const categoryCodeSaving = ref(false)
+const categoryCodeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'base.category.codeRule'))
+const categoryCodeExample = computed(() => `01${categoryCodeRule.value.separator}${'0'.repeat(Math.max(0, categoryCodeRule.value.digits - 1))}1`)
 const parameterRows = computed(() => rows.value)
 const sizeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.size'))
 const sizeGroupRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'system.code.sizeGroup'))
+const colorCodeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'base.color.codeRule'))
+const materialCodeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.material.codeRule'))
+const materialDefaultRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.material.defaultCategoryScheme'))
+const styleDefaultRow = computed(() => parameterRows.value.find(row => row.configKey === 'rd.style.defaultCategoryScheme'))
 const ossPreviewRow = computed(() => parameterRows.value.find(row => row.configKey === 'sys.oss.previewListResource'))
 function readCodeRule(row: Record<string, any> | undefined, fallback: { enabled: boolean; prefix: string; digits: number }) {
   if (!row?.configValue) return { ...fallback }
@@ -156,6 +193,7 @@ function readCodeRule(row: Record<string, any> | undefined, fallback: { enabled:
   return { ...fallback }
 }
 function syncCodeRules(configs: Record<string, any>[]) {
+  if (!offlineLeadEditing.value) { const n=Number(configs.find(row=>row.configKey==='order.customer.offlineLeadDays')?.configValue ?? 0); offlineLeadDays.value=Number.isInteger(n) && n>=0 && n<=3650 ? n : 0 }
   const sizeRow = configs.find(row => row.configKey === 'system.code.size')
   const groupRow = configs.find(row => row.configKey === 'system.code.sizeGroup')
   if (!autoCodeEditing.value) {
@@ -165,6 +203,10 @@ function syncCodeRules(configs: Record<string, any>[]) {
   if (!sizeGroupCodeEditing.value) {
     sizeGroupCodeRule.value = readCodeRule(groupRow, { enabled: true, prefix: 'SG', digits: 4 })
     savedSizeGroupCodeRule.value = { ...sizeGroupCodeRule.value }
+  }
+  if (!colorCodeEditing.value) {
+    colorCodeRule.value = readCodeRule(configs.find(row => row.configKey === 'base.color.codeRule'), { enabled: true, prefix: 'CLR', digits: 4 })
+    savedColorCodeRule.value = { ...colorCodeRule.value }
   }
   if (!layoutCodeEditing.value) {
     const row = configs.find(item => item.configKey === 'inventory.warehouseLayout.codeRule')
@@ -181,6 +223,25 @@ function syncCodeRules(configs: Record<string, any>[]) {
     try { warehouseCodeRule.value = row?.configValue ? { ...fallback, ...JSON.parse(String(row.configValue)) } : { ...fallback } }
     catch { warehouseCodeRule.value = { ...fallback } }
     savedWarehouseCodeRule.value = { ...warehouseCodeRule.value }
+  }
+  if (!categoryCodeEditing.value) {
+    const row = configs.find(item => item.configKey === 'base.category.codeRule')
+    const fallback = { enabled: true, separator: '-', digits: 4 }
+    try { categoryCodeRule.value = row?.configValue ? { ...fallback, ...JSON.parse(String(row.configValue)) } : { ...fallback } }
+    catch { categoryCodeRule.value = { ...fallback } }
+    savedCategoryCodeRule.value = { ...categoryCodeRule.value }
+  }
+  if (!materialCodeEditing.value) {
+    materialCodeRule.value = readCodeRule(configs.find(row => row.configKey === 'inventory.material.codeRule'), { enabled: true, prefix: 'MAT', digits: 5 })
+    savedMaterialCodeRule.value = { ...materialCodeRule.value }
+  }
+  if (!styleDefaultEditing.value) {
+    styleDefaultSchemeId.value = String(configs.find(row => row.configKey === 'rd.style.defaultCategoryScheme')?.configValue || '')
+    savedStyleDefaultSchemeId.value = styleDefaultSchemeId.value
+  }
+  if (!materialDefaultEditing.value) {
+    materialDefaultSchemeId.value = String(configs.find(row => row.configKey === 'inventory.material.defaultCategoryScheme')?.configValue || '')
+    savedMaterialDefaultSchemeId.value = materialDefaultSchemeId.value
   }
 }
 function openLayoutCodeEdit() { layoutCodeEditing.value = true }
@@ -220,6 +281,26 @@ async function saveWarehouseCodeRule() {
     message.success('仓库自动编码规则已保存')
   } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存仓库自动编码规则失败') }
   finally { warehouseCodeSaving.value = false }
+}
+/** 恢复已保存的分类编码规则，丢弃本次未提交输入。 / Restore the saved category code rule and discard the draft. */
+function cancelCategoryCodeEdit() { categoryCodeRule.value = { ...savedCategoryCodeRule.value }; categoryCodeEditing.value = false }
+/** 校验并保存类型联动规则；前后值由后端业务审计记录。 / Validate and persist the type-linked rule with server-side audit. */
+async function saveCategoryCodeRule() {
+  const rule = categoryCodeRule.value
+  if (!['-', '_', '.', ''].includes(rule.separator) || !Number.isInteger(rule.digits) || rule.digits < 1 || rule.digits > 8) { message.warning('分隔符只能选短横线、下划线、点号或不使用；序号位数须为1到8位'); return }
+  categoryCodeSaving.value = true
+  try {
+    const saved = { ...rule }
+    const res: any = await api.post('/system/config/category-code-rule', saved)
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    categoryCodeRule.value = { ...saved }; savedCategoryCodeRule.value = { ...saved }; categoryCodeEditing.value = false
+    const configValue = JSON.stringify(saved)
+    rows.value = categoryCodeRuleRow.value
+      ? rows.value.map(row => row.configKey === 'base.category.codeRule' ? { ...row, configValue } : row)
+      : [...rows.value, { configName: '分类编码自动生成规则', configKey: 'base.category.codeRule', configValue, configType: 'Y', remark: '分类类型编码前缀、分类编码自动生成开关、分隔符及序号位数' }]
+    message.success('分类编码自动生成规则已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存分类编码规则失败') }
+  finally { categoryCodeSaving.value = false }
 }
 async function openAutoCode() {
   try {
@@ -297,6 +378,76 @@ async function saveSizeGroupCode() {
     message.error(status ? `保存请求失败（HTTP ${status}）：${error?.config?.url || '/system/config'}` : error instanceof Error ? error.message : '保存编码规则失败')
   } finally { sizeGroupCodeSaving.value = false }
 }
+function openColorCode() {
+  colorCodeRule.value = readCodeRule(colorCodeRuleRow.value, { enabled: true, prefix: 'CLR', digits: 4 })
+  savedColorCodeRule.value = { ...colorCodeRule.value }
+  colorCodeEditing.value = true
+}
+function cancelColorCodeEdit() {
+  colorCodeRule.value = { ...savedColorCodeRule.value }
+  colorCodeEditing.value = false
+}
+async function saveColorCode() {
+  const prefix = colorCodeRule.value.prefix.trim()
+  if (!prefix || prefix.length > 30 || !/^[A-Za-z0-9_.-]+$/.test(prefix) || !Number.isInteger(colorCodeRule.value.digits) || colorCodeRule.value.digits < 1 || colorCodeRule.value.digits > 10) { message.warning('编码前缀须为字母、数字、点、下划线或短横线，序号位数须在1到10之间'); return }
+  colorCodeSaving.value = true
+  try {
+    const saved = { ...colorCodeRule.value, prefix }
+    const res: any = await api.post('/system/color/code-rule', saved)
+    if (res.code !== 200) throw new Error(res.msg || '保存失败')
+    colorCodeRule.value = { ...saved }
+    savedColorCodeRule.value = { ...saved }
+    colorCodeEditing.value = false
+    const configValue = JSON.stringify(saved)
+    if (rows.value.some(row => row.configKey === 'base.color.codeRule')) rows.value = rows.value.map(row => row.configKey === 'base.color.codeRule' ? { ...row, configValue } : row)
+    else rows.value = [...rows.value, { configId: undefined, configName: '颜色自动编码规则', configKey: 'base.color.codeRule', configValue, configType: 'Y', remark: '颜色编码自动生成开关、前缀及序号位数' }]
+    message.success('颜色编码规则已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error?.message || '保存颜色编码规则失败') }
+  finally { colorCodeSaving.value = false }
+}
+function openMaterialCodeEdit(){materialCodeEditing.value=true}
+function cancelMaterialCodeEdit(){materialCodeRule.value={...savedMaterialCodeRule.value};materialCodeEditing.value=false}
+async function saveMaterialCodeRule(){
+  const prefix=materialCodeRule.value.prefix.trim()
+  if(!prefix||prefix.length>30||!/[A-Za-z0-9_.-]+/.test(prefix)||!/^[A-Za-z0-9_.-]+$/.test(prefix)||!Number.isInteger(materialCodeRule.value.digits)||materialCodeRule.value.digits<1||materialCodeRule.value.digits>10){message.warning('编码前缀须为字母、数字、点、下划线或短横线，序号位数须在1到10之间');return}
+  materialCodeSaving.value=true
+  try{const saved={...materialCodeRule.value,prefix:prefix.toUpperCase()};const res:any=await api.post('/system/config/material-code-rule',saved);if(res.code!==200)throw new Error(res.msg||'保存失败');materialCodeRule.value={...saved};savedMaterialCodeRule.value={...saved};materialCodeEditing.value=false;const configValue=JSON.stringify(saved);rows.value=materialCodeRuleRow.value?rows.value.map(row=>row.configKey==='inventory.material.codeRule'?{...row,configValue}:row):[...rows.value,{configName:'物料自动编码规则',configKey:'inventory.material.codeRule',configValue,configType:'Y',remark:'物料编码自动生成开关、前缀和序号位数；建议编码可以人工修改'}];message.success('物料自动编码规则已保存')}
+  catch(error:any){message.error(error?.response?.data?.msg||error.message||'保存物料编码规则失败')}finally{materialCodeSaving.value=false}
+}
+async function openMaterialDefaultCategory(){
+  try{const [scopeRes,defaultRes]=await Promise.all([api.get('/inventory/material/category-options'),api.get('/inventory/material/default-category')]) as any[];if(scopeRes.code!==200||defaultRes.code!==200)throw new Error(scopeRes.msg||defaultRes.msg||'读取物料分类参数失败');const unique=new Map<string,{value:string;label:string}>();for(const row of scopeRes.data?.rows||[])if(row.selectable)unique.set(String(row.schemeId),{value:String(row.schemeId),label:String(row.schemeName)});materialDefaultSchemes.value=[...unique.values()];materialDefaultSchemeId.value=String(defaultRes.data?.schemeId||'');savedMaterialDefaultSchemeId.value=materialDefaultSchemeId.value;materialDefaultEditing.value=true}catch(error:any){message.error(error?.response?.data?.msg||error.message||'读取物料分类参数失败')}
+}
+function cancelMaterialDefaultCategory(){materialDefaultSchemeId.value=savedMaterialDefaultSchemeId.value;materialDefaultEditing.value=false}
+async function saveMaterialDefaultCategory(){if(materialDefaultSchemeId.value&&!materialDefaultSchemes.value.some(option=>option.value===materialDefaultSchemeId.value)){message.warning('所选分类类型当前不可用，请刷新后重试');return}materialDefaultSaving.value=true;try{const value=materialDefaultSchemeId.value;const res:any=await api.post('/system/config/material-default-category',{schemeId:value});if(res.code!==200)throw new Error(res.msg||'保存失败');savedMaterialDefaultSchemeId.value=value;materialDefaultEditing.value=false;const configValue=value;rows.value=materialDefaultRow.value?rows.value.map(row=>row.configKey==='inventory.material.defaultCategoryScheme'?{...row,configValue}:row):[...rows.value,{configName:'物料默认分类类型',configKey:'inventory.material.defaultCategoryScheme',configValue,configType:'Y',remark:'物料档案页面的默认分类类型；留空时展示当前员工全部分类授权范围'}];message.success('物料默认分类参数已保存')}catch(error:any){message.error(error?.response?.data?.msg||error.message||'保存物料默认分类参数失败')}finally{materialDefaultSaving.value=false}}
+/** 参数只影响进入款式档案时的初始定位，不扩展人员分类权限。 */
+async function openStyleDefaultCategory() {
+  try {
+    const response: any = await api.get('/inventory/material/category-options')
+    if (response.code !== 200) throw new Error(response.msg || '读取分类类型失败')
+    const unique = new Map<string, {value: string; label: string}>()
+    for (const row of response.data?.rows || []) if (row.selectable) unique.set(String(row.schemeId), { value: String(row.schemeId), label: String(row.schemeName) })
+    materialDefaultSchemes.value = [...unique.values()]
+    styleDefaultSchemeId.value = savedStyleDefaultSchemeId.value
+    styleDefaultEditing.value = true
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取分类类型失败') }
+}
+function cancelStyleDefaultCategory() { styleDefaultSchemeId.value = savedStyleDefaultSchemeId.value; styleDefaultEditing.value = false }
+async function saveStyleDefaultCategory() {
+  const value = String(styleDefaultSchemeId.value || '')
+  if (value && !materialDefaultSchemes.value.some(option => option.value === value)) return message.warning('所选分类类型当前不可用，请刷新后重试')
+  styleDefaultSaving.value = true
+  try {
+    const response: any = await api.post('/system/config/style-default-category', { schemeId: value })
+    if (response.code !== 200) throw new Error(response.msg || '保存失败')
+    savedStyleDefaultSchemeId.value = value; styleDefaultSchemeId.value = value; styleDefaultEditing.value = false
+    rows.value = styleDefaultRow.value
+      ? rows.value.map(row => row.configKey === 'rd.style.defaultCategoryScheme' ? { ...row, configValue: value } : row)
+      : [...rows.value, { configName: '款式默认分类类型', configKey: 'rd.style.defaultCategoryScheme', configValue: value, configType: 'Y' }]
+    message.success('款式默认分类参数已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存款式默认分类参数失败') }
+  finally { styleDefaultSaving.value = false }
+}
+
 function editConfig(row: Record<string, unknown>) {
   editingConfig.value = { ...row }
   configDialog.value = true
@@ -387,7 +538,17 @@ async function load() {
     const records = kind.value === 'cache-overview'
       ? Object.entries(data.info || {}).map(([metric, value]) => ({ metric, value }))
       : Array.isArray(data) ? data : data.rows || []
-    if (currentKind === 'parameters') syncCodeRules(records as Record<string, any>[])
+    if (currentKind === 'parameters') {
+      syncCodeRules(records as Record<string, any>[])
+      try {
+        const categoryRes: any = await api.get('/inventory/material/category-options')
+        if (categoryRes.code === 200) {
+          const unique = new Map<string, { value: string; label: string }>()
+          for (const item of categoryRes.data?.rows ?? []) if (item.selectable) unique.set(String(item.schemeId), { value: String(item.schemeId), label: String(item.schemeName) })
+          materialDefaultSchemes.value = [...unique.values()]
+        }
+      } catch { /* 无分类查看范围时仍允许保留空默认值；管理员可稍后重试配置。 */ }
+    }
     const usage = new Map<string, string[]>()
     if (currentKind === 'files' && can('system:company:list')) {
       try {
@@ -424,18 +585,18 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
 <template>
   <StandardListLayout>
     <template v-if="isLogs || kind === 'files'" #filters>
-      <a-input v-if="kind === 'files'" v-model:value="fileName" allow-clear placeholder="搜索原文件名" style="width: 240px" @press-enter="fileFilter = fileName.trim(); search()" />
+      <label v-if="kind === 'files'" class="zy-filter-field"><span>文件名</span><a-input v-model:value="fileName" allow-clear placeholder="搜索原文件名" style="width: 240px" @press-enter="fileFilter = fileName.trim(); search()" /></label>
       <template v-else>
       <div class="head-filters">
       <a-radio-group v-model:value="category">
         <a-radio-button v-for="item in categories" :key="item.key" :value="item.key">{{ item.label }}</a-radio-button>
       </a-radio-group>
-      <a-input v-model:value="account" allow-clear :placeholder="kind === 'operlog' ? '搜索操作人' : '搜索登录账号'"
+      <label class="zy-filter-field"><span>{{ kind === 'operlog' ? '操作人' : '登录账号' }}</span><a-input v-model:value="account" allow-clear :placeholder="kind === 'operlog' ? '搜索操作人' : '搜索登录账号'"
         style="width: 200px" @press-enter="search">
         <template #prefix><SearchOutlined class="search-icon" /></template>
-      </a-input>
-      <a-select v-model:value="outcome" allow-clear placeholder="结果" style="width: 110px"
-        :options="[{ label: '成功', value: '0' }, { label: '失败', value: '1' }]" />
+      </a-input></label>
+      <label class="zy-filter-field"><span>结果</span><a-select v-model:value="outcome" allow-clear placeholder="结果" style="width: 110px"
+        :options="[{ label: '成功', value: '0' }, { label: '失败', value: '1' }]" /></label>
       </div>
       </template>
     </template>
@@ -477,6 +638,11 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
     <section v-if="kind === 'parameters'" class="settings-page" :aria-busy="loading">
       <div class="settings-section-title">业务规则</div>
       <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>客户订单默认下线日期</h3><p>根据 PO 默认交期提前自然日生成下线日期；订单中可自行修改，已保存日期不会因参数变化而改变。</p></div></div>
+        <div class="setting-controls"><a-form-item label="比默认交期提前"><a-input-number v-model:value="offlineLeadDays" :min="0" :max="3650" :precision="0" :disabled="!offlineLeadEditing" /> 天</a-form-item></div>
+        <div class="setting-footer"><span>0 天表示建议与交期同一天。</span><a-space v-if="can('system:config:edit')"><a-button v-if="offlineLeadEditing" @click="offlineLeadEditing=false; syncCodeRules(rows)">取消</a-button><a-button v-if="offlineLeadEditing" type="primary" :loading="offlineLeadSaving" @click="saveOfflineLeadDays">保存规则</a-button><a-button v-else type="primary" @click="offlineLeadEditing=true">修改规则</a-button></a-space></div>
+      </a-card>
+      <a-card class="setting-card" :bordered="false">
         <div class="setting-heading">
           <div><h3>尺码自动编码</h3><p>设置新增尺码时使用的编码前缀与数字位数。已有尺码编码不受影响。</p></div>
           <a-tag v-if="sizeRuleRow" color="blue">系统内置</a-tag>
@@ -493,6 +659,52 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
             <div class="setting-footer"><span>关闭后，新增尺码需手动填写编码。</span><a-space v-if="can('system:config:edit')"><a-button v-if="autoCodeEditing" @click="cancelAutoCodeEdit">取消</a-button><a-button v-if="autoCodeEditing" type="primary" :loading="autoCodeSaving" @click="saveAutoCode">保存规则</a-button><a-button v-else type="primary" @click="openAutoCode">修改规则</a-button></a-space></div>
           </template>
         </a-spin>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>颜色自动编码</h3><p>配置颜色基础资料的编码建议；自动生成值始终可以在颜色档案中手动修改。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <a-spin :spinning="loading">
+          <a-empty v-if="!loading && !colorCodeRuleRow" description="未找到颜色自动编码规则，请先执行颜色管理数据库脚本" />
+          <template v-else-if="colorCodeRuleRow">
+            <div class="setting-controls">
+              <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="colorCodeRule.enabled" :disabled="!colorCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+              <a-form-item label="编码前缀"><a-input v-model:value="colorCodeRule.prefix" :disabled="!colorCodeEditing" :maxlength="30" placeholder="例如 CLR" /></a-form-item>
+              <a-form-item label="序号位数"><a-input-number v-model:value="colorCodeRule.digits" :disabled="!colorCodeEditing" :min="1" :max="10" :precision="0" /></a-form-item>
+              <div class="setting-example">生成示例：<strong>{{ colorCodeRule.prefix || 'CLR' }}{{ '0'.repeat(Math.max(0, colorCodeRule.digits - 1)) }}1</strong></div>
+            </div>
+            <div class="setting-footer"><span>{{ colorCodeRule.enabled ? '新增颜色时显示可编辑建议编码；关闭后需手动填写。' : '自动生成已关闭，新增颜色时须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="colorCodeEditing" @click="cancelColorCodeEdit">取消</a-button><a-button v-if="colorCodeEditing" type="primary" :loading="colorCodeSaving" @click="saveColorCode">保存规则</a-button><a-button v-else type="primary" @click="openColorCode">修改规则</a-button></a-space></div>
+          </template>
+        </a-spin>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>物料自动编码</h3><p>按统一前缀和流水号生成物料编码建议；已有编码不重编，新增时用户仍可编辑建议值。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <a-spin :spinning="loading">
+          <a-empty v-if="!loading && !materialCodeRuleRow" description="未找到物料自动编码规则，请先执行物料档案数据库脚本" />
+          <template v-else-if="materialCodeRuleRow">
+            <div class="setting-controls">
+              <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="materialCodeRule.enabled" :disabled="!materialCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+              <a-form-item label="编码前缀"><a-input v-model:value="materialCodeRule.prefix" :disabled="!materialCodeEditing" :maxlength="30" placeholder="例如 MAT" /></a-form-item>
+              <a-form-item label="序号位数"><a-input-number v-model:value="materialCodeRule.digits" :disabled="!materialCodeEditing" :min="1" :max="10" :precision="0" /></a-form-item>
+              <div class="setting-example">生成示例：<strong>{{ materialCodeRule.prefix || 'MAT' }}{{ '0'.repeat(Math.max(0, materialCodeRule.digits - 1)) }}1</strong></div>
+            </div>
+            <div class="setting-footer"><span>{{ materialCodeRule.enabled ? '新增物料时显示可编辑建议编码；关闭后必须手动填写。' : '自动生成已关闭，新增物料时必须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="materialCodeEditing" @click="cancelMaterialCodeEdit">取消</a-button><a-button v-if="materialCodeEditing" type="primary" :loading="materialCodeSaving" @click="saveMaterialCodeRule">保存规则</a-button><a-button v-else type="primary" @click="openMaterialCodeEdit">修改规则</a-button></a-space></div>
+          </template>
+        </a-spin>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>物料默认分类类型</h3><p>配置后，物料档案的分类树、列表和表单只显示所设类型。留空时可从全部授权类型中选择。</p></div><a-tag color="blue">业务参数</a-tag></div>
+        <div class="setting-controls">
+          <a-form-item label="默认分类类型"><a-select v-model:value="materialDefaultSchemeId" :disabled="!materialDefaultEditing" allow-clear placeholder="全部授权分类" :options="materialDefaultSchemes" /></a-form-item>
+        </div>
+        <div class="setting-footer"><span>{{ materialDefaultSchemeId ? '当前仅显示所选类型及其授权分类。' : '未配置默认类型时，物料档案展示当前人员有权查看的全部分类。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="materialDefaultEditing" @click="cancelMaterialDefaultCategory">取消</a-button><a-button v-if="materialDefaultEditing" type="primary" :loading="materialDefaultSaving" @click="saveMaterialDefaultCategory">保存参数</a-button><a-button v-else type="primary" @click="openMaterialDefaultCategory">修改参数</a-button></a-space></div>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>款式默认分类类型</h3><p>配置后，款式档案的分类树、列表和表单只显示所设类型。留空时可从全部授权类型中选择。</p></div><a-tag color="blue">业务参数</a-tag></div>
+        <div class="setting-controls"><a-form-item label="默认分类类型"><a-select v-model:value="styleDefaultSchemeId" :disabled="!styleDefaultEditing" allow-clear placeholder="全部授权分类" :options="materialDefaultSchemes" /></a-form-item></div>
+        <div class="setting-footer"><span>{{ styleDefaultSchemeId ? '当前仅显示所选类型及其授权分类。' : '未配置时展示当前人员有权查看的全部分类。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="styleDefaultEditing" @click="cancelStyleDefaultCategory">取消</a-button><a-button v-if="styleDefaultEditing" type="primary" :loading="styleDefaultSaving" @click="saveStyleDefaultCategory">保存参数</a-button><a-button v-else type="primary" @click="openStyleDefaultCategory">修改参数</a-button></a-space></div>
       </a-card>
 
       <a-card class="setting-card" :bordered="false">
@@ -535,6 +747,17 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
           <div class="setting-example">生成示例：<strong>WH01-{{ layoutCodeRule.zonePrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.zoneDigits - 1)) }}1-{{ layoutCodeRule.rackPrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.rackDigits - 1)) }}1-{{ layoutCodeRule.binPrefix }}{{ '0'.repeat(Math.max(0, layoutCodeRule.binDigits - 1)) }}1</strong></div>
         </div>
         <div class="setting-footer"><span>{{ layoutCodeRule.enabled ? '关闭自动生成后，新增时须手动填写编码。仓库编码和已建档位置编码不可修改。' : '自动生成已关闭，新增时须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="layoutCodeEditing" @click="cancelLayoutCodeEdit">取消</a-button><a-button v-if="layoutCodeEditing" type="primary" :loading="layoutCodeSaving" @click="saveLayoutCodeRule">保存规则</a-button><a-button v-else type="primary" @click="openLayoutCodeEdit">修改规则</a-button></a-space></div>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>分类编码自动生成</h3><p>分类类型编码作为前缀，每个类型独立分配序号；例如类型编码01生成01-0001。已有分类编码不自动重编，新增时仍可手动修改建议值。</p></div><a-tag color="blue">系统内置</a-tag></div>
+        <div class="setting-controls">
+          <div class="setting-control"><span>自动生成</span><a-switch v-model:checked="categoryCodeRule.enabled" :disabled="!categoryCodeEditing" checked-children="开启" un-checked-children="关闭" /></div>
+          <a-form-item label="类型编码与序号的分隔符"><a-select v-model:value="categoryCodeRule.separator" :disabled="!categoryCodeEditing" :options="[{label:'短横线（-）',value:'-'},{label:'下划线（_）',value:'_'},{label:'点号（.）',value:'.'},{label:'不使用分隔符',value:''}]" /></a-form-item>
+          <a-form-item label="序号位数"><a-input-number v-model:value="categoryCodeRule.digits" :disabled="!categoryCodeEditing" :min="1" :max="8" :precision="0" /></a-form-item>
+          <div class="setting-example">生成示例：类型编码 <strong>01</strong> → <strong>{{ categoryCodeExample }}</strong></div>
+        </div>
+        <div class="setting-footer"><span>{{ categoryCodeRule.enabled ? (categoryCodeRuleRow ? '新增时按所选分类类型自动带出可编辑建议值；保存时按当前占用情况重新分配。' : '尚未保存规则；默认开启类型编码关联生成。') : '自动生成已关闭，新增分类时须手动填写编码。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="categoryCodeEditing" @click="cancelCategoryCodeEdit">取消</a-button><a-button v-if="categoryCodeEditing" type="primary" :loading="categoryCodeSaving" @click="saveCategoryCodeRule">保存规则</a-button><a-button v-else type="primary" @click="categoryCodeEditing=true">修改规则</a-button></a-space></div>
       </a-card>
 
       <div class="settings-section-title">系统功能</div>
