@@ -26,6 +26,7 @@ import java.util.*;
 public class CustomerOrderController {
     private final JdbcTemplate jdbc;
     private final org.dromara.web.service.CustomerOrderApprovalService approval;
+    private final org.dromara.web.service.MaterialDemandPlanService demandPlans;
     private final StyleController styles;
     private final StyleBomController boms;
 
@@ -40,7 +41,7 @@ public class CustomerOrderController {
     public record Action(int revision, String action, String reason) {}
     public record DemandRequest(Integer revision, Boolean recalculate) {}
 
-    /** 订单角色可检索基础资料，款式选择继续执行人员分类限制。 */
+    /** 订单角色可检索基础资料，款式选择继续执行人员分类限制。 / Provide order-entry reference data while keeping style choices within the employee category scope. */
     @GetMapping("/options")
     public R<Map<String,Object>> options() {
         var styleCategories = new LinkedHashMap<>(boms.styleCategories().getData());
@@ -59,7 +60,7 @@ public class CustomerOrderController {
             "currentUser",LoginHelper.getUserId().toString(), "offlineLeadDays",offlineLeadDays()));
     }
 
-    /** 默认下线提前天数；参数未设置时按交期当天建议，录单时允许人工修改。 */
+    /** 默认下线提前天数；参数未设置时按交期当天建议，录单时允许人工修改。 / Suggest the offline date from the configured lead days; default to the due date and keep it editable. */
     private int offlineLeadDays() {
         var values=jdbc.queryForList("SELECT config_value FROM sys_config WHERE config_key='order.customer.offlineLeadDays' LIMIT 1",String.class);
         if (values.isEmpty()) return 0;
@@ -67,13 +68,13 @@ public class CustomerOrderController {
         catch (NumberFormatException e) { return 0; }
     }
 
-    /** 用订单权限查询单款与套装有效规格。 */
+    /** 用订单权限查询单款与套装有效规格。 / Resolve valid single-style and set specifications within order permissions. */
     @GetMapping("/styles/{id}")
     public R<Map<String,Object>> style(@PathVariable Long id) {
         return boms.context(id);
     }
 
-    /** 建议单号可由用户编辑。 */
+    /** 建议单号可由用户编辑。 / Return an editable order-number suggestion; persistence performs the authoritative uniqueness check. */
     @GetMapping("/next-code")
     @SaCheckPermission({"order:customer-order:list","order:customer-order:edit"})
     public R<String> next() { return R.ok(null,nextCode()); }
@@ -97,7 +98,7 @@ public class CustomerOrderController {
         FROM biz_customer_order
         """;
 
-    /** 查询当前员工参与的订单，订单审核权限允许查看全部订单。 */
+    /** 查询当前员工参与的订单，订单审核权限允许查看全部订单。 / List orders involving the current employee; reviewers may inspect the full order set. */
     @GetMapping("/list")
     public R<List<Map<String,Object>>> list(@RequestParam(defaultValue="") String keyword,
                                              @RequestParam(defaultValue="") String status) {
@@ -113,7 +114,7 @@ public class CustomerOrderController {
         return R.ok(rows);
     }
 
-    /** 比较已保存的 BOM 快照和当前可用版本，状态仅作为提示，不改变已算出的数量。 */
+    /** 比较已保存的 BOM 快照和当前可用版本，状态仅作为提示，不改变已算出的数量。 / Compare the saved BOM snapshot with the current released version for notice only; never rewrite calculated quantities. */
     private String demandState(Map<String,Object> row, Map<String,String> newest) {
         if (!(row.get("demand") instanceof List<?> demand) || demand.isEmpty()) return "unplanned";
         if (!(row.get("document") instanceof Map<?,?> doc) || !(doc.get("pos") instanceof List<?> pos)) return "unknown";
@@ -131,13 +132,16 @@ public class CustomerOrderController {
         }
         return unknown ? "unknown" : "ready";
     }
+    /** 按订单主键读取订单及审批、需求快照，供业务页面回显。 / Load an order with its review and demand snapshots for authorized detail views. */
 
     @GetMapping("/{id}")
     public R<Map<String,Object>> detail(@PathVariable Long id) {
         return load(id,false);
     }
+    /** 判断当前登录人是否有订单审核权限，以确定订单查询范围。 / Determine whether the current user may review orders and view the full order set. */
 
     private boolean reviewer() { return StpUtil.hasPermission("order:customer-order:review"); }
+    /** 将订单行中的 JSONB 快照转换为录入页面使用的结构。 / Decode persisted JSONB snapshots into the order form model. */
 
     private R<Map<String,Object>> load(Long id, boolean lock) {
         Long user = LoginHelper.getUserId();
@@ -146,6 +150,7 @@ public class CustomerOrderController {
         if (rows.isEmpty()) throw new ServiceException("订单不存在或超出访问范围");
         return R.ok(decode(rows.getFirst()));
     }
+    /** 解析数据库订单行并补齐前端所需的快照字段。 / Map a database row and hydrate its persisted business snapshots. */
 
     private Map<String,Object> decode(Map<String,Object> row) {
         row.put("document",JsonUtils.parseMap(row.get("document").toString()));
@@ -153,7 +158,7 @@ public class CustomerOrderController {
         return row;
     }
 
-    /** 保存草稿及客户、款式名称快照；并发修改必须重新加载。 */
+    /** 保存草稿及客户、款式名称快照；并发修改必须重新加载。 / Save the draft with customer and style labels as snapshots; reject stale concurrent edits. */
     @PostMapping
     @Transactional
     @SaCheckPermission({"order:customer-order:list","order:customer-order:edit"})
@@ -206,7 +211,7 @@ public class CustomerOrderController {
         return R.ok(after);
     }
 
-    /** 单据人员身份决定候选资格，不授予该模块的新增、审核或取消权限。 */
+    /** 单据人员身份决定候选资格，不授予该模块的新增、审核或取消权限。 / Business-duty labels determine selectable people only and grant no create, review or cancellation permission. */
     private List<Map<String,Object>> peopleWithDuty(String duty) {
         return jdbc.queryForList("SELECT u.user_id::text AS value,COALESCE(NULLIF(u.nick_name,''),u.user_name) AS label FROM sys_user u JOIN sys_user_business_duty d ON d.user_id=u.user_id WHERE d.duty_code=? AND u.status='0' AND u.del_flag='0' AND u.user_name<>'admin' ORDER BY label", duty);
     }
@@ -221,16 +226,18 @@ public class CustomerOrderController {
         if (names.isEmpty()) throw new ServiceException("请选择具有对应业务职责的在职人员");
         return names.getFirst();
     }
+    /** 统一读取订单快照中的显示文本并处理空值。 / Read display text consistently from the order snapshot and handle missing values. */
 
     private String label(String query, Long id, String field) {
         var rows = id==null ? List.<String>of() : jdbc.queryForList(query,String.class,id);
         if (rows.isEmpty()) throw new ServiceException("请选择有效的"+field);
         return rows.getFirst();
     }
+    /** 规范化用户输入，避免空白文本进入订单快照。 / Normalize user-entered text before it is stored in an order snapshot. */
 
     private String clean(String value) { return value==null ? "" : value.trim(); }
 
-    /** 校验 PO 去重、规格有效性及交付分配，按 PO 保留款式和套装配套快照。 */
+    /** 校验 PO 去重、规格有效性及交付分配，按 PO 保留款式和套装配套快照。 / Validate PO uniqueness, specifications and delivery allocations while preserving each PO pairing snapshot. */
     private List<Map<String,Object>> validate(List<Po> pos,Long customer,Long order,boolean submit) {
         if (submit && pos.isEmpty()) throw new ServiceException("至少需要一个客户 PO");
         var numbers = new HashSet<String>();
@@ -292,14 +299,14 @@ public class CustomerOrderController {
         return result;
     }
 
-    /** 校验订单与 PO 默认值，空值用于继承或读取旧单。 / Validate inherited sourcing defaults. */
+    /** 校验订单与 PO 默认值，空值用于继承或读取旧单。 / Validate inherited sourcing defaults. / Validate order and PO defaults; blank values represent inheritance or legacy records. / Validate inherited sourcing defaults. */
     private String supplyMode(String value) {
         if (value==null || value.isBlank()) return null;
         if (!Set.of("customer","purchase","mixed").contains(value)) throw new ServiceException("供料安排无效");
         return value;
     }
 
-    /** 复用已发布 BOM 的规格匹配与库存单位换算，并记录每行计划来源。 */
+    /** 复用已发布 BOM 的规格匹配与库存单位换算，并记录每行计划来源。 / Reuse released-BOM matching and inventory-unit conversion, recording the source for each demand line. */
     private List<Map<String,Object>> plan(Input input,boolean complete) {
         var result = new ArrayList<Map<String,Object>>();
         var purchaseUnits = new HashMap<String,List<Map<String,Object>>>();
@@ -366,10 +373,12 @@ public class CustomerOrderController {
         }
         return result;
     }
+    /** 读取已保存订单并转换为校验及更新所需的输入对象。 / Rebuild the validated input model from an existing saved order. */
 
     private Input storedInput(Map<String,Object> row) {
         return JsonUtils.parseObject(JsonUtils.toJsonString(row.get("document")),Input.class);
     }
+    /** 基于当前订单规格和已发布 BOM 试算用料，不产生库存流水。 / Preview demand from the order and released BOM without posting inventory transactions. */
 
     @GetMapping("/{id}/demand")
     public R<List<Map<String,Object>>> preview(@PathVariable Long id) {
@@ -379,7 +388,7 @@ public class CustomerOrderController {
         return R.ok(plan(storedInput(row),false));
     }
 
-    /** 已审核订单可在 BOM 就绪后算料；不完整结果仅预览，不覆盖既有快照。 */
+    /** 已审核订单可在 BOM 就绪后算料；不完整结果仅预览，不覆盖既有快照。 / Allow recalculation after approval when BOM is ready; incomplete results are previews and never replace saved snapshots. */
     @PostMapping("/{id}/demand/calculate")
     @Transactional
     @SaCheckPermission({"order:customer-order:list","order:customer-order:edit"})
@@ -390,21 +399,26 @@ public class CustomerOrderController {
         if (!Objects.equals(request.revision(),before.get("revision"))) throw new ServiceException("订单版本已变化，请重新加载");
         boolean hasExisting=before.get("demand") instanceof Collection<?> existing && !existing.isEmpty();
         if (hasExisting && !Boolean.TRUE.equals(request.recalculate())) throw new ServiceException("该订单已有用料快照，请明确选择重新算料");
-        // 所有关联计划须处理完毕；不覆盖计划人员的调整或审核记录。
-        Boolean tableExists=jdbc.queryForObject("SELECT to_regclass('public.biz_material_demand_plan') IS NOT NULL",Boolean.class);
-        if (Boolean.TRUE.equals(tableExists) && !jdbc.queryForList("SELECT id FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE",id).isEmpty())
-            throw new ServiceException("订单已关联有效物料需求计划，请先处理该计划，再重新算料");
+        // 未调整的计划草稿可随订单算料快照同步；已调整或已流转的计划必须先处理，避免覆盖计划部门的工作。
+        // An untouched draft may follow the refreshed order snapshot; adjusted or progressed plans must be handled first.
+        var linkedPlans=jdbc.queryForList("SELECT id,status FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE",id);
+        for(var plan:linkedPlans){
+            if(!"draft".equals(plan.get("status")))throw new ServiceException("订单已关联已提交或已审核的需求计划，请先处理该计划");
+            Boolean adjusted=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM biz_material_demand_plan_adjustment WHERE plan_id=?)",Boolean.class,plan.get("id"));
+            if(Boolean.TRUE.equals(adjusted))throw new ServiceException("需求计划已有人工调整，请先取消旧计划，再重新算料并生成新计划");
+        }
         var result=plan(storedInput(before),false);
         boolean incomplete=result.isEmpty() || result.stream().anyMatch(item -> item.containsKey("issue") || item.get("gaps") instanceof Collection<?> gaps && !gaps.isEmpty());
         if (incomplete) return R.ok(Map.of("saved",false,"plans",result));
         if (hasExisting) jdbc.update("INSERT INTO biz_order_demand_history(order_id,order_revision,demand,replaced_by) VALUES(?,?,?::jsonb,?)",id,before.get("revision"),JsonUtils.toJsonString(before.get("demand")),LoginHelper.getUserId());
         jdbc.update("UPDATE biz_customer_order SET demand=?::jsonb,revision=revision+1,updated_at=now() WHERE id=?",JsonUtils.toJsonString(result),id);
+        demandPlans.synchronizeApprovedOrder(id);
         var after=load(id,false).getData();
         BusinessAudit.record(hasExisting?"客户订单重新算料":"客户订单审核后算料",id,"orderNo",before,after);
         return R.ok(Map.of("saved",true,"plans",result,"order",after));
     }
 
-    /** 流转在行锁内检查权限与版本，退回和取消保留执行原因。 */
+    /** 流转在行锁内检查权限与版本，退回和取消保留执行原因。 / Check permission and revision under a row lock; retain the reason for returns and cancellations. */
     @PostMapping("/{id}/transition")
     @Transactional
     @org.dromara.common.log.annotation.Log(title="客户订单流转",businessType=org.dromara.common.log.enums.BusinessType.UPDATE,isSaveRequestData=false,isSaveResponseData=false)
@@ -452,8 +466,8 @@ public class CustomerOrderController {
             case "unapprove" -> {
                 StpUtil.checkPermission("order:customer-order:review");
                 if (!state.equals("approved")) throw new ServiceException("仅已审核订单可以反审核");
-                // 后续订单下游单据上线时，须在同一事务加引用检查，存在有效执行记录则禁止反审核。
-                // Future downstream documents must be checked transactionally before approval can be reversed.
+                Boolean hasPlan=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled')",Boolean.class,id);
+                if(Boolean.TRUE.equals(hasPlan))throw new ServiceException("订单已生成物料需求计划，请先取消未处理的计划后再反审核");
                 target="submitted";
             }
             case "cancel" -> {
@@ -470,6 +484,7 @@ public class CustomerOrderController {
         jdbc.update("UPDATE biz_customer_order SET status=?,document=?::jsonb,demand=?::jsonb,revision=revision+1,updated_at=now() WHERE id=?",
             target,JsonUtils.toJsonString(doc),JsonUtils.toJsonString(demand),id);
         if ("submit".equals(input.action())) approval.submit(id, input.revision()+1, before.get("orderNo").toString());
+        if ("approve".equals(input.action())) demandPlans.ensureDraftForApprovedOrder(id);
         var after = load(id,false).getData();
         BusinessAudit.record(switch(input.action()) {
             case "submit" -> "提交客户订单";

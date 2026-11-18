@@ -12,7 +12,7 @@ import java.util.List;
  * @param createBy    发起人用户 ID
  * @param messageType 消息类型
  */
-public record WorkflowResultMessageEvent(String flowName, String status, String createBy, List<String> messageType) {
+public record WorkflowResultMessageEvent(String flowName, String status, String createBy, Long instanceId, List<String> messageType) {
 
     public WorkflowResultMessageEvent {
         if (CollUtil.isNotEmpty(messageType)) {

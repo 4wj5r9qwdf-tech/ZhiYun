@@ -299,7 +299,7 @@ public class WorkflowGlobalListener implements GlobalListener {
             messageType = MapUtil.get(variable, FlowConstant.MESSAGE_TYPE, new TypeReference<>() {
             });
         }
-        SpringUtils.context().publishEvent(new WorkflowResultMessageEvent(definition.getFlowName(), status, instance.getCreateBy(), messageType));
+        SpringUtils.context().publishEvent(new WorkflowResultMessageEvent(definition.getFlowName(), status, instance.getCreateBy(), instance.getId(), messageType));
     }
 
     /**

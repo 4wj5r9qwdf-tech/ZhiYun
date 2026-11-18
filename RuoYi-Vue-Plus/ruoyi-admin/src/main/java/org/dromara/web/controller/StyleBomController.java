@@ -18,7 +18,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-/** 款式用料版本及十进制试算。 / Versioned style BOM and decimal demand calculation. */
+/** 款式用料版本及十进制试算。 / Versioned style BOM and decimal demand calculation. / 版本化管理款式用料规则，并以十进制精度试算需求。 / Version style material rules and calculate demand with decimal precision. */
 @RestController
 @RequestMapping("/rd/style-bom")
 @SaCheckPermission("rd:bom:list")
@@ -50,7 +50,7 @@ public class StyleBomController {
         throw new ServiceException("没有可用的 BOM 单号");
     }
 
-    /** 只返回 BOM 可使用的款式，不要求另外授予款式管理权限。 */
+    /** 只返回 BOM 可使用的款式，不要求另外授予款式管理权限。 / Return styles eligible for BOM use without granting style-maintenance permissions. */
     @GetMapping("/styles")
     public R<List<Map<String,Object>>> styles() {
         var sql = new StringBuilder("""
@@ -65,7 +65,7 @@ public class StyleBomController {
         return R.ok(jdbc.queryForList(sql.append(" ORDER BY s.internal_code,s.style_id").toString(),args.toArray()));
     }
 
-    /** 复用款式分类权限和业务默认分类，供 BOM 分类树及选款弹窗使用。 */
+    /** 复用款式分类权限和业务默认分类，供 BOM 分类树及选款弹窗使用。 / Reuse style category grants and business defaults for the BOM tree and style picker. */
     @GetMapping("/style-categories")
     public R<Map<String,Object>> styleCategories() {
         var options = categories.options();
@@ -79,7 +79,7 @@ public class StyleBomController {
             "schemeId",invalid ? "" : configured,"invalid",invalid));
     }
 
-    /** 按人员分类权限查询全部 BOM 版本，支持直接筛选。 */
+    /** 按人员分类权限查询全部 BOM 版本，支持直接筛选。 / List BOM versions within the caller category scope and support direct filtering. */
     @GetMapping("/list")
     public R<List<Map<String,Object>>> all(@RequestParam(required=false) String keyword,
                                             @RequestParam(required=false) String status,
@@ -108,7 +108,7 @@ public class StyleBomController {
         return R.ok(jdbc.queryForList(sql.append(" ORDER BY b.update_time DESC,b.id DESC").toString(),args.toArray()));
     }
 
-    /** 规格选择与现有款式一致，分类受限的子款不返回任何配套数据。 */
+    /** 规格选择与现有款式一致，分类受限的子款不返回任何配套数据。 / Use the same specification rules as the style master and withhold pairings for inaccessible child styles. */
     @GetMapping("/context/{styleId}")
     public R<Map<String,Object>> context(@PathVariable Long styleId) {
         var parts = parts(styleId);
@@ -146,6 +146,7 @@ public class StyleBomController {
             FROM rd_style_bom WHERE style_id=? ORDER BY version DESC
             """,styleId));
     }
+    /** 读取 BOM 版本详情并按当前权限过滤其规则和关联档案。 / Load a BOM version and filter its rules and references through current access grants. */
 
     @GetMapping("/{id}")
     public R<Map<String,Object>> detail(@PathVariable Long id) {
@@ -156,6 +157,7 @@ public class StyleBomController {
         row.put("rules", wireRules(rules));
         return R.ok(row);
     }
+    /** 校验款式色码、分类权限和单位规则后保存草稿；已发布版本不可覆盖。 / Validate style pairs, category access and units before saving; released versions stay immutable. */
 
     @PostMapping
     @SaCheckPermission({"rd:bom:list","rd:bom:edit"})
@@ -279,7 +281,7 @@ public class StyleBomController {
         return R.ok(null,id.toString());
     }
 
-    /** 核对保存版本的适用范围，逐项定位缺料或规则冲突。 */
+    /** 核对保存版本的适用范围，逐项定位缺料或规则冲突。 / Check version coverage and identify each missing-material or conflicting-rule case. */
     @GetMapping("/{id}/coverage")
     @Transactional(readOnly=true)
     public R<Map<String,Object>> coverage(@PathVariable Long id) {
@@ -315,6 +317,7 @@ public class StyleBomController {
         if (checked==0 && issues.isEmpty()) issues.add("款式没有有效的颜色尺码组合");
         return R.ok(Map.of("checked",checked,"issueCount",issues.size(),"issues",issues.stream().limit(100).toList()));
     }
+    /** 按实际款式配套展开 BOM 规则，供覆盖校验及订单算料复用。 / Expand BOM rules against real style pairings for coverage checks and order calculations. */
 
     private void inspect(List<SavedRule> rules,Selection pair,String label,List<String> issues) {
         try {
@@ -323,11 +326,13 @@ public class StyleBomController {
             issues.add(label+"："+e.getMessage());
         }
     }
+    /** 生成子款颜色尺码组合的业务可读名称。 / Build a readable label for a child-style color-size pairing. */
 
     private String pairLabel(Map<String,Object> part,Selection pair) {
         return part.get("label")+" · "+optionLabel(part,"colors",pair.colorId())
             +" / "+optionLabel(part,"sizes",pair.sizeId());
     }
+    /** 生成包含规格上下文的物料选择项名称。 / Build a material option label with its specification context. */
 
     private String optionLabel(Map<String,Object> part,String field,Long id) {
         if (id==null) return "未设";
@@ -341,7 +346,7 @@ public class StyleBomController {
         return id.toString();
     }
 
-    /** 按实际子款规格展开，保留明细并按库存单位汇总。 */
+    /** 按实际子款规格展开，保留明细并按库存单位汇总。 / Expand actual child specifications, preserve detail rows and aggregate using inventory units. */
     @GetMapping("/{id}/preview")
     @Transactional(readOnly=true)
     public R<Map<String,Object>> preview(@PathVariable Long id,@RequestParam(defaultValue="1") int count,
@@ -364,13 +369,13 @@ public class StyleBomController {
             var matched = resolve(rules,selection);
             if (matched.isEmpty()) gaps.add(style(selection.childId()).get("label")+" 缺少适用用料");
             var factor = BigDecimal.valueOf(count).multiply(BigDecimal.valueOf(selection.quantity()));
-            appendDemand(matched,factor,style(selection.childId()).get("label").toString(),details,totals);
+            appendDemand(matched,factor,style(selection.childId()).get("label").toString(),selection,details,totals);
         }
-        if (set) appendDemand(resolve(rules,new Selection(null,null,null,1)),BigDecimal.valueOf(count),"整套共用",details,totals);
+        if (set) appendDemand(resolve(rules,new Selection(null,null,null,1)),BigDecimal.valueOf(count),"整套共用",null,details,totals);
         return R.ok(Map.of("details",details,"totals",totals.values(),"gaps",gaps));
     }
 
-    /** 提供订单所选规格的快照，套装沿用已配置的配套与每套件数。 */
+    /** 提供订单所选规格的快照，套装沿用已配置的配套与每套件数。 / Provide order-selection snapshots; sets use configured child pairings and per-set quantities. */
     public List<Selection> orderSelection(Long id, Long setSpecId, Long colorId, Long sizeId) {
         var parts = parts(id);
         if (!"single".equals(style(id).get("productionMode"))) return setSelection(id,setSpecId,parts);
@@ -378,7 +383,7 @@ public class StyleBomController {
         return List.of(new Selection(id,colorId,sizeId,1));
     }
 
-    private void appendDemand(List<SavedRule> rules,BigDecimal factor,String part,List<Map<String,Object>> details,
+    private void appendDemand(List<SavedRule> rules,BigDecimal factor,String part,Selection selection,List<Map<String,Object>> details,
                               Map<List<String>,Map<String,Object>> totals) {
         for (var saved : rules) {
             var rule = saved.rule();
@@ -394,6 +399,12 @@ public class StyleBomController {
             detail.put("slotId",positionId(rule).toString());
             detail.put("usageType",rule.usageType());
             detail.put("materialCategory",saved.materialCategory());
+            // 将套装子款实际配套色码写入订单算料快照，不能只依赖可能重复的子款名称。
+            // Persist the exact set-child color-size pairing; child-style labels alone may be ambiguous.
+            detail.put("sourceChildStyleId",selection==null?null:selection.childId());
+            detail.put("sourceColorId",selection==null?null:selection.colorId());
+            detail.put("sourceSizeId",selection==null?null:selection.sizeId());
+            detail.put("sourceChildCount",selection==null?null:selection.quantity());
             detail.put("quantity",qty.stripTrailingZeros().toPlainString());
             details.add(detail);
             var key = List.of(rule.materialId().toString(),Objects.toString(rule.materialVariantId(),""),Objects.toString(rule.materialColorId(),""),saved.unitId());
@@ -403,7 +414,7 @@ public class StyleBomController {
         }
     }
 
-    /** 具体色码优先，颜色和尺码单独命中时须明确配置交叉规则。 */
+    /** 具体色码优先，颜色和尺码单独命中时须明确配置交叉规则。 / Prefer exact color-size rules; separate color and size matches require an explicit cross-rule. */
     private List<SavedRule> resolve(List<SavedRule> rules,Selection selection) {
         var best = new LinkedHashMap<UUID,SavedRule>();
         var ambiguous = new LinkedHashMap<UUID,String>();
@@ -424,12 +435,13 @@ public class StyleBomController {
         if (!ambiguous.isEmpty()) throw new ServiceException("颜色与尺码规则同时命中，请补充具体色码规则："+String.join("、",ambiguous.values()));
         return best.values().stream().filter(item -> !Boolean.TRUE.equals(item.rule().omitted())).toList();
     }
+    /** 计算规则对颜色尺码的明确程度，以优先采用更具体的规则。 / Score color-size specificity so the most targeted rule is applied first. */
 
     private int specificity(Rule rule) {
         return (rule.colorId()==null ? 0 : 1)+(rule.sizeId()==null ? 0 : 1);
     }
 
-    /** 发布前核对单款全部有效规格，套装核对已配置的实际配套。 */
+    /** 发布前核对单款全部有效规格，套装核对已配置的实际配套。 / Before release, verify every valid single-style pair or configured set pairing. */
     private void verifyCoverage(Long styleId,List<Map<String,Object>> parts,List<SavedRule> rules,boolean set) {
         if (!set) {
             var pairs = validPairs(styleId);
@@ -441,12 +453,14 @@ public class StyleBomController {
         if (specs.isEmpty()) throw new ServiceException("发布套装 BOM 前请在款式档案维护套装规格");
         for (Long spec : specs) for (var pair : setSelection(styleId,spec,parts)) requireDemand(rules,pair);
     }
+    /** 要求指定的款式颜色尺码组合解析出有效用料，发布时缺料即阻断。 / Require a valid material demand for a style pair and block release when it is missing. */
 
     private void requireDemand(List<SavedRule> rules,Selection pair) {
         if (resolve(rules,pair).isEmpty()) {
             throw new ServiceException("此颜色尺码缺少有效用料");
         }
     }
+    /** 读取套装规格中各子款实际设置的颜色尺码配套。 / Load the child color-size pairings saved in a set specification. */
 
     private List<Selection> setSelection(Long styleId,Long specId,List<Map<String,Object>> parts) {
         if (specId==null) throw new ServiceException("请选择套装规格");
@@ -462,6 +476,7 @@ public class StyleBomController {
         }
         return result;
     }
+    /** 读取款式组成并校验子款结构，避免 BOM 引用无效子款。 / Load style members and validate set structure before BOM references are accepted. */
 
     private List<Map<String,Object>> parts(Long id) {
         var parent = style(id);
@@ -492,6 +507,7 @@ public class StyleBomController {
         }
         return parts;
     }
+    /** 读取款式主档及分类范围，供 BOM 权限和状态校验。 / Load the style and category scope for BOM access and state checks. */
 
     private Map<String,Object> style(Long id) {
         var result = jdbc.queryForList("""
@@ -503,6 +519,7 @@ public class StyleBomController {
         }
         return result.getFirst();
     }
+    /** 生成单款有效颜色尺码组合，并排除明确禁用组合。 / Build valid color-size pairs after applying explicit exclusions. */
 
     private List<Selection> validPairs(Long id) {
         return jdbc.query("""
@@ -516,16 +533,19 @@ public class StyleBomController {
                 WHERE e.style_id=? AND e.color_id=c.color_id AND e.size_id=z.size_id)
             """,(rs,n)->new Selection(id,rs.getObject(1,Long.class),rs.getObject(2,Long.class),1),id,id,id,id,id);
     }
+    /** 确认指定子款颜色尺码仍是款式允许的有效组合。 / Verify that a child, color and size remain an allowed pairing. */
 
     private boolean validPair(Long id,Long color,Long size) {
         if (color==null && size==null) return true;
         return validPairs(id).stream().anyMatch(pair -> (color==null || color.equals(pair.colorId()))
             && (size==null || size.equals(pair.sizeId())));
     }
+    /** 判断规则是否明确指定了颜色和尺码。 / Determine whether a rule targets a concrete color-size pair. */
 
     private boolean concretePair(Long id,Long color,Long size) {
         return validPairs(id).stream().anyMatch(pair -> Objects.equals(color,pair.colorId()) && Objects.equals(size,pair.sizeId()));
     }
+    /** 读取物料允许用于 BOM 的颜色，并保留历史选项回显。 / Load BOM-eligible material colors while preserving historical display. */
 
     @GetMapping("/material/{id}/colors")
     public R<List<Map<String,Object>>> materialColors(@PathVariable Long id) {
@@ -535,6 +555,7 @@ public class StyleBomController {
             JOIN base_color c ON c.color_id=m.color_id WHERE m.material_id=? AND c.status='0' ORDER BY c.color_name
             """,id));
     }
+    /** 读取可供 BOM 引用的物料、规格和单位信息。 / Load material, variant and unit data available to BOM rules. */
 
     private Map<String,Object> material(Long id,boolean active) {
         if (id==null) throw new ServiceException("请选择物料");
@@ -572,7 +593,7 @@ public class StyleBomController {
         return labels.getFirst();
     }
 
-    /** 只接受物料允许使用的单位，并将固定或人工填写的系数保存为快照。 */
+    /** 只接受物料允许使用的单位，并将固定或人工填写的系数保存为快照。 / Accept only material-enabled units and snapshot either the fixed or user-entered conversion factor. */
     private Map<String,Object> usageUnit(Long materialId,Long unitId,Map<String,Object> material,BigDecimal supplied) {
         if (unitId.toString().equals(material.get("unitId"))) return Map.of("name",material.get("unit"),"factor",BigDecimal.ONE);
         var configs = jdbc.queryForList("""
@@ -590,6 +611,7 @@ public class StyleBomController {
         }
         return Map.of("name",config.get("name"),"factor",factor);
     }
+    /** 校验 BOM 物料颜色是否属于物料档案允许范围。 / Validate a BOM color against the material's configured color scope. */
 
     private String materialColor(Long materialId,Long colorId) {
         if (colorId==null) return "";
@@ -600,6 +622,7 @@ public class StyleBomController {
         if (names.isEmpty()) throw new ServiceException("请选择物料允许的颜色");
         return names.getFirst();
     }
+    /** 重新校验已存规则的人员分类权限，阻止旧数据绕过当前授权。 / Recheck stored rules against current category access to prevent authorization bypass. */
 
     private void checkStoredScope(List<SavedRule> rules) {
         var checked = new HashSet<Long>();
@@ -609,6 +632,7 @@ public class StyleBomController {
             if (rule.materialId()!=null && checked.add(rule.materialId())) material(rule.materialId(),false);
         }
     }
+    /** 读取 BOM 版本及其款式、制单人信息。 / Load a BOM version with its style and preparer metadata. */
 
     private Map<String,Object> version(Long id) {
         var rows = jdbc.queryForList("""
@@ -623,10 +647,12 @@ public class StyleBomController {
         if (rows.isEmpty()) throw new ServiceException("BOM 版本不存在");
         return rows.getFirst();
     }
+    /** 将数据库规则快照解析为经过类型校验的 BOM 规则。 / Parse persisted snapshots into typed BOM rule objects. */
 
     private List<SavedRule> readRules(Map<String,Object> row) {
         return JsonUtils.parseArray(row.get("rules").toString(),SavedRule.class);
     }
+    /** 组装 BOM 接口响应并补齐名称、单位及历史回显。 / Serialize BOM rules and hydrate labels, units and historical display values. */
 
     private List<Map<String,Object>> wireRules(List<SavedRule> saved) {
         return saved.stream().map(item -> {
@@ -656,7 +682,7 @@ public class StyleBomController {
         }).toList();
     }
 
-    /** 旧版本按原有分组生成稳定标识，无需改写已发布的快照。 */
+    /** 旧版本按原有分组生成稳定标识，无需改写已发布的快照。 / Derive stable identifiers from legacy rule groups without rewriting released snapshots. */
     private UUID positionId(Rule rule) {
         if (rule.slotId()!=null) return rule.slotId();
         return UUID.nameUUIDFromBytes((rule.childId()+":"+rule.slot().trim()).getBytes(StandardCharsets.UTF_8));

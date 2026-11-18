@@ -2,6 +2,7 @@ package org.dromara.workflow.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import lombok.RequiredArgsConstructor;
+import org.dromara.workflow.common.enums.ButtonPermissionEnum;
 import org.dromara.common.core.domain.PageResult;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.validate.AddGroup;
@@ -44,6 +45,16 @@ public class FlwTaskController extends BaseController {
         return INTERNAL_VARIABLES.stream().anyMatch(variables::containsKey);
     }
 
+    /** 节点开关与角色权限共同限制办理操作。 / Enforce node settings in addition to role permissions. */
+    private void requireNodeAction(Long taskId, ButtonPermissionEnum action) {
+        var task = flwTaskService.selectById(taskId);
+        if (task == null) throw new org.dromara.common.core.exception.ServiceException("任务不存在或已处理");
+        var rules = task.getButtonList();
+        boolean enabled = rules == null || rules.isEmpty() ? action.isSelected()
+            : rules.stream().anyMatch(rule -> action.getValue().equals(rule.getCode()) && Boolean.TRUE.equals(rule.getShow()));
+        if (!enabled) throw new org.dromara.common.core.exception.ServiceException("当前审批节点未启用此操作");
+    }
+
     /**
      * 启动流程任务。
      *
@@ -68,6 +79,7 @@ public class FlwTaskController extends BaseController {
      */
     @Log(title = "任务管理", businessType = BusinessType.INSERT)
     @RepeatSubmit()
+    @SaCheckPermission("approval:waiting:handle")
     @PostMapping("/completeTask")
     public R<Void> completeTask(@Validated(AddGroup.class) @RequestBody CompleteTaskBo completeTaskBo) {
         // HTTP 调用必须以当前登录人办理，不能由客户端传入内部权限绕过标记或伪造办理人。
@@ -76,6 +88,7 @@ public class FlwTaskController extends BaseController {
             return R.fail("办理人由当前登录账号确定");
         }
         if (hasInternalVariable(completeTaskBo.getVariables())) return R.fail("请求包含不允许的审批控制参数");
+        if (completeTaskBo.getFlowCopyList() != null) requireNodeAction(completeTaskBo.getTaskId(), ButtonPermissionEnum.COPY);
         return toAjax(flwTaskService.completeTask(completeTaskBo));
     }
 
@@ -86,6 +99,7 @@ public class FlwTaskController extends BaseController {
      * @param pageQuery  分页
      * @return 待办任务分页数据
      */
+    @SaCheckPermission("approval:waiting:list")
     @GetMapping("/pageByTaskWait")
     public R<PageResult<FlowTaskVo>> pageByTaskWait(FlowTaskBo flowTaskBo, PageQuery pageQuery) {
         return R.ok(flwTaskService.pageByTaskWait(flowTaskBo, pageQuery));
@@ -98,6 +112,7 @@ public class FlwTaskController extends BaseController {
      * @param pageQuery  分页
      * @return 已办任务分页数据
      */
+    @SaCheckPermission("approval:finished:list")
     @GetMapping("/pageByTaskFinish")
     public R<PageResult<FlowHisTaskVo>> pageByTaskFinish(FlowTaskBo flowTaskBo, PageQuery pageQuery) {
         return R.ok(flwTaskService.pageByTaskFinish(flowTaskBo, pageQuery));
@@ -136,6 +151,7 @@ public class FlwTaskController extends BaseController {
      * @param pageQuery  分页
      * @return 抄送任务分页数据
      */
+    @SaCheckPermission("approval:copy:list")
     @GetMapping("/pageByTaskCopy")
     public R<PageResult<FlowTaskVo>> pageByTaskCopy(FlowTaskBo flowTaskBo, PageQuery pageQuery) {
         return R.ok(flwTaskService.pageByTaskCopy(flowTaskBo, pageQuery));
@@ -171,8 +187,10 @@ public class FlwTaskController extends BaseController {
      */
     @Log(title = "任务管理", businessType = BusinessType.INSERT)
     @RepeatSubmit()
+    @SaCheckPermission("approval:waiting:handle")
     @PostMapping("/terminationTask")
     public R<Boolean> terminationTask(@RequestBody FlowTerminationBo bo) {
+        requireNodeAction(bo.taskId(), ButtonPermissionEnum.TERMINATION);
         return R.ok(flwTaskService.terminationTask(bo));
     }
 
@@ -185,8 +203,17 @@ public class FlwTaskController extends BaseController {
      */
     @Log(title = "任务管理", businessType = BusinessType.UPDATE)
     @RepeatSubmit
+    @SaCheckPermission("approval:waiting:handle")
     @PostMapping("/taskOperation/{taskOperation}")
     public R<Void> taskOperation(@Validated @RequestBody TaskOperationBo bo, @PathVariable String taskOperation) {
+        ButtonPermissionEnum action = switch (taskOperation) {
+            case "delegateTask" -> ButtonPermissionEnum.TRUST;
+            case "transferTask" -> ButtonPermissionEnum.TRANSFER;
+            case "addSignature" -> ButtonPermissionEnum.ADD_SIGN;
+            case "reductionSignature" -> ButtonPermissionEnum.SUB_SIGN;
+            default -> throw new org.dromara.common.core.exception.ServiceException("不支持的审批操作");
+        };
+        requireNodeAction(bo.getTaskId(), action);
         return toAjax(flwTaskService.taskOperation(bo, taskOperation));
     }
 
@@ -213,8 +240,11 @@ public class FlwTaskController extends BaseController {
      */
     @Log(title = "任务管理", businessType = BusinessType.INSERT)
     @RepeatSubmit()
+    @SaCheckPermission("approval:waiting:handle")
     @PostMapping("/backProcess")
     public R<Void> backProcess(@Validated({AddGroup.class}) @RequestBody BackProcessBo bo) {
+        if (hasInternalVariable(bo.getVariables())) return R.fail("请求包含不允许的审批控制参数");
+        requireNodeAction(bo.getTaskId(), ButtonPermissionEnum.BACK);
         return toAjax(flwTaskService.backProcess(bo));
     }
 
@@ -225,6 +255,7 @@ public class FlwTaskController extends BaseController {
      * @param nowNodeCode 当前节点
      * @return 可驳回节点列表
      */
+    @SaCheckPermission("approval:waiting:list")
     @GetMapping("/getBackTaskNode/{taskId}/{nowNodeCode}")
     public R<List<Node>> getBackTaskNode(@PathVariable Long taskId, @PathVariable String nowNodeCode) {
         return R.ok(flwTaskService.getBackTaskNode(taskId, nowNodeCode));

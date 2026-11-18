@@ -183,7 +183,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
             "您收到一条新的流程抄送，请及时查看。",
             "单据抄送提醒",
             userService.selectListByIds(StreamUtils.toList(flowCopyList, FlowCopyBo::getUserId)),
-            PATH_TASK_COPY
+            "/approve/copy?taskId=" + taskId
         );
     }
 

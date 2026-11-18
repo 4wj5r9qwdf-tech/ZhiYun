@@ -68,12 +68,11 @@ public class FlwCommonServiceImpl implements IFlwCommonService {
         if (StringUtils.isBlank(message)) {
             message = "有新的【" + flowName + "】单据已经提交至您，请您及时处理。";
         }
-        List<UserDTO> userList = flwTaskService.currentTaskAllUser(StreamUtils.toList(list, FlowTask::getId));
-        if (CollUtil.isEmpty(userList)) {
-            return;
+        // 每个任务分别生成链接，接收人通过任务权限校验后才能办理。
+        for (FlowTask task : list) {
+            List<UserDTO> userList = flwTaskService.currentTaskAllUser(List.of(task.getId()));
+            if (CollUtil.isNotEmpty(userList)) sendMessage(messageType, message, DEFAULT_SUBJECT, userList, "/approve/waiting?taskId=" + task.getId());
         }
-        // 发给当前处理人的工作流消息统一进入“我的待办”。
-        sendMessage(messageType, message, DEFAULT_SUBJECT, userList, PATH_TASK_WAITING);
     }
 
     /**
@@ -98,13 +97,13 @@ public class FlwCommonServiceImpl implements IFlwCommonService {
      * @param userList    接收用户列表
      */
     @Override
-    public void sendResultMessage(String flowName, BusinessStatusEnum status, List<String> messageType, List<UserDTO> userList) {
+    public void sendResultMessage(String flowName, BusinessStatusEnum status, List<String> messageType, List<UserDTO> userList, Long instanceId) {
         if (status == null || CollUtil.isEmpty(messageType) || CollUtil.isEmpty(userList)) {
             return;
         }
         // 审批结果类消息面向发起人查看，统一跳转到“我发起的”。
         String message = "您发起的【" + flowName + "】单据审批已" + status.getDesc() + "。";
-        sendMessage(messageType, message, DEFAULT_SUBJECT, userList, PATH_MY_DOCUMENT);
+        sendMessage(messageType, message, DEFAULT_SUBJECT, userList, "/approve/initiated?instanceId=" + instanceId);
     }
 
     /**

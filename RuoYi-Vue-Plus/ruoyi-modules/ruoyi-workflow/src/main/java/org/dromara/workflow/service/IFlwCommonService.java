@@ -51,7 +51,7 @@ public interface IFlwCommonService {
      * @param messageType 消息类型
      * @param userList    接收用户
      */
-    void sendResultMessage(String flowName, BusinessStatusEnum status, List<String> messageType, List<UserDTO> userList);
+    void sendResultMessage(String flowName, BusinessStatusEnum status, List<String> messageType, List<UserDTO> userList, Long instanceId);
 
     /**
      * 申请人节点编码

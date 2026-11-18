@@ -79,7 +79,7 @@ public class WorkflowSideEffectListener {
         List<String> messageType = CollUtil.isNotEmpty(event.messageType())
             ? event.messageType()
             : Collections.singletonList(MessageTypeEnum.SYSTEM_MESSAGE.getCode());
-        flwCommonService.sendResultMessage(event.flowName(), status, messageType, Collections.singletonList(initiator));
+        flwCommonService.sendResultMessage(event.flowName(), status, messageType, Collections.singletonList(initiator), event.instanceId());
     }
 
 }

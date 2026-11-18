@@ -201,6 +201,12 @@ public class FlwCategoryServiceImpl implements IFlwCategoryService, CategoryServ
      */
     @Override
     public int insertByBo(FlowCategoryBo bo) {
+        // 顶级分类以 0 为父级，不要求存在虚拟父节点。 / Root categories use parent 0 without a synthetic database row.
+        if (Long.valueOf(0L).equals(bo.getParentId())) {
+            FlowCategory category = MapstructUtils.convert(bo, FlowCategory.class);
+            category.setAncestors("0");
+            return categoryMapper.insert(category);
+        }
         FlowCategory info = categoryMapper.selectById(bo.getParentId());
         if (ObjectUtil.isNull(info)) {
             throw new ServiceException("父级流程分类不存在!");

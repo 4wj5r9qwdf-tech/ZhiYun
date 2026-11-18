@@ -55,12 +55,14 @@ function amountCents(line:any): bigint | null {
   const [whole, fraction=''] = price.split('.')
   return (BigInt(whole) * 100n + BigInt(fraction.padEnd(2,'0'))) * BigInt(line.quantity)
 }
+/** 将整数分格式化为人民币两位小数，避免浮点误差。 / Format integer cents as two-decimal currency without floating-point arithmetic. */
 function formatCents(value:bigint) { return `${value / 100n}.${String(value % 100n).padStart(2,'0')}` }
 const orderAmount = computed(() => {
   const lines = form.value?.pos?.flatMap((p:any) => p.lines || []) || []
   const amounts = lines.map(amountCents)
   return { value:formatCents(amounts.reduce((sum:bigint, amount:bigint|null) => sum + (amount ?? 0n), 0n)), missing:amounts.filter((v:bigint|null)=>v===null).length, count:lines.length }
 })
+/** 只对勾选的颜色尺码批量写入加工单价。 / Apply a batch price only to the checked color-size lines. */
 function applyBatchPrice() {
   if (batchUnitPrice.value == null || !/^\d+(\.\d{1,2})?$/.test(String(batchUnitPrice.value))) { message.warning('请填写有效加工单价'); return }
   const targetPo=po.value, keys=new Set(batchSelection.value), price=String(batchUnitPrice.value)
@@ -94,6 +96,7 @@ function defaultOfflineDate(due:string) {
   date.setUTCDate(date.getUTCDate() - (Number(options.value.offlineLeadDays) || 0))
   return date.toISOString().slice(0,10)
 }
+/** 更新指定 PO 交期，并按参数重算默认下线日期。 / Update one PO due date and recalculate its suggested offline date. */
 function changeDue(p:any, value:string) {
   if (!p.offlineDate || p.offlineDate === p._autoOfflineDate) { p.offlineDate=defaultOfflineDate(value); p._autoOfflineDate=p.offlineDate }
   touch()
@@ -139,11 +142,13 @@ const filteredLines = computed(() => (po.value?.lines || []).filter((line:any)=>
 }))
 const selectedLines = computed(() => (po.value?.lines || []).filter((line:any)=>batchSelection.value.includes(line.key)))
 const visibleSelectionCount = computed(() => filteredLines.value.filter((line:any)=>batchSelection.value.includes(line.key)).length)
+/** 全选或取消当前筛选下可见的订单规格行。 / Select or clear only the visible lines under the active filters. */
 function selectVisible(checked:boolean) {
   const keys=new Set(batchSelection.value)
   filteredLines.value.forEach((line:any)=>checked ? keys.add(line.key) : keys.delete(line.key))
   batchSelection.value=[...keys]
 }
+/** 切换单条颜色尺码的批量操作选择状态。 / Toggle one color-size line in the batch-operation selection. */
 function selectLine(key:string, checked:boolean) {
   const keys=new Set(batchSelection.value); checked ? keys.add(key) : keys.delete(key); batchSelection.value=[...keys]
 }
@@ -224,11 +229,13 @@ async function call(method: 'get'|'post', path: string, payload?: any) {
   if (response.code!==200) throw new Error(response.msg || '操作失败')
   return response.data
 }
+/** 统一处理单据异步操作期间的重复提交和错误提示。 / Guard asynchronous document actions against duplicate submissions and surface errors consistently. */
 async function run(action: () => Promise<void>) {
   busy.value=true
   try { await action() } catch (error:any) { message.error(error.message || '操作失败') }
   finally { busy.value=false }
 }
+/** 读取订单、PO、人员和款式选择所需数据。 / Load the order and its PO, personnel and style reference data. */
 async function load() {
   const data = await call('get','/list',{keyword:keyword.value,status:status.value})
   rows.value = data.map((row:any)=>{
@@ -261,6 +268,7 @@ function hydrate(row:any) {
   demandSaved.value=plans.value.length>0
   dirty.value=false
 }
+/** 初始化新增或编辑订单，并按编辑状态保护已审核单据。 / Initialize an order editor while protecting approved orders from edits. */
 function open(row?:any) {
   return run(async()=>{
     options.value=await call('get','/options')
@@ -281,12 +289,15 @@ function open(row?:any) {
     }
   })
 }
+/** 新增 PO 分组并继承订单级交期、目的地和供料默认值。 / Add a PO and inherit order-level due date, destination and sourcing defaults. */
 function addPo() {
   form.value.pos.push({number:'',date:form.value.date,lines:[],deliveries:[]})
   active.value=String(form.value.pos.length-1)
   touch()
 }
+/** 标记可编辑订单已修改，供离开页面时提醒未保存内容。 / Mark an editable order dirty so unsaved changes can be guarded. */
 function touch() { if (!readonly.value) dirty.value=true }
+/** 删除指定 PO 及其下属规格、交付安排。 / Remove a PO together with its specification lines and delivery allocations. */
 function removePo() {
   if (!window.confirm('移除当前 PO 及其全部明细？')) return
   form.value.pos.splice(Number(active.value),1)
@@ -294,6 +305,7 @@ function removePo() {
   active.value='0'
   touch()
 }
+/** 打开带产品分类树的款式选择弹窗。 / Open the style picker with its product-category tree. */
 function pick() {
   styleId.value=undefined
   config.value=undefined
@@ -303,6 +315,7 @@ function pick() {
   categoryExpanded.value=categoryTree.value.map((node:any)=>node.key)
   stylePicker.value=true
 }
+/** 加载单款或套装规格，并默认勾选可下单的有效组合。 / Load single-style or set specifications and preselect valid orderable combinations. */
 function selectStyle(id:string) {
   styleId.value=id
   config.value=undefined
@@ -323,6 +336,7 @@ function newLineKey() {
   const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')
   return [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-')
 }
+/** 将所选颜色尺码或套装规格加入当前 PO。 / Add selected color-size or set specifications to the current PO. */
 function addLines() {
   const style=options.value.styles.find((s:any)=>s.id===styleId.value)
   for (const pair of pairs.value.filter((p:any)=>selected.value.includes(p.value))) {
@@ -344,13 +358,16 @@ function childSpecLabel(child: ChildSpec) {
     || options.value.specs?.sizes?.find((item:any) => String(item.value) === String(child.sizeId))?.label
   return [name,color || '—',size || '—',child.quantity == null ? '—' : child.quantity+' 件/套'].join(' / ')
 }
+/** 生成订单明细展示用的款式规格名称。 / Build the style-specification label shown in an order line. */
 function spec(line:any) {
   const t=options.value.specs || {}
   if (line.setSpecId) return line.configuration?.map(childSpecLabel).join('；') || line.label || '套装规格'
   return [t.colors?.find((s:any)=>s.value===String(line.colorId))?.label,
     t.sizes?.find((s:any)=>s.value===String(line.sizeId))?.label].filter(Boolean).join(' / ') || line.label || '无色码'
 }
+/** 从订单规格行中定位算料结果对应的来源明细。 / Find the order specification line referenced by a demand result. */
 function planLine(plan:any) { return form.value?.pos?.flatMap((p:any)=>p.lines || []).find((line:any)=>String(line.key)===String(plan.lineKey)) }
+/** 组合款式、颜色和尺码形成用料计划明细标签。 / Build a demand-line label from its style, color and size. */
 function planLabel(plan:any) {
   const line=planLine(plan)
   return line ? `${line.styleName} · ${spec(line)}` : '订单规格已不可用'
@@ -377,6 +394,7 @@ function convertPurchaseQuantity(quantity:string, factor:string): { value:string
   const digits=result.toString().padStart(9,'0')
   return {value:(digits.slice(0,-8)+'.'+digits.slice(-8)).replace(/\.?0+$/,''), approximate:remainder!==0n}
 }
+/** 按物料采购单位汇总数量，并保留库存单位数量供核对。 / Summarize purchase-unit quantities while retaining inventory quantities for reconciliation. */
 function summarizePurchaseUnits(details:any[], quantity:string|null): string[] {
   if (details.some(detail=>!Array.isArray(detail.purchaseUnits))) return ['历史试算缺少采购单位快照']
   const signature=(units:any[])=>JSON.stringify(units.map(unit=>[String(unit.unitId),String(unit.unitName),String(unit.mode),sumDecimal([unit.inventoryFactor])]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))))
@@ -407,6 +425,7 @@ const materialSummary = computed(() => {
   return [...groups.values()].map(group=>{ const quantity=sumDecimal(group.quantities); return {...group,quantity,purchaseSummary:summarizePurchaseUnits(group.details,quantity),variants:[...group.variants.values()].map((variant:any)=>{ const subtotal=sumDecimal(variant.quantities); return {...variant,quantity:subtotal,purchaseSummary:summarizePurchaseUnits(variant.details,subtotal)} })} })
 })
 const supplyLabels:Record<string,string>={customer:'客供',purchase:'自采',mixed:'客供＋自采'}
+/** 移除 PO 内指定款式规格并同步清理交付分配。 / Remove one PO specification and its related delivery allocations. */
 function removeLine(key:string) {
   const index=po.value.lines.findIndex((line:any)=>line.key===key)
   if (index<0) return
@@ -415,18 +434,21 @@ function removeLine(key:string) {
   for (const batch of po.value.deliveries) delete batch.allocations[line.key]
   touch()
 }
+/** 保存订单草稿及 PO 明细，并保留服务端返回的修订号。 / Save the order draft and PO lines while retaining the returned server revision. */
 async function save() {
   const current=active.value
   hydrate(await call('post','',form.value))
   active.value=current
   message.success('草稿已保存')
 }
+/** 试算订单物料需求并区分按物料汇总和款式色码明细。 / Preview material demand in material-summary and style-specification detail views. */
 function preview() {
   return run(async()=>{
     if (!readonly.value && (dirty.value || !form.value.id)) await save()
     plans.value=await call('get','/'+form.value.id+'/demand')
   })
 }
+/** 在订单审核后、BOM 就绪时重新计算需求快照。 / Recalculate the demand snapshot after approval once the BOM is available. */
 function calculateApprovedDemand(recalculate=false) {
   return run(async()=>{
     const wasSaved=demandSaved.value
@@ -443,10 +465,12 @@ function calculateApprovedDemand(recalculate=false) {
     }
   })
 }
+/** 向服务端请求试算或正式重算，并展示版本差异。 / Request a preview or persisted recalculation and display version changes. */
 function requestDemandCalculation(recalculate:boolean) {
   if (!recalculate) return calculateApprovedDemand(false)
   Modal.confirm({title:'确认重新算料？',content:'将使用当前已发布 BOM 重新计算；完整后保存新快照并保留原快照。有关联需求计划时需先处理计划。',okText:'重新算料',cancelText:'取消',onOk:()=>calculateApprovedDemand(true)})
 }
+/** 从订单列表发起算料并回到当前订单上下文。 / Start demand calculation from the order list and retain the order context. */
 async function calculateFromList(row:any) {
   await open(row)
   if (!form.value || String(form.value.id)!==String(row.id)) return
@@ -461,16 +485,19 @@ function materialSupply(plan:any, detail:any) {
   const mode = owner?.supply || form.value.supply
   return mode==='mixed' ? 'mixed' : form.value.sources?.[detail.sourceKey] || mode || detail.supply
 }
+/** 识别订单是否同时采用客供与自采供料安排。 / Detect whether the order combines customer-supplied and self-purchased materials. */
 function mixedSupply(plan:any) {
   const owner = form.value.pos.find((p:any)=>p.lines.some((line:any)=>line.key===plan.lineKey))
   return (owner?.supply || form.value.supply)==='mixed'
 }
+/** 覆盖单项物料的供料方式并标记需求计划需重新计算。 / Override sourcing for one material and mark demand for recalculation. */
 function changeMaterialSupply(key:string, value:string) {
   const sources = (form.value.sources ||= {})
   if (value) sources[key]=value
   else delete sources[key]
   touch()
 }
+/** 执行订单提交、审核或取消等状态流转并同步审批结果。 / Perform order submit, review or cancellation transitions and synchronize approval state. */
 function transition(action:string) {
   return run(async()=>{
     if (action==='submit' && (dirty.value || !form.value.id)) await save()
@@ -479,6 +506,7 @@ function transition(action:string) {
     message.success('订单状态已更新')
   })
 }
+/** 按状态执行反审核或反提交，并保护已派生的后续单据。 / Reverse approval or submission only when downstream documents permit it. */
 function reverseOrder(action:'unsubmit'|'unapprove') {
   const unsubmit = action === 'unsubmit'
   Modal.confirm({
@@ -488,6 +516,7 @@ function reverseOrder(action:'unsubmit'|'unapprove') {
     onOk: () => transition(action),
   })
 }
+/** 关闭订单编辑器前确认是否丢弃未保存变更。 / Confirm before discarding unsaved changes when closing the order editor. */
 function close() {
   if (dirty.value && !window.confirm('离开后，本次未保存的修改将丢失。确定返回？')) return
   form.value=undefined

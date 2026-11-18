@@ -208,6 +208,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
      * @param variable 流程变量
      * @return NodeExtVo 对象，封装按钮权限列表、抄送对象集合和自定义参数 Map
      */
+    /** 解析流程节点扩展 JSON 并构造审批人、抄送人等配置对象。 / Parse node-extension JSON into assignee, carbon-copy and related settings. */
     @Override
     public NodeExtVo parseNodeExt(String ext, Map<String, Object> variable) {
         NodeExtVo nodeExtVo = new NodeExtVo();
