@@ -23,7 +23,7 @@ import java.util.*;
 
 import static org.dromara.system.service.ISysOssService.STYLE_COVER_PREFIX;
 
-/** 款式统一主档，订单和样衣使用同一稳定标识。 / Shared style master for orders and sampling. */
+/** 款式统一主档，订单和样衣使用同一稳定标识。 / Shared style master for orders and sampling. / 统一维护款式身份，订单和样衣复用同一稳定主键。 / Maintain one stable style identity for orders and sampling. */
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/rd/style")
@@ -73,7 +73,7 @@ public class StyleController {
         return R.ok(tagOptions(id));
     }
 
-    /** 复用公共颜色、尺码和尺码组，停用项仅用于显示既有关联。 */
+    /** 复用公共颜色、尺码和尺码组，停用项仅用于显示既有关联。 / Reuse shared colors, sizes and size groups; disabled entries remain visible only for existing assignments. */
     @GetMapping("/spec-options")
     public R<Map<String,Object>> specOptions() {
         return R.ok(Map.of(
@@ -87,7 +87,7 @@ public class StyleController {
                 """).stream().map(row -> normalizeIds(row, "sizeIds")).toList()));
     }
 
-    /** 套装组成的展示与写入均检查每个子款的分类权限。 */
+    /** 套装组成的展示与写入均检查每个子款的分类权限。 / Enforce each child style's category grant for both set display and updates. */
     @GetMapping("/{id}/configuration")
     public R<Map<String,Object>> configuration(@PathVariable Long id) {
         current(id, false);
@@ -97,13 +97,14 @@ public class StyleController {
             "setSpecs", restricted ? List.of() : setSpecs(id),
             "colorIds", specIds(id, COLOR), "sizeIds", specIds(id, SIZE), "excludedPairs", exclusions(id)));
     }
+    /** 返回当前人员可访问的款式分类选项，保留导航所需祖先节点。 / Return caller-authorized style categories with ancestors needed for navigation. */
 
     @GetMapping("/category-options")
     public R<Map<String,Object>> categoryOptions() {
         return R.ok(categories.options());
     }
 
-    /** 只用于页面初始定位，失效或无可见分类时回退到全部授权范围。 */
+    /** 只用于页面初始定位，失效或无可见分类时回退到全部授权范围。 / Use this value only for initial navigation and fall back to the full authorized scope when invalid. */
     @GetMapping("/default-category")
     public R<Map<String,Object>> defaultCategory() {
         List<String> values = jdbc.queryForList("SELECT config_value FROM sys_config WHERE config_key='rd.style.defaultCategoryScheme'", String.class);
@@ -115,6 +116,7 @@ public class StyleController {
             && Boolean.TRUE.equals(row.get("selectable")));
         return R.ok(Map.of("schemeId",usable ? configured : "","invalid",!usable));
     }
+    /** 返回可供款式档案选择的有效客户。 / List active customers selectable on a style record. */
 
     @GetMapping("/customer-options")
     public R<List<Map<String,Object>>> customerOptions() {
@@ -123,6 +125,7 @@ public class StyleController {
             WHERE status='0' ORDER BY customer_name,customer_id
             """));
     }
+    /** 创建款式档案及规格、标签、套装组成并建立审计上下文。 / Create a style and its specifications, tags and set members with an audit context. */
 
     @PostMapping
     @SaCheckPermission({"rd:style:list","rd:style:add"})
@@ -131,6 +134,7 @@ public class StyleController {
     public R<String> create(@RequestBody StyleInput input) {
         return save(null, input);
     }
+    /** 更新款式资料并事务性校验子款、标签和规格关联。 / Update style data while transactionally validating member, tag and specification references. */
 
     @PutMapping("/{id}")
     @SaCheckPermission({"rd:style:list","rd:style:edit"})
@@ -208,7 +212,7 @@ public class StyleController {
         return privateFiles.streamFile(keys.getFirst(), "style-cover");
     }
 
-    /** 款式附件沿用受保护的私有前缀，按文件签名限制可接收类型。 */
+    /** 款式附件沿用受保护的私有前缀，按文件签名限制可接收类型。 / Store style attachments under the protected private prefix and validate file types by signature. */
     @PostMapping(value="/attachments", consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission(value={"rd:style:add","rd:style:edit"}, mode=cn.dev33.satoken.annotation.SaMode.OR)
     public R<Map<String,Object>> uploadAttachment(@RequestParam("file") MultipartFile file) throws IOException {
@@ -229,12 +233,14 @@ public class StyleController {
         else return R.fail("请选择PNG、JPG、PDF、DOCX、XLSX或PPTX文件");
         return privateFiles.uploadPrivate(file, STYLE_COVER_PREFIX, type);
     }
+    /** 列出款式附件及安全预览信息，不泄露私有存储路径。 / List style attachments and safe previews without exposing private storage paths. */
 
     @GetMapping("/{id}/attachments")
     public R<List<Map<String,Object>>> attachments(@PathVariable Long id) {
         current(id,false);
         return R.ok(attachmentRows(id));
     }
+    /** 解析单个款式附件的授权预览地址。 / Resolve an authorized preview for one style attachment. */
 
     @GetMapping("/{id}/attachments/{ossId}")
     public ResponseEntity<byte[]> attachment(@PathVariable Long id, @PathVariable Long ossId) {
@@ -246,6 +252,7 @@ public class StyleController {
         if (rows.isEmpty()) return ResponseEntity.notFound().build();
         return privateFiles.streamFile(rows.getFirst().get("file_name").toString(),"style-attachment");
     }
+    /** 规范化附件列表并校验文件类别与款式归属。 / Normalize attachment rows and validate file category and style ownership. */
 
     private List<Map<String,Object>> attachmentRows(Long styleId) {
         return jdbc.queryForList("""
@@ -256,6 +263,7 @@ public class StyleController {
     }
 
     public record AttachmentInput(Long ossId, String category) {}
+    /** 保存款式和私有文件关联，并执行文件归属校验。 / Persist style-to-file links while enforcing file ownership. */
     private void saveAttachments(Long styleId, List<AttachmentInput> input, Long user, Long oldCoverId) {
         if (input==null) return;
         // 旧数据允许100个附件加1张独立主图，合并显示后须能原样保存。
@@ -388,23 +396,26 @@ public class StyleController {
         return R.ok(null, String.valueOf(savedId));
     }
 
-    /** 串行化档案写入，避免并发组成调整与模式切换产生互相引用。 */
+    /** 串行化档案写入，避免并发组成调整与模式切换产生互相引用。 / Serialize style writes so concurrent member edits and production-mode switches cannot create cyclic references. */
     private void lockComposition() {
         jdbc.query("SELECT pg_advisory_xact_lock(1976509041)", rs -> {});
     }
 
+    /** 从受控的公共档案表读取颜色或尺码选项，并标记停用的历史值。 / Load color or size options from an allow-listed master table and mark disabled historical values. */
     private List<Map<String,Object>> referenceOptions(SpecReference ref) {
         return jdbc.queryForList("""
             SELECT %s::text AS value,%s || '（' || %s || '）' AS label,(status<>'0') AS disabled
             FROM %s ORDER BY sort_order,%s
             """.formatted(ref.key(),ref.name(),ref.code(),ref.table(),ref.key()));
     }
+    /** 提取规格引用中的稳定颜色或尺码 ID，并拒绝重复项。 / Extract stable color or size identifiers and reject duplicates. */
 
     private List<String> specIds(Long id, SpecReference ref) {
         String key = ref == COLOR ? "color_id" : "size_id";
         return jdbc.queryForList("SELECT "+key+"::text FROM "+ref.relation()+" WHERE style_id=? ORDER BY "+key,
             String.class,id);
     }
+    /** 读取款式明确排除的颜色尺码组合。 / Load color-size combinations explicitly excluded from a style. */
 
     private List<Map<String,Object>> exclusions(Long id) {
         return jdbc.queryForList("""
@@ -412,6 +423,7 @@ public class StyleController {
             FROM rd_style_spec_exclusion WHERE style_id=? ORDER BY color_id,size_id
             """,id);
     }
+    /** 按档案顺序读取套装子款关系和子款资料。 / Load set members and child details in configured order. */
 
     private List<Map<String,Object>> members(Long id, boolean scoped) {
         StringBuilder sql = new StringBuilder("""
@@ -427,7 +439,7 @@ public class StyleController {
         return jdbc.queryForList(sql.append(" ORDER BY m.sort_order,m.child_id").toString(),args.toArray());
     }
 
-    /** 规格 ID 保留供后续业务引用，配套件数读取当前套装组成。 */
+    /** 规格 ID 保留供后续业务引用，配套件数读取当前套装组成。 / Keep specification IDs stable for downstream references and derive member counts from set composition. */
     private List<Map<String,Object>> setSpecs(Long styleId) {
         var specs = jdbc.queryForList("""
             SELECT id::text AS id,color_name AS "colorName",size_name AS "sizeName",remark
@@ -446,7 +458,7 @@ public class StyleController {
         return specs;
     }
 
-    /** 在款式保存事务内校验完整配套，避免组成和规格分别写入。 */
+    /** 在款式保存事务内校验完整配套，避免组成和规格分别写入。 / Validate complete pairings in the style transaction so composition and specifications cannot diverge. */
     private void saveSetSpecs(Long styleId, String mode, List<SetSpec> submitted) {
         var existing = setSpecs(styleId);
         if ("single".equals(mode) && submitted != null && !submitted.isEmpty()) {
@@ -530,6 +542,7 @@ public class StyleController {
             throw new ServiceException("已有套装规格与子款组成或有效颜色尺码不一致，请先调整相关套装规格");
         }
     }
+    /** 构造款式组成、规格、标签和附件变更的审计快照。 / Build an auditable snapshot of style members, specifications, tags and attachments. */
 
     private Map<String,Object> configurationAudit(Long id) {
         if (id == null) return Map.of();
@@ -537,7 +550,7 @@ public class StyleController {
             "可用尺码ID",specIds(id,SIZE),"排除的颜色尺码组合",exclusions(id),"款式标签",tagOptions(id),"款式附件",attachmentRows(id));
     }
 
-    /** 同一事务更新主档和组成或规格；异常时一并回滚。 */
+    /** 同一事务更新主档和组成或规格；异常时一并回滚。 / Persist master data and related composition or specifications atomically; roll back on failure. */
     private void saveConfiguration(Long id, String mode, StyleInput input) {
         boolean single = "single".equals(mode);
         var previousMembers = members(id,false);
@@ -586,6 +599,7 @@ public class StyleController {
             jdbc.update("INSERT INTO rd_style_spec_exclusion(style_id,color_id,size_id) VALUES (?,?,?)",id,pair.colorId(),pair.sizeId());
         }
     }
+    /** 替换款式规格并校验订单或 BOM 对既有规格的引用。 / Replace style specifications while validating order and BOM references. */
 
     private void replaceSpec(Long id, SpecReference ref, List<Long> requested) {
         if (requested.size()>100 || requested.contains(null)) throw new ServiceException("颜色或尺码最多各选择100项");
@@ -614,10 +628,12 @@ public class StyleController {
         return jdbc.queryForList(sql.toString(),args.toArray()).stream().findFirst().map(this::normalizeTagIds)
             .orElseThrow(() -> new ServiceException("款式不存在或不可访问"));
     }
+    /** 规范化标签 ID 集合，检查去重并保留合法的当前标签关联。 / Normalize tag IDs, remove duplicates and retain only valid current assignments. */
 
     private Map<String,Object> normalizeTagIds(Map<String,Object> row) {
         return normalizeIds(row, "tagIds");
     }
+    /** 将外部 ID 列表解析为稳定主键并拒绝空值和非法格式。 / Parse stable identifiers from an external list and reject blank or malformed values. */
 
     private Map<String,Object> normalizeIds(Map<String,Object> row, String key) {
         if (row.get(key) instanceof java.sql.Array array) {
@@ -629,6 +645,7 @@ public class StyleController {
         }
         return row;
     }
+    /** 返回款式功能可用标签及分组。 / Return tags and groups available to the style feature. */
 
     private List<Map<String,Object>> tagOptions(Long id) {
         return jdbc.queryForList("""
@@ -639,7 +656,7 @@ public class StyleController {
             """, TAG_FEATURE,id);
     }
 
-    /** 缺省保留旧关联；停用标签只能保留在原档案中。 / Omission preserves assignments and disabled tags cannot be newly bound. */
+    /** 缺省保留旧关联；停用标签只能保留在原档案中。 / Omission preserves assignments and disabled tags cannot be newly bound. / Omitting tags preserves existing links; disabled tags may remain but cannot be newly assigned. */
     private Set<Long> validateTags(Long styleId, List<Long> input) {
         if (input == null) return null;
         if (input.size() > 100 || input.contains(null)) throw new ServiceException("请选择有效款式标签，最多100个");
@@ -656,7 +673,7 @@ public class StyleController {
         return tags;
     }
 
-    /** 审计比较中文业务字段，不记录图片内容。 / Record business field changes without storing image bytes. */
+    /** 审计比较中文业务字段，不记录图片内容。 / Record business field changes without storing image bytes. / Audit named business-field changes while excluding binary image content. */
     private void audit(String action, Long id, Map<String,Object> before, Map<String,Object> after) {
         BusinessAudit.record(action,id,"款式名称",
             auditFields(before),after.isEmpty() ? Map.of("已删除",true) : auditFields(after));
@@ -674,12 +691,14 @@ public class StyleController {
         fields.put("要求同架生产",row.get("sameHanger"));
         return fields;
     }
+    /** 安全读取 JSON 字段，兼容字段缺失或类型异常。 / Safely read a JSON field when values are absent or malformed. */
 
     private String field(String value, int max, String label) {
         String cleaned = Objects.toString(value,"").strip();
         if (cleaned.length()>max) throw new ServiceException(label+"不能超过"+max+"字");
         return cleaned;
     }
+    /** 将外部主键文本转换为内部 ID 并统一处理非法值。 / Convert an external identifier string to an internal ID with consistent validation. */
 
     private Long id(Object value) {
         return value == null ? null : Long.valueOf(value.toString());

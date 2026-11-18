@@ -261,6 +261,7 @@ public class SysConfigController extends BaseController {
             return R.fail("保存仓库布局编码规则失败");
         }
     }
+    /** 生成仓库布局编码规则的业务审计前后值。 / Build before-and-after audit values for warehouse-layout code rules. */
 
     private Map<String, Object> warehouseLayoutRuleAudit(String value) {
         Map<String, Object> rule = JsonUtils.parseMap(value);
@@ -303,6 +304,7 @@ public class SysConfigController extends BaseController {
             return R.ok();
         } catch (Exception e) { return R.fail("保存仓库自动编码规则失败"); }
     }
+    /** 生成仓库编码规则的业务审计前后值。 / Build before-and-after audit values for warehouse code rules. */
 
     private Map<String, Object> warehouseCodeRuleAudit(String value) {
         Map<String, Object> rule = JsonUtils.parseMap(value);

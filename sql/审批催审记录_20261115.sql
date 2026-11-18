@@ -8,9 +8,9 @@ CREATE TABLE IF NOT EXISTS sys_approval_reminder (
 );
 CREATE INDEX IF NOT EXISTS idx_approval_reminder_instance_time ON sys_approval_reminder(instance_id, create_time DESC);
 COMMENT ON TABLE sys_approval_reminder IS '审批发起人对当前待办发出的催审记录';
-COMMENT ON COLUMN sys_approval_reminder.reminder_id IS '催审记录主键';
-COMMENT ON COLUMN sys_approval_reminder.instance_id IS '审批流程实例编号';
-COMMENT ON COLUMN sys_approval_reminder.initiator_id IS '发起催审的人员编号';
-COMMENT ON COLUMN sys_approval_reminder.recipient_count IS '本次催审去重后的接收人数';
-COMMENT ON COLUMN sys_approval_reminder.create_time IS '催审发送时间';
+COMMENT ON COLUMN sys_approval_reminder.reminder_id IS '催审记录主键，由数据库身份列生成';
+COMMENT ON COLUMN sys_approval_reminder.instance_id IS '被催审的 Warm-Flow 流程实例编号；接收人按发送时有效待办人解析';
+COMMENT ON COLUMN sys_approval_reminder.initiator_id IS '发起催审的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN sys_approval_reminder.recipient_count IS '本次实际通知的去重接收人数，不包含无效或无权接收的人员';
+COMMENT ON COLUMN sys_approval_reminder.create_time IS '催审消息提交发送并记录审计的时间';
 COMMIT;

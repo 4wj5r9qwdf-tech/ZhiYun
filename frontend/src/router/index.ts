@@ -15,9 +15,10 @@ const router = createRouter({
       path: '/system',
       component: () => import('../views/Home.vue'),
       children: [
+        { path: 'notice', name: 'NoticeManage', component: () => import('../views/NoticeManage.vue'), meta: { title: '通知公告', tab: true } },
         { path: 'online', name: 'OnlineUsers', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'online' }, meta: { title: '在线用户', tab: true } },
         { path: 'operlog', name: 'OperationLogs', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'logs' }, meta: { title: '系统日志', tab: true } },
-        { path: 'loginInfo', redirect: { name: 'OperationLogs' } },
+        { path: 'loginInfo', name: 'LoginLogs', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'loginInfo' }, meta: { title: '登录日志', tab: true } },
         { path: 'menu-directory', name: 'MenuDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'menu-directory' }, meta: { title: '菜单管理', tab: true } },
         { path: 'cache-overview', name: 'CacheOverview', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'cache-overview' }, meta: { title: '缓存监控', tab: true } },
         { path: 'dictionary', name: 'DictionaryDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'dictionary' }, meta: { title: '字典管理', tab: true } },
@@ -25,6 +26,12 @@ const router = createRouter({
         { path: 'files', name: 'FileDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'files' }, meta: { title: '文件管理', tab: true } },
         { path: 'storage-config', name: 'StorageDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'storage-config' }, meta: { title: '文件配置管理', tab: true } },
         { path: 'clients', name: 'ClientDirectory', component: () => import('../views/SystemMonitor.vue'), props: { kind: 'clients' }, meta: { title: '客户端管理', tab: true } },
+        { path: 'generator', name: 'CodeGeneratorManage', component: () => import('../views/CodeGeneratorManage.vue'), meta: { title: '代码生成', tab: true } },
+        { path: 'admin-monitor', name: 'FrameworkAdminConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'admin' }, meta: { title: 'Admin 监控', tab: true } },
+        { path: 'snailjob', name: 'FrameworkSnailJobConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'snailjob' }, meta: { title: 'SnailJob 任务调度', tab: true } },
+        { path: 'snailai', name: 'FrameworkSnailAiConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'snailai' }, meta: { title: 'SnailAI 智能体', tab: true } },
+        { path: 'snailai-traces', name: 'SnailAiTraces', component: () => import('../views/SnailAiTraces.vue'), meta: { title: '智能体对话记录', tab: true } },
+        { path: 'api-docs', name: 'FrameworkApiDocs', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'api' }, meta: { title: '接口文档', tab: true } },
         { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统管理' } },
         { path: 'company', name: 'Company', component: () => import('../views/Company.vue'), meta: { title: '公司档案', tab: true } },
         { path: 'role', name: 'RoleManage', component: () => import('../views/RoleManage.vue'), meta: { title: '角色管理', tab: true } },
@@ -40,13 +47,19 @@ const router = createRouter({
     },
     { path: '/approve', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'ApprovalIndex', component: () => import('../views/ApprovalIndex.vue'), meta: { title: '审批' } },
+      { path: 'categories', name: 'ApprovalCategories', component: () => import('../views/ApprovalCategoryManage.vue'), meta: { title: '流程类别', tab: true } },
       { path: 'definitions', name: 'ApprovalDefinitions', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'definition' }, meta: { title: '流程定义', tab: true } },
+      { path: 'instances', name: 'ApprovalInstances', component: () => import('../views/ApprovalInstanceManage.vue'), meta: { title: '流程实例', tab: true } },
+      { path: 'task-monitor', name: 'ApprovalTaskMonitor', component: () => import('../views/ApprovalTaskMonitor.vue'), meta: { title: '任务监控', tab: true } },
+      { path: 'expressions', name: 'WorkflowSpelManage', component: () => import('../views/WorkflowSpelManage.vue'), meta: { title: '流程表达式', tab: true } },
+      { path: 'leave-demo', name: 'WorkflowLeaveDemo', component: () => import('../views/WorkflowLeaveDemo.vue'), meta: { title: '请假流程示例', tab: true } },
       { path: 'waiting', name: 'ApprovalWaiting', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'waiting' }, meta: { title: '我的待办', tab: true } },
       { path: 'initiated', name: 'ApprovalInitiated', component: () => import('../views/ApprovalInitiated.vue'), meta: { title: '我发起的', tab: true } },
+      { path: 'copies', name: 'ApprovalCopies', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'copy' }, meta: { title: '我的抄送', tab: true } },
       { path: 'finished', name: 'ApprovalFinished', component: () => import('../views/ApprovalWorkbench.vue'), props: { kind: 'finished' }, meta: { title: '我的已办', tab: true } },
       { path: 'bindings', name: 'ApprovalBindingManage', component: () => import('../views/ApprovalBindingManage.vue'), meta: { title: '审批对象配置', tab: true } },
     ] },
-    { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'manage', name: 'CustomerOrderManage', component: () => import('../views/CustomerOrderManage.vue'), meta: { title: '客户订单', tab: true } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }] },
+    { path: '/order', component: () => import('../views/Home.vue'), children: [{ path: '', name: 'OrderIndex', component: () => import('../views/OrderIndex.vue'), meta: { title: '订单' } }, { path: 'manage', name: 'CustomerOrderManage', component: () => import('../views/CustomerOrderManage.vue'), meta: { title: '客户订单', tab: true } }, { path: 'customer', name: 'CustomerManage', component: () => import('../views/CustomerManage.vue'), meta: { title: '客户档案', tab: true } }, { path: 'demand-plans', name: 'MaterialDemandPlanManage', component: () => import('../views/MaterialDemandPlanManage.vue'), meta: { title: '物料需求计划', tab: true } }] },
     { path: '/stock', component: () => import('../views/Home.vue'), children: [
       { path: '', name: 'StockIndex', component: () => import('../views/StockIndex.vue'), meta: { title: '库存' } },
       { path: 'warehouse', name: 'WarehouseManage', component: () => import('../views/WarehouseManage.vue'), meta: { title: '仓库管理', tab: true } },
@@ -92,12 +105,19 @@ const router = createRouter({
 // 路由守卫：需登录页面，未登录跳 /login；并按路由 meta.title 更新浏览器标签标题
 // 路由级权限映射：无权限直接访问 URL 也拦（卡片显隐只是第一层）
 const ROUTE_PERMS: Record<string, string> = {
+  NoticeManage: 'system:notice:list',
+  LoginLogs: 'monitor:logininfo:list', CodeGeneratorManage: 'tool:gen:list',
+  FrameworkAdminConsole: 'monitor:admin:list', FrameworkSnailJobConsole: 'system:snailjob:list', FrameworkSnailAiConsole: 'system:snailai:list',
+  FrameworkApiDocs: 'system:api-docs:list',
+  SnailAiTraces: 'system:snailai:trace:list',
   ClientDirectory: 'system:client:list',
   StorageDirectory: 'system:ossConfig:list',
   FileDirectory: 'system:oss:list',
   ParameterDirectory: 'system:config:list',
-  ApprovalBindingManage: 'system:config:list',
-  ApprovalDefinitions: 'workflow:definition:list',
+  ApprovalBindingManage: 'approval:binding:list',
+  ApprovalCopies: 'approval:copy:list', ApprovalWaiting: 'approval:waiting:list', ApprovalInitiated: 'approval:initiated:list', ApprovalFinished: 'approval:finished:list',
+  ApprovalDefinitions: 'workflow:definition:list', ApprovalCategories: 'workflow:category:list',
+  ApprovalInstances: 'workflow:instance:list', ApprovalTaskMonitor: 'workflow:task:list', WorkflowSpelManage: 'workflow:spel:list', WorkflowLeaveDemo: 'workflow:leave:list',
   DictionaryDirectory: 'system:dict:list',
   CacheOverview: 'monitor:cache:list',
   MenuDirectory: 'system:menu:list',
@@ -107,15 +127,18 @@ const ROUTE_PERMS: Record<string, string> = {
   PostManage: 'system:post:list', RoleManage: 'system:role:list', SystemTemplate: 'system:template:list', TagManage: 'system:tag:list', BuildingManage: 'system:building:list',
   StyleManage: 'rd:style:list',
   CustomerOrderManage: 'order:customer-order:list',
+  MaterialDemandPlanManage: 'order:material-demand-plan:list',
   StyleBomManage: 'rd:bom:list',
   WarehouseManage: 'inventory:warehouse:list', WarehouseLayoutManage: 'inventory:location:list', MaterialManage: 'inventory:material:list',
   SizeManage: 'system:size:list', SizeGroupManage: 'system:size-group:list', ColorManage: 'system:color:list',
   UnitManage: 'system:unit:list', CategoryManage: 'system:category:list',
   Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'LoginLogs', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'ColorManage', 'OrderIndex', 'CustomerOrderManage', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'MaterialManage', 'RAndDIndex', 'StyleManage', 'StyleBomManage', 'WelfareIndex']
+const needAuth = ['NoticeManage', 'LoginLogs', 'CodeGeneratorManage', 'FrameworkAdminConsole', 'FrameworkSnailJobConsole', 'FrameworkSnailAiConsole', 'FrameworkApiDocs', 'ApprovalIndex', 'ApprovalCategories', 'ApprovalDefinitions', 'ApprovalInstances', 'ApprovalTaskMonitor', 'WorkflowSpelManage', 'WorkflowLeaveDemo', 'ApprovalWaiting', 'ApprovalCopies', 'ApprovalInitiated', 'ApprovalFinished', 'ApprovalBindingManage', 'UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'ColorManage', 'OrderIndex', 'CustomerOrderManage', 'MaterialDemandPlanManage', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'MaterialManage', 'RAndDIndex', 'StyleManage', 'StyleBomManage', 'WelfareIndex']
 router.beforeEach(async (to) => {
   const token = sessionStorage.getItem('token')
+  if (to.name === 'SnailAiTraces' && !token) return { name: 'Login' }
+  if (to.name === 'SnailAiTraces' && token) await ensurePerms()
   if (needAuth.includes(to.name as string) && !token) {
     return { name: 'Login' }
   }

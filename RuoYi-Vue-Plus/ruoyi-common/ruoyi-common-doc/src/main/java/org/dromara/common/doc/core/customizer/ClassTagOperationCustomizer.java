@@ -5,6 +5,7 @@ import io.swagger.v3.core.util.AnnotationsUtils;
 import io.swagger.v3.oas.annotations.tags.Tags;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
+import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -42,14 +43,41 @@ public class ClassTagOperationCustomizer implements GlobalOperationCustomizer, G
     private final PropertyResolverUtils propertyResolverUtils;
 
     /**
+     * 织云业务控制器在 Swagger 中使用的简短中文名称。
+     */
+    private static final Map<String, String> BUSINESS_TAG_NAMES = Map.ofEntries(
+        Map.entry("ApprovalBindingController", "审批对象配置"),
+        Map.entry("AuthController", "账号认证"),
+        Map.entry("BuildingController", "建筑档案"),
+        Map.entry("CaptchaController", "验证码"),
+        Map.entry("CategoryController", "分类管理"),
+        Map.entry("ColorController", "颜色管理"),
+        Map.entry("CompanyController", "公司档案"),
+        Map.entry("CountryRegionController", "国家地区"),
+        Map.entry("CustomerController", "客户档案"),
+        Map.entry("CustomerOrderApprovalController", "客户订单审批"),
+        Map.entry("CustomerOrderController", "客户订单"),
+        Map.entry("HelloController", "服务连通性"),
+        Map.entry("IndexController", "工作台"),
+        Map.entry("MaterialController", "物料档案"),
+        Map.entry("OrderApprovalSetupController", "客户订单审批设置"),
+        Map.entry("PersonController", "人员管理"),
+        Map.entry("PrivateFileController", "私有文件"),
+        Map.entry("ProfileController", "个人中心"),
+        Map.entry("PublicInfoController", "登录页公共信息"),
+        Map.entry("SizeDataController", "尺码资料"),
+        Map.entry("StyleBomController", "款式 BOM"),
+        Map.entry("StyleController", "款式档案"),
+        Map.entry("TagController", "标签管理"),
+        Map.entry("UnitController", "计量单位"),
+        Map.entry("WarehouseController", "仓库管理"),
+        Map.entry("WarehouseLocationController", "仓库布局")
+    );
+
+    /**
      * 已解析的 OpenAPI 顶层标签缓存。
      */
     private final Map<String, Tag> tags = new ConcurrentHashMap<>();
-
-    /**
-     * 已被类 JavaDoc 替换的自动标签名称集合。
-     */
-    private final Set<String> replacedAutoTagNames = ConcurrentHashMap.newKeySet();
 
     /**
      * 自定义接口操作的标签信息。
@@ -78,11 +106,11 @@ public class ClassTagOperationCustomizer implements GlobalOperationCustomizer, G
             return operation;
         }
 
-        // 无显式 @Tag 时，将 springdoc 自动生成的类名 tag 替换为类 JavaDoc 第一行
+        // 无显式 @Tag 时，将 springdoc 自动生成的类名 tag 替换为稳定中文短标题。
         removeOperationTag(operation, autoTagName);
         addOperationTag(operation, tagName);
-        replacedAutoTagNames.add(autoTagName);
-        tags.putIfAbsent(tagName, new Tag().name(tagName).description(javadocProvider.get().getClassJavadoc(beanType)));
+        // 标签名使用稳定短名称；接口详情由方法注释承载，避免把整段类注释塞进标签栏。
+        tags.putIfAbsent(tagName, new Tag().name(tagName));
         return operation;
     }
 
@@ -93,13 +121,27 @@ public class ClassTagOperationCustomizer implements GlobalOperationCustomizer, G
      */
     @Override
     public void customise(OpenAPI openApi) {
-        if (!CollectionUtils.isEmpty(openApi.getTags()) && !CollectionUtils.isEmpty(replacedAutoTagNames)) {
-            // 移除已被 JavaDoc tag 替换的默认类名 tag，避免 Swagger UI 出现空分组
-            openApi.getTags().removeIf(tag -> replacedAutoTagNames.contains(tag.getName()));
+        // GroupedOpenApi 共用同一组 customizer 实例；仅保留当前分组实际引用的标签，避免其他模块留下空标签。
+        Set<String> usedTagNames = new HashSet<>();
+        if (openApi.getPaths() != null) {
+            for (PathItem pathItem : openApi.getPaths().values()) {
+                if (pathItem == null) {
+                    continue;
+                }
+                for (Operation operation : pathItem.readOperations()) {
+                    if (operation != null && !CollectionUtils.isEmpty(operation.getTags())) {
+                        usedTagNames.addAll(operation.getTags());
+                    }
+                }
+            }
         }
-        // 将类级 @Tag 描述或 JavaDoc 描述补充到 OpenAPI 顶层 tags
+        if (!CollectionUtils.isEmpty(openApi.getTags())) {
+            openApi.getTags().removeIf(tag -> !usedTagNames.contains(tag.getName()));
+        }
+        // 只把当前分组实际使用的类级标签描述补充到 OpenAPI 顶层。
         tags.values().forEach(tag -> {
-            if (openApi.getTags() == null || openApi.getTags().stream().noneMatch(item -> Objects.equals(item.getName(), tag.getName()))) {
+            if (usedTagNames.contains(tag.getName())
+                && (openApi.getTags() == null || openApi.getTags().stream().noneMatch(item -> Objects.equals(item.getName(), tag.getName())))) {
                 openApi.addTagsItem(tag);
             }
         });
@@ -144,12 +186,16 @@ public class ClassTagOperationCustomizer implements GlobalOperationCustomizer, G
     }
 
     /**
-     * 获取类 JavaDoc 第一行作为标签名称。
+     * 读取织云业务短标签或从类 JavaDoc 中提取中文短标签。
      *
      * @param beanType Controller 类型
      * @return 标签名称，未配置 JavaDoc 时返回 null
      */
     private String getClassJavadocTagName(Class<?> beanType) {
+        String businessTagName = BUSINESS_TAG_NAMES.get(beanType.getSimpleName());
+        if (StringUtils.isNotBlank(businessTagName)) {
+            return businessTagName;
+        }
         if (javadocProvider.isEmpty()) {
             return null;
         }
@@ -157,9 +203,43 @@ public class ClassTagOperationCustomizer implements GlobalOperationCustomizer, G
         if (StringUtils.isBlank(description)) {
             return null;
         }
-        // 与原 OpenApiHandler 保持一致：类 JavaDoc 第一行作为 tag 名，完整 JavaDoc 作为 tag 描述
+        // 类注释中 "中文 / English" 的格式用于代码维护，Swagger 标签只保留中文短标题。
         List<String> lines = IoUtil.readLines(new StringReader(description), new ArrayList<>());
-        return lines.stream().filter(StringUtils::isNotBlank).findFirst().orElse(null);
+        String firstLine = lines.stream().filter(StringUtils::isNotBlank).findFirst().orElse(null);
+        return normalizeTagName(firstLine, beanType);
+    }
+
+    /**
+     * 清理 JavaDoc 标签标题，避免将描述、双语翻译和类名后缀挤进 Swagger 标签栏。
+     *
+     * @param firstLine 类注释首个非空行
+     * @param beanType 控制器类型
+     * @return 可读的短标签
+     */
+    private String normalizeTagName(String firstLine, Class<?> beanType) {
+        if (StringUtils.isBlank(firstLine)) {
+            return null;
+        }
+        String name = firstLine.trim();
+        int translationStart = name.indexOf(" / ");
+        if (translationStart >= 0) {
+            name = name.substring(0, translationStart).trim();
+        }
+        name = name.replaceAll("[。；;，,：:\\s]+$", "");
+        int boundary = -1;
+        for (char separator : new char[]{'（', '(', '，', ',', '；', ';', '：', ':'}) {
+            int index = name.indexOf(separator);
+            if (index > 0 && (boundary < 0 || index < boundary)) {
+                boundary = index;
+            }
+        }
+        if (boundary > 0) {
+            name = name.substring(0, boundary).trim();
+        }
+        if (StringUtils.isBlank(name)) {
+            return OpenAPIService.splitCamelCase(beanType.getSimpleName());
+        }
+        return name;
     }
 
     /**

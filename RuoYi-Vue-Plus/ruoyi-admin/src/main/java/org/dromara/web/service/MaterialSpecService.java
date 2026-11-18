@@ -29,12 +29,15 @@ public class MaterialSpecService {
 
     public record Field(String key, String label, String type, String unit, Boolean required, List<String> options,
                         String placeholder) {
+        /** 归一化可选标记和选项集合，保证 API 返回稳定的非空结构。 / Normalize optional flags and choices so the API always exposes a stable non-null shape. */
         public Field {
             required = Boolean.TRUE.equals(required);
             options = options == null ? List.of() : List.copyOf(options);
         }
     }
+    /** 一个可用于物料建档的规格字段模板及其字段定义。 / A material-specification template and its ordered field definitions. */
     public record Template(String code, String name, boolean active, List<Field> fields) {}
+    /** 经校验的模板选择、规格值及需同步旧列的兼容字段。 / A validated template selection, its values and compatibility-column updates. */
     public record Selection(String code, Map<String, Object> values, Map<String, Object> legacyUpdates) {}
 
     /** 停用模板仍供编辑旧物料回显，由保存校验阻止新的引用。 / Include retired templates for existing records. */
@@ -44,6 +47,7 @@ public class MaterialSpecService {
                 JsonUtils.parseArray(rs.getString("fields"), Field.class)));
     }
 
+    /** 将历史规格 JSON 解析为可修改的有序映射，空 JSON 返回空映射。 / Parse stored specification JSON into a mutable ordered map, using an empty map for blank data. */
     public static Map<String, Object> readValues(String json) {
         return new LinkedHashMap<>(JsonUtils.parseMap(json));
     }

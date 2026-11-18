@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS sys_approval_binding (
     update_time timestamptz NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE sys_approval_binding IS '业务审批对象与 Warm-Flow 流程编码的配置绑定，不保存流程节点或待办';
-COMMENT ON COLUMN sys_approval_binding.business_type IS '业务对象类型，例如客户订单、物料需求计划、生产任务';
-COMMENT ON COLUMN sys_approval_binding.flow_code IS '已发布且启用的 Warm-Flow 流程定义编码';
-COMMENT ON COLUMN sys_approval_binding.update_by IS '最后修改绑定的人员';
-COMMENT ON COLUMN sys_approval_binding.update_time IS '最后修改绑定的时间';
+COMMENT ON COLUMN sys_approval_binding.business_type IS '业务对象注册编码：customer_order 客户订单、material_demand_plan 物料需求计划、production_task 生产任务单；当前仅客户订单支持实际发起流程，其余须完成业务接入后方可启用';
+COMMENT ON COLUMN sys_approval_binding.flow_code IS '绑定的流程定义编码，关联 flow_definition.flow_code；仅允许已发布且启用的流程，节点由 Warm-Flow 维护';
+COMMENT ON COLUMN sys_approval_binding.update_by IS '最后修改绑定的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN sys_approval_binding.update_time IS '最后一次新增或修改审批对象流程绑定的时间';
 DO $$ DECLARE app_role text;
 BEGIN
     SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/** 按分类类型和树节点维护人员可见分类范围。 / Maintain employee category visibility grants by scheme and tree node. */
 /** 独立维护人员分类授权，避免随人事表单误提交。 / Edit category grants independently of the personnel form. */
 import { computed, onMounted, ref } from 'vue'
 import message from 'ant-design-vue/es/message'
@@ -102,10 +103,12 @@ function toggleBranch(_: unknown, event: { checked: boolean; node: { key: string
   const targetKey = target.key
   const targets = new Set(subtree(target).map(node => node.key))
   const next = new Map<string, Grant>()
+  /** 收集当前分类分支及其子级中被选中的授权节点。 / Collect selected grants from the current category branch and its descendants. */
   function keep(grant: Grant) {
     const key = grantKey(grant)
     if (!next.get(key)?.includeChildren) next.set(key, grant)
   }
+  /** 保留当前分支以外的既有选择，避免局部编辑误删其他权限。 / Preserve existing selections outside the edited branch. */
   function keepOutside(node: Option) {
     if (node.key === targetKey) return
     if (!subtree(node).some(item => item.key === targetKey)) {

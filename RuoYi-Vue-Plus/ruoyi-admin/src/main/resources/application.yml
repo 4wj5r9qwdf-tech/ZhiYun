@@ -107,6 +107,10 @@ security:
     - /error
     - /*/api-docs
     - /*/api-docs/**
+    - /swagger-ui.html
+    - /swagger-ui/**
+    - /v3/api-docs
+    - /v3/api-docs/**
     - /warm-flow-ui/config
     - /snail-chat/**
     - /api/snail/chat/**
@@ -161,30 +165,34 @@ springdoc:
   api-docs:
     # 是否开启接口文档
     enabled: true
+  swagger-ui:
+    # 默认折叠接口详情，并提供分组内的接口快速搜索。
+    doc-expansion: none
+    filter: true
+    tags-sorter: alpha
+    operations-sorter: alpha
   info:
     # 标题
-    title: '标题：RuoYi-Vue-Plus后台管理系统_接口文档'
+    title: '织云服装加工 ERP 接口文档'
     # 描述
-    description: '描述：用于管理集团旗下公司的人员信息,具体包括XXX,XXX模块...'
+    description: '供开发联调、测试和运维查阅。接口调用仍需满足登录认证、角色权限及业务校验。'
     # 版本
-    version: '版本号: ${project.version}'
+    version: '${project.version}'
     # 作者信息
     contact:
-      name: Lion Li
-      email: crazylionli@163.com
-      url: https://gitee.com/dromara/RuoYi-Vue-Plus
-  #这里定义了两个分组，可定义多个，也可以不定义
+      name: 织云 ERP
+  # 按织云业务、平台管理、审批、代码生成和开发示例分组，避免业务接口与框架示例混杂。
   group-configs:
-    - group: 1.演示模块
-      packages-to-scan: org.dromara.demo
-    - group: 2.通用模块
+    - group: 1.织云业务与基础资料
       packages-to-scan: org.dromara.web
-    - group: 3.系统模块
+    - group: 2.系统管理接口
       packages-to-scan: org.dromara.system
-    - group: 4.代码生成模块
-      packages-to-scan: org.dromara.gen
-    - group: 5.工作流模块
+    - group: 3.审批与工作流接口
       packages-to-scan: org.dromara.workflow
+    - group: 4.代码生成接口
+      packages-to-scan: org.dromara.gen
+    - group: 9.框架示例（开发测试）
+      packages-to-scan: org.dromara.demo
 
 # 防止XSS攻击
 xss:

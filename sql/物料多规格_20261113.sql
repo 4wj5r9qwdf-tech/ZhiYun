@@ -10,12 +10,12 @@ CREATE TABLE IF NOT EXISTS inv_material_variant (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_code ON inv_material_variant(lower(code));
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_name ON inv_material_variant(material_id,lower(name));
 COMMENT ON TABLE inv_material_variant IS '物料可独立引用的库存规格，停用保留历史标识';
-COMMENT ON COLUMN inv_material.multi_spec IS '是否要求业务明细指定物料规格，false 表示按档案引用';
-COMMENT ON COLUMN inv_material_variant.variant_id IS '物料规格主键，供BOM及后续库存单据引用';
-COMMENT ON COLUMN inv_material_variant.material_id IS '所属物料，关联 inv_material.material_id';
-COMMENT ON COLUMN inv_material_variant.code IS '物料规格编码，全局不区分大小写唯一';
-COMMENT ON COLUMN inv_material_variant.name IS '规格名称，同一物料内不区分大小写唯一';
-COMMENT ON COLUMN inv_material_variant.status IS '状态：0启用，1停用';
+COMMENT ON COLUMN inv_material.multi_spec IS '是否启用多规格：true=业务行必须指定一个物料规格，false=直接引用物料主档';
+COMMENT ON COLUMN inv_material_variant.variant_id IS '物料规格稳定主键，BOM、采购和库存明细使用此 ID 区分规格库存';
+COMMENT ON COLUMN inv_material_variant.material_id IS '所属物料主键，关联 inv_material.material_id；删除物料时须先处理其规格';
+COMMENT ON COLUMN inv_material_variant.code IS '物料规格编码；同一物料内忽略大小写唯一，不同物料允许复用编码';
+COMMENT ON COLUMN inv_material_variant.name IS '物料规格名称；同一物料内忽略大小写唯一';
+COMMENT ON COLUMN inv_material_variant.status IS '规格状态：0 启用，可用于新业务；1 停用，仅保留历史引用';
 DO $$ DECLARE app_role text; BEGIN
  SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
  EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.inv_material_variant TO %I',app_role);

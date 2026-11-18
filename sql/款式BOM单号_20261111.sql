@@ -7,5 +7,5 @@ UPDATE rd_style_bom SET preparer_id = create_by WHERE preparer_id IS NULL;
 ALTER TABLE rd_style_bom ALTER COLUMN bom_code SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_rd_style_bom_code ON rd_style_bom (lower(bom_code));
 COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
-COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，关联 sys_user.user_id；可在制单时选择，与记录创建人和实际操作审计人分开';
 COMMIT;

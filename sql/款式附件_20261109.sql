@@ -8,10 +8,10 @@ CREATE TABLE IF NOT EXISTS rd_style_attachment (
  PRIMARY KEY(style_id,oss_id)
 );
 COMMENT ON TABLE rd_style_attachment IS '款式与子款的图片、标识及文档附件，按款式权限控制访问';
-COMMENT ON COLUMN rd_style_attachment.style_id IS '所属款式ID，套装和子款分别维护';
-COMMENT ON COLUMN rd_style_attachment.oss_id IS '私有文件ID，同一文件只可关联一个款式';
-COMMENT ON COLUMN rd_style_attachment.category IS '附件类型：款式图片、主标、尺码标、洗标、吊牌、吊牌贴纸或文档';
-COMMENT ON COLUMN rd_style_attachment.sort_order IS '同款附件展示顺序';
+COMMENT ON COLUMN rd_style_attachment.style_id IS '所属款式或子款主键，关联 rd_style.style_id；套装及子款各自维护附件';
+COMMENT ON COLUMN rd_style_attachment.oss_id IS '私有对象存储文件主键，关联 sys_oss.oss_id；同一文件仅能关联一个款式';
+COMMENT ON COLUMN rd_style_attachment.category IS '附件类型：style_image 款式图片、main_label 主标、size_label 尺码标、wash_label 洗标、hang_tag 吊牌、tag_sticker 吊牌贴纸、document 文档';
+COMMENT ON COLUMN rd_style_attachment.sort_order IS '同一款式同类附件的展示顺序，数值越小越靠前';
 DO $$
 DECLARE app_role text;
 BEGIN

@@ -17,19 +17,19 @@ CREATE TABLE IF NOT EXISTS biz_customer_order (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_biz_customer_order_no ON biz_customer_order(lower(order_no));
 CREATE INDEX IF NOT EXISTS ix_biz_customer_order_customer ON biz_customer_order(customer_id);
 COMMENT ON TABLE biz_customer_order IS '客户订单主单，按 PO 保存订购、配套和交付分配，审核后冻结需求快照';
-COMMENT ON COLUMN biz_customer_order.id IS '客户订单内部主键';
-COMMENT ON COLUMN biz_customer_order.order_no IS '系统订单号，全局忽略大小写唯一';
+COMMENT ON COLUMN biz_customer_order.id IS '客户订单内部主键，供订单明细及派生单据关联';
+COMMENT ON COLUMN biz_customer_order.order_no IS '系统订单号，唯一索引按忽略大小写方式校验，供用户检索和单据引用';
 COMMENT ON COLUMN biz_customer_order.customer_id IS '客户，关联 customer_master.customer_id';
 COMMENT ON COLUMN biz_customer_order.company_id IS '归属公司，关联 sys_company.company_id，首次保存后锁定';
 COMMENT ON COLUMN biz_customer_order.sales_id IS '业务员，关联 sys_user.user_id';
 COMMENT ON COLUMN biz_customer_order.follower_id IS '跟单员，关联 sys_user.user_id';
-COMMENT ON COLUMN biz_customer_order.created_by IS '实际制单员工，关联 sys_user.user_id';
-COMMENT ON COLUMN biz_customer_order.status IS 'draft 草稿、submitted 待审核、approved 已审核、cancelled 已取消';
-COMMENT ON COLUMN biz_customer_order.document IS '订单日期、客户及公司名称快照、PO、款式规格、交付分配、供料安排和审核说明';
-COMMENT ON COLUMN biz_customer_order.demand IS '提交时保存的订单物料需求快照，保留来源 PO、规格、BOM 版本及库存单位数量';
-COMMENT ON COLUMN biz_customer_order.revision IS '并发编辑版本号，每次写入递增';
-COMMENT ON COLUMN biz_customer_order.created_at IS '首次存单时间';
-COMMENT ON COLUMN biz_customer_order.updated_at IS '最后写入时间';
+COMMENT ON COLUMN biz_customer_order.created_by IS '实际制单员工，关联 sys_user.user_id；与业务员、跟单员字段分开记录';
+COMMENT ON COLUMN biz_customer_order.status IS '单据状态：draft 草稿、submitted 已提交待审核、approved 已审核、cancelled 已取消';
+COMMENT ON COLUMN biz_customer_order.document IS '订单业务快照 JSON：订单日期、客户与公司展示信息、PO、款式/颜色/尺码、交期、供料安排、单价和交付分配；金额按元保留两位小数';
+COMMENT ON COLUMN biz_customer_order.demand IS '订单算料快照 JSON：按 PO、款式规格、物料颜色与规格保存需求；含库存单位数量、采购单位数量、换算系数及 BOM 版本，空数组表示未算料';
+COMMENT ON COLUMN biz_customer_order.revision IS '订单并发修订号，创建时为1，每次成功保存递增，用于拒绝基于旧版本的覆盖';
+COMMENT ON COLUMN biz_customer_order.created_at IS '订单记录首次创建时间';
+COMMENT ON COLUMN biz_customer_order.updated_at IS '订单记录最后一次成功保存时间';
 INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1763100000000000100,parent_id,'客户订单',5,'manage','','N','Y','C','0','0','order:customer-order:list','#',now()
 FROM sys_menu WHERE perms='system:customer:list' AND menu_type='C'

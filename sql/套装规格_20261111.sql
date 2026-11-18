@@ -10,12 +10,12 @@ CREATE TABLE IF NOT EXISTS rd_style_set_spec (
     CONSTRAINT rd_style_set_spec_name_unique UNIQUE (style_id, color_name, size_name) DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE rd_style_set_spec IS '套装常用配色配码规格';
-COMMENT ON COLUMN rd_style_set_spec.id IS '套装规格ID';
-COMMENT ON COLUMN rd_style_set_spec.style_id IS '所属套装款式ID';
-COMMENT ON COLUMN rd_style_set_spec.color_name IS '套装配色名称';
-COMMENT ON COLUMN rd_style_set_spec.size_name IS '套装尺码名称';
-COMMENT ON COLUMN rd_style_set_spec.remark IS '规格备注';
-COMMENT ON COLUMN rd_style_set_spec.sort_order IS '展示顺序';
+COMMENT ON COLUMN rd_style_set_spec.id IS '套装规格记录主键，供本表子款配套明细关联';
+COMMENT ON COLUMN rd_style_set_spec.style_id IS '所属套装款式，关联 rd_style.style_id；删除套装档案时级联删除其规格';
+COMMENT ON COLUMN rd_style_set_spec.color_name IS '套装配色方案名称，用于业务员识别整套颜色搭配';
+COMMENT ON COLUMN rd_style_set_spec.size_name IS '套装尺码方案名称；可与各子款实际尺码不同';
+COMMENT ON COLUMN rd_style_set_spec.remark IS '该套装配色配码方案的补充说明';
+COMMENT ON COLUMN rd_style_set_spec.sort_order IS '规格方案显示顺序，数值越小越靠前';
 CREATE TABLE IF NOT EXISTS rd_style_set_spec_item (
     spec_id BIGINT NOT NULL REFERENCES rd_style_set_spec(id) ON DELETE CASCADE,
     child_id BIGINT NOT NULL REFERENCES rd_style(style_id),
@@ -24,10 +24,10 @@ CREATE TABLE IF NOT EXISTS rd_style_set_spec_item (
     PRIMARY KEY (spec_id, child_id)
 );
 COMMENT ON TABLE rd_style_set_spec_item IS '套装规格对应的子款颜色尺码';
-COMMENT ON COLUMN rd_style_set_spec_item.spec_id IS '所属套装规格ID';
-COMMENT ON COLUMN rd_style_set_spec_item.child_id IS '组成子款ID';
-COMMENT ON COLUMN rd_style_set_spec_item.color_id IS '子款颜色ID';
-COMMENT ON COLUMN rd_style_set_spec_item.size_id IS '子款尺码ID';
+COMMENT ON COLUMN rd_style_set_spec_item.spec_id IS '所属套装规格，关联 rd_style_set_spec.id；删除规格时级联删除配套明细';
+COMMENT ON COLUMN rd_style_set_spec_item.child_id IS '本配套中的单款子款，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_set_spec_item.color_id IS '该子款实际使用的颜色，关联 base_color.color_id';
+COMMENT ON COLUMN rd_style_set_spec_item.size_id IS '该子款实际使用的尺码，关联 sys_size.id；允许同套装内子款异码';
 CREATE INDEX IF NOT EXISTS idx_rd_style_set_spec_item_child ON rd_style_set_spec_item(child_id);
 
 -- 沿用款式档案的应用数据库角色。

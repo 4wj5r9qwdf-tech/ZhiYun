@@ -13,15 +13,15 @@ CREATE TABLE IF NOT EXISTS rd_style_bom (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_rd_style_bom_code ON rd_style_bom (lower(bom_code));
 COMMENT ON TABLE rd_style_bom IS '款式用料清单版本，发布版保留用料与单位快照';
-COMMENT ON COLUMN rd_style_bom.id IS '用料清单版本主键';
+COMMENT ON COLUMN rd_style_bom.id IS '款式 BOM 版本主键，供订单算料和审批关联使用';
 COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
-COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，关联 sys_user.user_id；可在制单时选择，与记录创建人和实际操作审计人分开';
 COMMENT ON COLUMN rd_style_bom.style_id IS '所属款式，关联 rd_style.style_id';
-COMMENT ON COLUMN rd_style_bom.version IS '同款式内递增版本号';
-COMMENT ON COLUMN rd_style_bom.status IS 'draft草稿、released已发布';
-COMMENT ON COLUMN rd_style_bom.remark IS '版本说明';
-COMMENT ON COLUMN rd_style_bom.rules IS '结构化用料规则，含子款、用料位置、适用色码、物料及用量单位快照';
-COMMENT ON COLUMN rd_style_bom.update_time IS '最近保存或发布时间';
+COMMENT ON COLUMN rd_style_bom.version IS '同一款式内唯一的正整数版本号；新建时建议递增，草稿可编辑';
+COMMENT ON COLUMN rd_style_bom.status IS '版本状态：draft 草稿，可修改；released 已发布，供订单算料使用且不可覆盖';
+COMMENT ON COLUMN rd_style_bom.remark IS '本 BOM 版本的变更原因或业务说明';
+COMMENT ON COLUMN rd_style_bom.rules IS '结构化用料 JSON，按子款及适用颜色尺码保存物料、物料规格、颜色、单位、换算系数和用量快照';
+COMMENT ON COLUMN rd_style_bom.update_time IS '本 BOM 版本最近保存或发布的时间';
 INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1762900000000000130,parent_id,'款式 BOM',20,'style-boms','rd/StyleBomManage','N','Y','C','0','0','rd:bom:list','#',now()
 FROM sys_menu WHERE perms='rd:style:list'

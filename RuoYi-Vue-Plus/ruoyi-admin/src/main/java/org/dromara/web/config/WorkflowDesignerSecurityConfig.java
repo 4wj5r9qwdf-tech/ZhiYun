@@ -8,7 +8,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-/** 工作流设计器插件未提供业务权限注解，此处对设计和读取分别校验。 */
+/** 工作流设计器插件未提供业务权限注解，此处对设计和读取分别校验。 / Enforce separate read and design permissions because the workflow plugin exposes no business permission annotations. */
 @Configuration
 public class WorkflowDesignerSecurityConfig implements WebMvcConfigurer {
     @Override

@@ -86,6 +86,7 @@ const ALL_COLUMNS = [
   { title: '姓名', dataIndex: 'name', key: 'name', sorter: true },
   { title: '性别', dataIndex: 'gender', key: 'gender' },
   { title: '手机号', dataIndex: 'phone_masked', key: 'phone_masked' },
+  { title: '钉钉号', dataIndex: 'dingtalk_account', key: 'dingtalk_account' },
   { title: '部门', dataIndex: 'org_name', key: 'org_name', sorter: true },
   { title: '岗位', dataIndex: 'posts', key: 'posts', ellipsis: true },
   { title: '角色', dataIndex: 'roles', key: 'roles', ellipsis: true },
@@ -285,7 +286,7 @@ const emptyForm = () => ({
   roleIds: [] as string[],
   businessDuties: [] as string[],
   ext: {
-    maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
+    dingTalkAccount: '', maritalStatus: '', certType: '身份证', certNo: '', nation: '', education: '', birthDate: '',
     graduateSchool: '', nativePlace: '', address: '', certExpireDate: '',
     hireDate: '', empType: '正式', leaveDate: '', cardNo: '', empStatus: '试用',
     bankCardNo: '', signEntity: '', contractYears: undefined as number | undefined, contractStart: '', contractEnd: '',
@@ -448,7 +449,7 @@ async function openEdit(row: any) {
     postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
     businessDuties: (d.businessDuties || []).map(String),
     ext: {
-      maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
+      dingTalkAccount: d.dingtalk_account || '', maritalStatus: d.marital_status || '', certType: d.cert_type || '身份证', certNo: d.cert_no || '',
       nation: d.nation || '', education: d.education || '', birthDate: dateOnly(d.birth_date),
       graduateSchool: d.graduate_school || '', nativePlace: d.native_place || '', address: d.address || '',
       certExpireDate: dateOnly(d.cert_expire_date),
@@ -790,6 +791,7 @@ function resetFilter() {
           <a-col :span="8"><a-form-item label="证件到期日"><a-input v-model:value="form.ext.certExpireDate" type="date" /></a-form-item></a-col>
           <a-col :span="16"><a-form-item label="详细地址"><a-input v-model:value="form.ext.address" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="手机号(登录)"><a-input v-model:value="form.phoneNumber" :maxlength="11" placeholder="11位，第二登录标识" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="钉钉号"><a-input v-model:value="form.ext.dingTalkAccount" :maxlength="128" allow-clear placeholder="请输入钉钉号（选填）" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="邮箱"><a-input v-model:value="form.email" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="24"><a-form-item label="备注"><a-input v-model:value="form.remark" placeholder="请输入" /></a-form-item></a-col>
         </a-row>

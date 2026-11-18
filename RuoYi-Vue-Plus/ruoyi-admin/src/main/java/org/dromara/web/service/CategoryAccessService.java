@@ -76,10 +76,12 @@ public class CategoryAccessService {
         }
         sql.append(clauses.isEmpty() ? "FALSE" : "(" + String.join(" OR ", clauses) + ")");
     }
+    /** 生成参数化分类查询占位符，避免拼接人员授权范围到 SQL。 / Build parameterized category-scope placeholders instead of injecting scope into SQL text. */
 
     private String placeholders(Set<String> ids) {
         return String.join(",", Collections.nCopies(ids.size(), "?"));
     }
+    /** 判断分类是否属于当前人员明确可见的范围。 / Check whether a category is explicitly visible to the current user. */
 
     public boolean categoryAllowed(Long id){StringBuilder q=new StringBuilder("SELECT c.category_id FROM base_category c WHERE c.category_id=? AND ");List<Object>a=new ArrayList<>();a.add(id);appendScope(q,a,"c.category_id",scope());return !jdbc.queryForList(q.toString(),a.toArray()).isEmpty();}
     /** 新引用必须有完整启用的分类祖先链及启用体系。 / Require an enabled taxonomy and every ancestor for new references. */

@@ -22,7 +22,8 @@ const categories = [
   { title: '系统配置', keys: ['company', 'parameters', 'dictionary', 'system_template'] },
   { title: '业务基础资料', keys: ['system_unit', 'system_category', 'system_color', 'system_tag', 'system_size', 'system_size_group', 'system_country_region'] },
   { title: '文件与存储', keys: ['files', 'storage-config'] },
-  { title: '运行监控', keys: ['monitor_online', 'monitor_operlog', 'cache-overview'] },
+  { title: '运行监控', keys: ['monitor_online', 'monitor_operlog', 'system_login_logs', 'cache-overview', 'framework_admin_monitor'] },
+  { title: '开发与扩展', keys: ['system_code_generator', 'framework_api_docs', 'framework_snailjob', 'framework_snailai'] },
 ]
 const groups = computed(() => {
   const classified = new Set(categories.flatMap(group => group.keys))

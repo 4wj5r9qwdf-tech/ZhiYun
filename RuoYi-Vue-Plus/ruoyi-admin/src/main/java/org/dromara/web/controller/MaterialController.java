@@ -397,6 +397,7 @@ public class MaterialController {
         }
         return result;
     }
+    /** 解析物料单位至库存单位的有效换算系数，拒绝非法换算。 / Resolve a valid material-specific conversion to the inventory unit. */
 
     private BigDecimal resolveFactor(Long id, Long inventoryId, Map<Long,UnitConfig> configs, Set<Long> visiting) {
         if (id.equals(inventoryId)) return BigDecimal.ONE;
@@ -420,8 +421,10 @@ public class MaterialController {
         }
         throw new IllegalArgumentException(label + "须为正数，最多8位整数和4位小数");
     }
+    /** 按不区分大小写的编码规则检查物料规格编码是否重复。 / Check variant-code uniqueness using case-insensitive comparison. */
 
     private boolean codeExists(String code,Long id){String q="SELECT count(*) FROM inv_material WHERE lower(material_code)=lower(?) AND del_flag='0'"+(id==null?"":" AND material_id<>?");Long count=id==null?jdbc.queryForObject(q,Long.class,code):jdbc.queryForObject(q,Long.class,code,id);return count!=null&&count>0;}
+    /** 生成物料规格的审计快照，记录属性变化而不依赖前端提交的旧值。 / Build a variant audit snapshot from persisted values rather than trusting client-supplied prior state. */
     private Map<String,Object> snapshot(Long id,boolean lock){List<Long> categories=jdbc.queryForList("SELECT category_id FROM inv_material WHERE material_id=? AND del_flag='0'"+(lock?" FOR UPDATE":""),Long.class,id);if(categories.isEmpty()||!categoryAccess.categoryAllowed(categories.getFirst()))return Map.of();String q="SELECT m.material_code AS \"物料编码\",m.material_name AS \"物料名称\",s.scheme_name AS \"分类类型\",c.category_name AS \"分类\",m.specification AS \"规格尺寸\",m.fabric_weight_gsm AS \"克重（g/m²）\",m.fabric_width_cm AS \"幅宽（cm）\",m.composition AS \"成分\",(SELECT string_agg(au.unit_name || '（' || au.unit_code || '）' || CASE WHEN mu.conversion_mode='VARIABLE' THEN '：按实际数量' ELSE '：1=' || trim_scale(mu.factor)::text || COALESCE(ref.unit_name,'') END || CASE WHEN mu.purchase_enabled THEN ' [采购]' ELSE '' END || CASE WHEN mu.usage_enabled THEN ' [生产领用]' ELSE '' END,'、' ORDER BY au.unit_id) FROM inv_material_aux_unit mu JOIN base_unit au ON au.unit_id=mu.unit_id LEFT JOIN base_unit ref ON ref.unit_id=mu.reference_unit_id WHERE mu.material_id=m.material_id) AS \"辅助单位\",m.model AS \"型号\",m.brand AS \"品牌\",m.material_desc AS \"材质说明\",u.unit_name AS \"库存单位\",m.status AS \"状态\",m.sort_order AS \"排序\",m.remark AS \"备注\",(SELECT string_agg(co.color_name,'、' ORDER BY co.color_name) FROM inv_material_color mc JOIN base_color co ON co.color_id=mc.color_id WHERE mc.material_id=m.material_id) AS \"可用颜色\" FROM inv_material m JOIN base_category c ON c.category_id=m.category_id JOIN base_category_scheme s ON s.scheme_id=c.scheme_id JOIN base_unit u ON u.unit_id=m.inventory_unit_id WHERE m.material_id=? AND m.del_flag='0'";Map<String,Object> result = BusinessAudit.snapshot(jdbc,q,id);
         Map<String,Object> specs = jdbc.queryForMap(
             "SELECT spec_template_code AS code, spec_values::text AS values FROM inv_material WHERE material_id=?", id);
@@ -431,11 +434,14 @@ public class MaterialController {
         result.put("按规格填写的属性", variantFieldKeys(id));
         return result;
     }
+    /** 检查物料规格是否已被其他业务引用，以决定能否物理删除。 / Check whether another business record references the variant before physical deletion. */
     private boolean hasForeignReferences(Long id){List<Map<String,Object>>refs=jdbc.queryForList("SELECT c.conrelid::regclass::text AS table_name,a.attname AS column_name FROM pg_constraint c JOIN LATERAL unnest(c.conkey) WITH ORDINALITY k(attnum,ord) ON true JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum WHERE c.contype='f' AND c.confrelid='public.inv_material'::regclass AND c.conrelid NOT IN ('public.inv_material_color'::regclass, 'public.inv_material_aux_unit'::regclass)");for(Map<String,Object>r:refs){String t=Objects.toString(r.get("table_name"),""),c=Objects.toString(r.get("column_name"),"");if(t.matches("[A-Za-z0-9_.\"]+")&&c.matches("[A-Za-z0-9_]+")&&jdbc.queryForObject("SELECT count(*) FROM "+t+" WHERE \""+c+"\"=?",Long.class,id)>0)return true;}return false;}
     private record CodeRule(boolean enabled,String prefix,int digits){}
     private CodeRule codeRule(){String raw=jdbc.queryForObject("SELECT config_value FROM sys_config WHERE config_key=?",String.class,CODE_RULE_KEY);Map<String,Object>v=org.dromara.common.json.utils.JsonUtils.parseMap(raw);Object e=v.get("enabled"),p=v.get("prefix"),d=v.get("digits");if(!(e instanceof Boolean)||!(p instanceof String)||((String)p).isBlank()||((String)p).length()>30||!((String)p).matches("[A-Za-z0-9_.-]+")||!(d instanceof Number n)||n.intValue()<1||n.intValue()>10)throw new IllegalStateException("物料编码自动生成规则无效，请在参数设置中修复");return new CodeRule((Boolean)e,((String)p).toUpperCase(Locale.ROOT),n.intValue());}
     private String nextCodeValue(CodeRule r){Set<String>used=new HashSet<>(jdbc.queryForList("SELECT lower(material_code) FROM inv_material WHERE del_flag='0' AND lower(material_code) LIKE lower(?)",String.class,r.prefix+"%"));for(long i=1;i<Long.MAX_VALUE;i++){String s=Long.toString(i),code=r.prefix+"0".repeat(Math.max(0,r.digits-s.length()))+s;if(!used.contains(code.toLowerCase(Locale.ROOT)))return code;}throw new IllegalStateException("没有可用的物料编码序号");}
+    /** 解析字符串形式的主键集合，避免 bigint 精度损失。 / Parse string-encoded identifiers without losing bigint precision. */
     private List<Long> parseIds(Object value){if(!(value instanceof List<?> list))return value==null?List.of():null;List<Long>ids=new ArrayList<>();try{for(Object v:list)ids.add(Long.valueOf(v.toString()));return ids;}catch(Exception e){return null;}}
     private Long number(Object v){try{return v==null?null:Long.valueOf(v.toString());}catch(Exception e){return null;}}
+    /** 统一清理可选文本，空字符串按未填写处理。 / Normalize optional text and treat blank strings as absent. */
     private String text(Map<String,Object>b,String key){return Objects.toString(b.get(key),"").trim();}
 }

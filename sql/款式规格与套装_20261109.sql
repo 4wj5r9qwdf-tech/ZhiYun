@@ -5,7 +5,7 @@ ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS production_mode varchar(12) NOT NU
 ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS same_hanger boolean NOT NULL DEFAULT false
     CHECK (NOT same_hanger OR production_mode='combined');
 COMMENT ON COLUMN rd_style.production_mode IS '款式生产模式：single 单款，combined 合并生产套装，separate 分开生产套装';
-COMMENT ON COLUMN rd_style.same_hanger IS '合并生产套装是否要求所有子款在同一衣架生产';
+COMMENT ON COLUMN rd_style.same_hanger IS '是否要求合并生产套装的所有组成子款共用同一衣架：true=要求，false=不要求；仅合并生产方式适用';
 
 CREATE TABLE IF NOT EXISTS rd_style_member (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -18,11 +18,11 @@ CREATE TABLE IF NOT EXISTS rd_style_member (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_member_child ON rd_style_member(child_id);
 COMMENT ON TABLE rd_style_member IS '套装与独立子款的组成关系，移除关系不删除子款';
-COMMENT ON COLUMN rd_style_member.style_id IS '套装款式ID';
-COMMENT ON COLUMN rd_style_member.child_id IS '单款子款ID';
-COMMENT ON COLUMN rd_style_member.role_name IS '子款在本套装内的用途，如上衣或帽子';
-COMMENT ON COLUMN rd_style_member.quantity IS '每套含本子款的件数';
-COMMENT ON COLUMN rd_style_member.sort_order IS '套装内的展示顺序';
+COMMENT ON COLUMN rd_style_member.style_id IS '所属套装款式主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_member.child_id IS '组成套装的独立单款主键，关联 rd_style.style_id；移除组成不删除子款档案';
+COMMENT ON COLUMN rd_style_member.role_name IS '子款在此套装中的业务名称，例如上衣、下装或帽子';
+COMMENT ON COLUMN rd_style_member.quantity IS '每一套包含的本子款件数，必须为正整数';
+COMMENT ON COLUMN rd_style_member.sort_order IS '套装子款显示和处理顺序，数值越小越靠前';
 
 CREATE TABLE IF NOT EXISTS rd_style_color (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS rd_style_color (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_color_color ON rd_style_color(color_id);
 COMMENT ON TABLE rd_style_color IS '单款可用颜色';
-COMMENT ON COLUMN rd_style_color.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_color.color_id IS '公共颜色ID';
+COMMENT ON COLUMN rd_style_color.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_color.color_id IS '单款可用颜色主键，关联 base_color.color_id';
 
 CREATE TABLE IF NOT EXISTS rd_style_size (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS rd_style_size (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_size_size ON rd_style_size(size_id);
 COMMENT ON TABLE rd_style_size IS '单款可用尺码，保存具体尺码而非尺码组';
-COMMENT ON COLUMN rd_style_size.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_size.size_id IS '公共尺码ID';
+COMMENT ON COLUMN rd_style_size.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_size.size_id IS '单款可用尺码主键，关联 sys_size.id；此处保存实际尺码而非尺码组';
 
 CREATE TABLE IF NOT EXISTS rd_style_spec_exclusion (
     style_id bigint NOT NULL,
@@ -53,9 +53,9 @@ CREATE TABLE IF NOT EXISTS rd_style_spec_exclusion (
     FOREIGN KEY (style_id,size_id) REFERENCES rd_style_size(style_id,size_id) ON DELETE CASCADE
 );
 COMMENT ON TABLE rd_style_spec_exclusion IS '单款明确排除的颜色尺码组合，其余组合由所选颜色和尺码自动生成';
-COMMENT ON COLUMN rd_style_spec_exclusion.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_spec_exclusion.color_id IS '不可配对的颜色ID';
-COMMENT ON COLUMN rd_style_spec_exclusion.size_id IS '不可配对的尺码ID';
+COMMENT ON COLUMN rd_style_spec_exclusion.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_spec_exclusion.color_id IS '被排除组合的颜色主键，关联 base_color.color_id';
+COMMENT ON COLUMN rd_style_spec_exclusion.size_id IS '被排除组合的尺码主键，关联 sys_size.id';
 
 -- 让款式分组可在录入首个标签之前维护。
 INSERT INTO sys_tag_module(module_key,module_name) VALUES ('rd_style','款式档案')

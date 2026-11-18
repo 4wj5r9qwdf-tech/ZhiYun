@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>流程设计</title></head>
+<body>
+<div id="app">正在加载流程设计器…</div>
+<script type="module">
+// 框架设计器从存储取请求头，复用本标签的会话，不把令牌写入链接或持久存储。
+// Reuse the tab's session when the designer reads its request headers.
+const getItem = Storage.prototype.getItem
+Storage.prototype.getItem = function (key) {
+  if (this === localStorage && key === 'Warm-Authorization') {
+    const token = getItem.call(sessionStorage, 'token')
+    return token ? 'Bearer ' + token : null
+  }
+  if (this === localStorage && key === 'Warm-clientid') return 'e5cd7e4891bf95d1d19206ce24a7b32e'
+  return getItem.call(this, key)
+}
+try {
+  const entry = new URL('/api/warm-flow-ui/index.html', location.origin)
+  const response = await fetch(entry)
+  if (!response.ok) throw Error('设计器资源不可用')
+  const template = new DOMParser().parseFromString(await response.text(), 'text/html')
+  const moduleScript = template.querySelector('script[type="module"][src]')
+  if (!moduleScript) throw Error('设计器入口缺失')
+  const base = document.createElement('base')
+  base.href = entry.href
+  document.head.prepend(base)
+  for (const link of template.querySelectorAll('link[rel="stylesheet"]')) {
+    document.head.append(link.cloneNode())
+  }
+  const script = document.createElement('script')
+  script.type = 'module'
+  script.src = moduleScript.getAttribute('src')
+  script.onerror = () => { document.querySelector('#app').textContent = '设计器加载失败，请刷新重试' }
+  document.head.append(script)
+} catch {
+  document.querySelector('#app').textContent = '设计器加载失败，请刷新重试'
+}
+</script>
+</body>
+</html>

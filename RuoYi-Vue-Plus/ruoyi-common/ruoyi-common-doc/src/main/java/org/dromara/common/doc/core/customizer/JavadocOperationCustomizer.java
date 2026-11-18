@@ -42,9 +42,9 @@ public class JavadocOperationCustomizer implements GlobalOperationCustomizer {
         javadocProvider.ifPresent(provider -> {
             String description = provider.getMethodJavadocDescription(handlerMethod.getMethod());
             if (StringUtils.isNotBlank(description)) {
-                // 使用方法 JavaDoc 首句作为接口摘要，完整 JavaDoc 作为接口描述
-                operation.setSummary(provider.getFirstSentence(description));
-                operation.setDescription(description);
+                // 接口文档面向中文联调人员；去掉代码注释中以 " / " 分隔的英文对照，保留中文说明。
+                operation.setSummary(toChineseApiText(provider.getFirstSentence(description)));
+                operation.setDescription(toChineseApiText(description));
             }
         });
 
@@ -66,6 +66,25 @@ public class JavadocOperationCustomizer implements GlobalOperationCustomizer {
             operation.setDescription(description.toString());
         }
         return operation;
+    }
+
+    /**
+     * 去除每行中文注释后以 " / " 分隔的英文翻译，不改动源码注释本身。
+     *
+     * @param text JavaDoc 文本
+     * @return 供 Swagger 页面展示的中文文本
+     */
+    private String toChineseApiText(String text) {
+        if (StringUtils.isBlank(text)) {
+            return text;
+        }
+        return java.util.Arrays.stream(text.split("\\R", -1))
+            .map(line -> {
+                int translationStart = line.indexOf(" / ");
+                return translationStart >= 0 ? line.substring(0, translationStart).stripTrailing() : line;
+            })
+            .collect(java.util.stream.Collectors.joining("\n"))
+            .trim();
     }
 
 }

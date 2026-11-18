@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import message from 'ant-design-vue/es/message'
+import Modal from 'ant-design-vue/es/modal'
 import { SearchOutlined } from '@ant-design/icons-vue'
 import api from '../api'
 import { can, canEnter } from '../utils/perms'
@@ -15,15 +16,15 @@ const categories = [
 const category = ref(categories[0]?.key ?? '')
 const kind = computed(() => props.kind === 'logs' ? category.value : props.kind)
 const fields: Record<string, Record<string, string>> = {
-  "menu-directory": {"menuName": "菜单名称", "menuType": "类型", "path": "路径", "status": "状态"},
+  "menu-directory": {"menuName": "菜单名称", "menuType": "类型", "parentName": "上级菜单", "path": "路由地址", "component": "组件路径", "perms": "权限标识", "status": "状态"},
   "cache-overview": {"metric": "指标", "value": "值"},
   "dictionary": {"dictName": "字典名称", "dictType": "字典类型", "remark": "备注"},
   "parameters": {"configName": "参数名称", "configKey": "参数键", "configValue": "参数值", "configType": "参数来源", "remark": "说明"},
   "files": {"originalName": "原文件名", "usage": "应用位置", "fileSuffix": "后缀", "createTime": "上传时间"},
   "storage-config": {"configKey": "配置名称", "bucketName": "存储桶", "region": "区域", "status": "状态"},
-  "clients": {"clientKey": "客户端", "deviceType": "设备类型", "grantType": "授权方式", "status": "状态"},
+  "clients": {"clientKey": "客户端", "clientId": "客户端标识", "deviceType": "设备类型", "grantType": "授权方式", "status": "状态"},
 
-  online: { userName: '账号', ipaddr: '登录 IP', browser: '浏览器', os: '操作系统', loginTime: '登录时间' },
+  online: { userName: '账号', orgName: '所属部门', clientKey: '客户端', deviceType: '设备类型', ipaddr: '登录 IP', loginLocation: '登录地点', browser: '浏览器', os: '操作系统', loginTime: '登录时间' },
   operlog: { operName: '操作人', title: '功能', businessType: '业务动作', auditObject: '操作对象', auditDetail: '详情', operUrl: '请求路径', operIp: '来源 IP', costTime: '耗时（毫秒）', requestMethod: '请求方式', operTime: '操作时间', status: '结果' },
   loginInfo: { userName: '账号', ipaddr: '登录 IP', browser: '浏览器', loginTime: '登录时间', status: '结果' },
 }
@@ -77,8 +78,34 @@ async function uploadFiles(event: Event) {
     fileBusy.value = false
   }
 }
-const isLogs = computed(() => props.kind === 'logs')
+const isLogs = computed(() => ['logs', 'operlog', 'loginInfo'].includes(props.kind))
 const account = ref('')
+const ipAddress = ref('')
+const dictionaryName = ref('')
+const dictionaryType = ref('')
+const dictionaryDrawerOpen = ref(false)
+const dictionaryItems = ref<Record<string, any>[]>([])
+const dictionaryItemsLoading = ref(false)
+const dictionaryItemModalOpen = ref(false)
+const dictionarySaving = ref(false)
+const dictionaryEditing = ref(false)
+const dictionaryForm = reactive<Record<string, any>>({ dictId: undefined, dictName: '', dictType: '', remark: '' })
+const dictionaryItemForm = reactive<Record<string, any>>({ dictCode: undefined, dictSort: 0, dictLabel: '', dictValue: '', dictType: '', cssClass: '', listClass: 'default', isDefault: 'N', remark: '' })
+const selectedDictionary = ref<Record<string, any>>()
+const logSelectedRowKeys = ref<string[]>([])
+const menuModalOpen = ref(false)
+const menuSaving = ref(false)
+const menuEditing = ref(false)
+const menuForm = reactive<Record<string, any>>({ menuId: undefined, parentId: 0, menuName: '', orderNum: 1, path: '', component: '', queryParam: '', isFrame: 'N', isCache: 'Y', menuType: 'C', visible: '0', status: '0', perms: '', icon: '#', activeMenu: '', ext: '', remark: '' })
+const clientModalOpen = ref(false)
+const clientSaving = ref(false)
+const clientEditing = ref(false)
+const clientForm = reactive<Record<string, any>>({ id: undefined, clientId: '', clientKey: '', clientSecret: '', grantTypeList: ['password'], deviceType: 'pc', accessPathList: [], ipWhitelistList: [], activeTimeout: 1800, timeout: 86400, status: '0' })
+const storageModalOpen = ref(false)
+const storageSaving = ref(false)
+const storageEditing = ref(false)
+const storageForm = reactive<Record<string, any>>({ ossConfigId: undefined, configKey: '', accessKey: '', secretKey: '', bucketName: '', prefix: '', endpoint: '', domainUrl: '', isHttps: 'N', status: 'N', region: '', ext1: '', remark: '', accessPolicy: '0' })
+const recordKeyword = ref('')
 const columnSettingsOpen = ref(false)
 const outcome = ref<string>()
 const applied = ref<{ account?: string; status?: string }>({})
@@ -91,14 +118,25 @@ const allColumns = computed(() => Object.entries(fields[kind.value] || {}).map((
 })))
 const columns = computed(() => {
   if (kind.value === 'files') return [...allColumns.value, { key: 'fileAction', title: '操作', width: 160 }]
+  if (kind.value === 'dictionary') return [...allColumns.value, { key: 'dictionaryAction', title: '操作', width: 150 }]
+  if (kind.value === 'menu-directory') return [...allColumns.value, { key: 'menuAction', title: '操作', width: 140 }]
+  if (kind.value === 'clients') return [...allColumns.value, { key: 'clientAction', title: '操作', width: 180 }]
+  if (kind.value === 'storage-config') return [...allColumns.value, { key: 'storageAction', title: '操作', width: 180 }]
+  if (kind.value === 'parameters' && parameterView.value === 'framework') return [...allColumns.value, { key: 'action', title: '操作', width: 140 }]
+  if (kind.value === 'online') return [...allColumns.value, { key: 'onlineAction', title: '操作', width: 110 }]
   if (!isLogs.value) return kind.value === 'parameters' ? [...allColumns.value, { key: 'action', title: '操作', width: 90 }] : allColumns.value
   const hidden = hiddenColumns.value[kind.value] ?? (kind.value === 'operlog' ? technicalFields : [])
   return [
     { key: 'sequence', title: '序号', width: 64 },
     ...allColumns.value.filter(column => column.key !== 'auditDetail' && !hidden.includes(column.key)),
     ...allColumns.value.filter(column => column.key === 'auditDetail'),
+    { key: 'logAction', title: '操作', width: kind.value === 'loginInfo' ? 110 : 70 },
   ]
 })
+const logRowSelection = computed(() => ({
+  selectedRowKeys: logSelectedRowKeys.value,
+  onChange: (keys: (string | number)[]) => { logSelectedRowKeys.value = keys.map(String) },
+}))
 function toggleColumn(key: string) {
   const hidden = hiddenColumns.value[kind.value] ?? (kind.value === 'operlog' ? technicalFields : [])
   hiddenColumns.value[kind.value] = hidden.includes(key) ? hidden.filter(item => item !== key) : [...hidden, key]
@@ -110,8 +148,27 @@ function search() {
 }
 function resetFilters() {
   account.value = ''
+  ipAddress.value = ''
   outcome.value = undefined
   search()
+}
+/** 统一处理动态表格字段名，兼容框架列的可选字段与数组路径。 / Normalize dynamic table field paths, including optional and array-shaped framework columns. */
+function columnField(column: { dataIndex?: unknown }): string { return typeof column.dataIndex === 'string' ? column.dataIndex : Array.isArray(column.dataIndex) ? column.dataIndex.map(String).join('.') : '' }
+/** 重置字典类型查询条件并重新加载第一页。 / Reset dictionary type filters and reload the first page. */
+function resetDictionaryFilters() { dictionaryName.value = ''; dictionaryType.value = ''; page.value = 1; void load() }
+function resetOnlineFilters() { account.value = ''; ipAddress.value = ''; page.value = 1; void load() }
+/** 下载框架原生 Excel 导出结果。 / Download a framework-provided Excel export. */
+async function exportFrameworkList(endpoint: string, filename: string, params: Record<string, unknown> = {}) {
+  try {
+    const blob = await api.post(endpoint, null, { params, responseType: 'blob' }) as unknown as Blob
+    if (!(blob instanceof Blob) || blob.type.includes('application/json')) throw new Error('导出失败，请检查导出权限')
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '导出失败') }
 }
 let requestId = 0
 const rows = ref<Record<string, unknown>[]>([])
@@ -121,6 +178,8 @@ const total = ref(0)
 const selected = ref<Record<string, unknown>>()
 const configDialog = ref(false)
 const configSaving = ref(false)
+const configEditing = ref(false)
+const parameterView = ref<'business' | 'framework'>('business')
 const editingConfig = ref<Record<string, any>>({})
 const autoCodeSaving = ref(false)
 const autoCodeConfigId = ref<number>()
@@ -449,22 +508,45 @@ async function saveStyleDefaultCategory() {
 }
 
 function editConfig(row: Record<string, unknown>) {
+  configEditing.value = true
   editingConfig.value = { ...row }
+  configDialog.value = true
+}
+function addConfig() {
+  configEditing.value = false
+  editingConfig.value = { configId: undefined, configName: '', configKey: '', configValue: '', configType: 'N', remark: '' }
   configDialog.value = true
 }
 async function saveConfig() {
   configSaving.value = true
   try {
-    const res: any = await api.put('/system/config', editingConfig.value)
+    const res: any = configEditing.value
+      ? await api.put('/system/config', editingConfig.value)
+      : await api.post('/system/config', editingConfig.value)
     if (res.code !== 200) throw new Error(res.msg || '保存失败')
     message.success('参数已保存')
     configDialog.value = false
     await load()
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : '保存失败')
+  } catch (error: any) {
+    message.error(error?.response?.data?.msg || error?.message || '保存失败')
   } finally {
     configSaving.value = false
   }
+}
+function removeConfig(row: Record<string, any>) {
+  Modal.confirm({ title: '删除系统参数', content: `确认删除参数“${row.configName}”（${row.configKey}）吗？删除系统内置参数可能影响运行行为。`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/system/config/' + row.configId)
+    if (result.code !== 200) throw new Error(result.msg || '删除失败')
+    message.success('系统参数已删除')
+    await load()
+  } })
+}
+async function refreshConfigCache() {
+  try {
+    const result: any = await api.delete('/system/config/refreshCache')
+    if (result.code !== 200) throw new Error(result.msg || '刷新失败')
+    message.success('系统参数缓存已刷新')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '刷新参数缓存失败') }
 }
 function sizeAudit(row: Record<string, unknown>) {
   const url = String(row.operUrl ?? '')
@@ -528,17 +610,23 @@ async function load() {
   const currentKind = kind.value
   loading.value = true
   try {
-    const endpoints: Record<string,string> = {"menu-directory": "/system/menu/list", "cache-overview": "/monitor/cache", "dictionary": "/system/dict/type/list", "parameters": "/system/config/list", "files": "/resource/oss/list", "storage-config": "/resource/oss/config/list", "clients": "/system/client/list"}
+    const endpoints: Record<string,string> = {"menu-directory": "/system/menu/list", "cache-overview": "/monitor/cache", "dictionary": "/system/dict/type/list", "parameters": "/system/config/list", "files": "/resource/oss/list", "storage-config": "/resource/oss/config/list", "clients": "/system/client/list", "loginInfo": "/monitor/loginInfo/list"}
     const res: any = await api.get(endpoints[kind.value] || '/monitor/' + kind.value + '/list', { params: { pageNum: page.value, pageSize: isLogs.value ? pageSize.value : currentKind === 'parameters' ? 100 : 20,
       ...(currentKind === 'files' ? { originalName: fileFilter.value || undefined } : {}),
-      ...(isLogs.value ? { [currentKind === 'operlog' ? 'operName' : 'userName']: applied.value.account, status: applied.value.status } : {}) } })
+      ...(isLogs.value ? { [currentKind === 'operlog' ? 'operName' : 'userName']: applied.value.account, status: applied.value.status } : {}),
+      ...(currentKind === 'online' ? { userName: account.value.trim() || undefined, ipaddr: ipAddress.value.trim() || undefined } : {}),
+      ...(currentKind === 'dictionary' ? { dictName: dictionaryName.value.trim() || undefined, dictType: dictionaryType.value.trim() || undefined } : {}),
+      ...(currentKind === 'menu-directory' ? { menuName: dictionaryName.value.trim() || undefined, status: outcome.value } : {}),
+      ...(currentKind === 'clients' ? { clientKey: recordKeyword.value.trim() || undefined } : {}),
+      ...(currentKind === 'storage-config' ? { configKey: recordKeyword.value.trim() || undefined } : {}),
+      ...(currentKind === 'parameters' && parameterView.value === 'framework' ? { configKey: recordKeyword.value.trim() || undefined } : {}) } })
     if (currentRequest !== requestId) return
     if (res.code !== 200) throw new Error(res.msg || '查询失败')
     const data = res.data
     const records = kind.value === 'cache-overview'
       ? Object.entries(data.info || {}).map(([metric, value]) => ({ metric, value }))
       : Array.isArray(data) ? data : data.rows || []
-    if (currentKind === 'parameters') {
+    if (currentKind === 'parameters' && (!recordKeyword.value.trim() || parameterView.value === 'business')) {
       syncCodeRules(records as Record<string, any>[])
       try {
         const categoryRes: any = await api.get('/inventory/material/category-options')
@@ -571,24 +659,312 @@ async function load() {
     }
     if (currentRequest !== requestId) return
     rows.value = records.map((row: Record<string, unknown>, index: number) => ({
-      ...Object.fromEntries(allColumns.value.map(({ key }) => [key, row[key]])), errorMsg: row.errorMsg, ossId: row.ossId, usage: currentKind === "files" ? usage.get(String(row.ossId))?.join("；") ?? "待核对" : undefined, ...(currentKind === "parameters" ? { configId: row.configId } : {}), ...(kind.value === 'operlog' ? sizeAudit(row) : {}), index,
+      ...Object.fromEntries(allColumns.value.map(({ key }) => [key, row[key]])), errorMsg: row.errorMsg, ossId: row.ossId,
+      dictId: row.dictId, dictCode: row.dictCode, infoId: row.infoId, operId: row.operId, tokenId: row.tokenId,
+      menuId: row.menuId, parentId: row.parentId, clientId: row.id, ossConfigId: row.ossConfigId,
+      id: String(row.infoId ?? row.operId ?? row.dictId ?? row.menuId ?? row.ossConfigId ?? row.id ?? row.ossId ?? row.tokenId ?? index),
+      usage: currentKind === "files" ? usage.get(String(row.ossId))?.join("；") ?? "待核对" : undefined,
+      ...(currentKind === "parameters" ? { configId: row.configId } : {}), ...(kind.value === 'operlog' ? sizeAudit(row) : {}), index,
     }))
     total.value = data.total ?? rows.value.length
+    logSelectedRowKeys.value = []
   } catch (error) {
     if (currentRequest === requestId) message.error(error instanceof Error ? error.message : '查询失败')
   } finally {
     if (currentRequest === requestId) loading.value = false
   }
 }
+/** 导出框架日志为 Excel；导出权限仍由后端逐项校验。 / Export framework logs with server-enforced permissions. */
+async function exportLogs() {
+  const endpoint = kind.value === 'loginInfo' ? '/monitor/loginInfo/export' : '/monitor/operlog/export'
+  const query = kind.value === 'loginInfo'
+    ? { userName: applied.value.account, status: applied.value.status }
+    : { operName: applied.value.account, status: applied.value.status }
+  try {
+    const blob = await api.post(endpoint, null, { params: query, responseType: 'blob' }) as unknown as Blob
+    if (!(blob instanceof Blob) || blob.type.includes('application/json')) throw new Error('导出失败，请检查导出权限')
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = kind.value === 'loginInfo' ? '登录日志.xlsx' : '操作日志.xlsx'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '日志导出失败') }
+}
+/** 按所选日志 ID 批量删除。 / Delete only the selected log records. */
+function deleteSelectedLogs() {
+  const idField = kind.value === 'loginInfo' ? 'infoId' : 'operId'
+  const ids = rows.value.filter(row => logSelectedRowKeys.value.includes(String(row.id))).map(row => String(row[idField] ?? '')).filter(Boolean)
+  if (!ids.length) { message.warning('请先勾选要删除的日志'); return }
+  const endpoint = kind.value === 'loginInfo' ? '/monitor/loginInfo/' : '/monitor/operlog/'
+  Modal.confirm({ title: '删除日志', content: `确认删除选中的 ${ids.length} 条记录吗？`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete(endpoint + ids.join(','))
+    if (result.code !== 200) throw new Error(result.msg || '删除失败')
+    message.success('已删除所选日志')
+    await load()
+  } })
+}
+/** 清空当前日志类别全部历史记录，使用破坏性操作二次确认。 / Require confirmation before clearing all records of this log category. */
+function clearLogs() {
+  const label = kind.value === 'loginInfo' ? '登录日志' : '操作日志'
+  Modal.confirm({ title: `清空${label}`, content: `此操作会清空全部${label}，且无法恢复。确认继续吗？`, okText: '清空全部', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete(kind.value === 'loginInfo' ? '/monitor/loginInfo/clean' : '/monitor/operlog/clean')
+    if (result.code !== 200) throw new Error(result.msg || '清空失败')
+    message.success(`${label}已清空`)
+    await load()
+  } })
+}
+/** 解锁日志中出现登录失败的账号。 / Clear the login failure lock for the selected account. */
+function unlockAccount(row: Record<string, any>) {
+  const userName = String(row.userName || '').trim()
+  if (!userName) { message.warning('当前日志没有可用于解锁的账号'); return }
+  Modal.confirm({ title: '解锁登录账号', content: `确认清除账号“${userName}”的登录失败锁定状态吗？`, okText: '解锁', cancelText: '取消', async onOk() {
+    const result: any = await api.get('/monitor/loginInfo/unlock/' + encodeURIComponent(userName))
+    if (result.code !== 200) throw new Error(result.msg || '解锁失败')
+    message.success('账号锁定状态已清除')
+  } })
+}
+/** 管理员强制结束异常在线会话。 / Let an authorized administrator terminate an online session. */
+function forceLogout(row: Record<string, any>) {
+  if (!row.tokenId) { message.warning('该会话没有返回会话编号，无法执行强退'); return }
+  Modal.confirm({ title: '强制下线', content: `确认让账号“${row.userName || '未知账号'}”在当前设备上退出系统吗？`, okText: '强制下线', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/monitor/online/' + encodeURIComponent(String(row.tokenId)))
+    if (result.code !== 200) throw new Error(result.msg || '强制下线失败')
+    message.success('该在线会话已强制下线')
+    await load()
+  } })
+}
+/** 打开字典类型或字典数据维护窗口。 / Open framework dictionary type and item maintenance. */
+async function openDictionaryItems(row: Record<string, any>) {
+  selectedDictionary.value = row
+  dictionaryDrawerOpen.value = true
+  await loadDictionaryItems()
+}
+async function loadDictionaryItems() {
+  const dictType = String(selectedDictionary.value?.dictType || '')
+  if (!dictType) return
+  dictionaryItemsLoading.value = true
+  try {
+    const result: any = await api.get('/system/dict/data/list', { params: { dictType, pageNum: 1, pageSize: 200 } })
+    if (result.code !== 200) throw new Error(result.msg || '读取字典数据失败')
+    dictionaryItems.value = result.data?.rows || []
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取字典数据失败') }
+  finally { dictionaryItemsLoading.value = false }
+}
+function editDictionary(row?: Record<string, any>) {
+  dictionaryEditing.value = !!row
+  Object.assign(dictionaryForm, row ? { ...row } : { dictId: undefined, dictName: '', dictType: '', remark: '' })
+  dictionaryDrawerOpen.value = false
+  dictionaryTypeModalOpen.value = true
+}
+const dictionaryTypeModalOpen = ref(false)
+async function saveDictionary() {
+  if (!String(dictionaryForm.dictName || '').trim() || !String(dictionaryForm.dictType || '').trim()) { message.warning('字典名称和字典类型均为必填项'); return }
+  dictionarySaving.value = true
+  try {
+    const result: any = dictionaryEditing.value
+      ? await api.put('/system/dict/type', dictionaryForm)
+      : await api.post('/system/dict/type', dictionaryForm)
+    if (result.code !== 200) throw new Error(result.msg || '保存字典类型失败')
+    dictionaryTypeModalOpen.value = false
+    message.success('字典类型已保存')
+    await load()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存字典类型失败') }
+  finally { dictionarySaving.value = false }
+}
+function removeDictionary(row: Record<string, any>) {
+  Modal.confirm({ title: '删除字典类型', content: `删除“${row.dictName}”及其字典数据？框架会执行关联检查。`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/system/dict/type/' + row.dictId)
+    if (result.code !== 200) throw new Error(result.msg || '删除失败')
+    message.success('字典类型已删除')
+    await load()
+  } })
+}
+function editDictionaryItem(row?: Record<string, any>) {
+  dictionaryEditing.value = !!row
+  Object.assign(dictionaryItemForm, row ? { ...row } : { dictCode: undefined, dictSort: 0, dictLabel: '', dictValue: '', dictType: selectedDictionary.value?.dictType, cssClass: '', listClass: 'default', isDefault: 'N', remark: '' })
+  dictionaryItemModalOpen.value = true
+}
+async function saveDictionaryItem() {
+  if (!String(dictionaryItemForm.dictLabel || '').trim() || !String(dictionaryItemForm.dictValue || '').trim()) { message.warning('字典标签和键值均为必填项'); return }
+  dictionarySaving.value = true
+  try {
+    const result: any = dictionaryEditing.value
+      ? await api.put('/system/dict/data', dictionaryItemForm)
+      : await api.post('/system/dict/data', dictionaryItemForm)
+    if (result.code !== 200) throw new Error(result.msg || '保存字典数据失败')
+    dictionaryItemModalOpen.value = false
+    message.success('字典数据已保存')
+    await loadDictionaryItems()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存字典数据失败') }
+  finally { dictionarySaving.value = false }
+}
+function removeDictionaryItem(row: Record<string, any>) {
+  Modal.confirm({ title: '删除字典数据', content: `确认删除“${row.dictLabel}”吗？`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/system/dict/data/' + row.dictCode)
+    if (result.code !== 200) throw new Error(result.msg || '删除失败')
+    message.success('字典数据已删除')
+    await loadDictionaryItems()
+  } })
+}
+async function refreshDictionaryCache() {
+  try {
+    const result: any = await api.delete('/system/dict/type/refreshCache')
+    if (result.code !== 200) throw new Error(result.msg || '刷新失败')
+    message.success('字典缓存已刷新')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '刷新字典缓存失败') }
+}
+/** 框架菜单写操作仅允许超级管理员，页面提示不能替代后端角色校验。 / Menu mutations remain server-restricted to the framework super-admin role. */
+async function editMenu(row?: Record<string, any>) {
+  menuEditing.value = !!row
+  Object.assign(menuForm, { menuId: undefined, parentId: 0, menuName: '', orderNum: 1, path: '', component: '', queryParam: '', isFrame: 'N', isCache: 'Y', menuType: 'C', visible: '0', status: '0', perms: '', icon: '#', activeMenu: '', ext: '', remark: '' })
+  if (row) {
+    try {
+      const result: any = await api.get('/system/menu/' + row.menuId)
+      if (result.code !== 200) throw new Error(result.msg || '读取菜单失败')
+      Object.assign(menuForm, result.data)
+    } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取菜单失败'); return }
+  }
+  menuModalOpen.value = true
+}
+/** 保持菜单 ID 作为字符串传给选择器，避免长整型主键在浏览器侧失真。 / Keep menu IDs as strings in the selector to preserve 64-bit identifier precision. */
+function menuOptionValue(row: Record<string, unknown>): string | number { const id = row.menuId; return typeof id === 'number' || typeof id === 'string' ? id : String(id ?? '') }
+async function saveMenu() {
+  if (!String(menuForm.menuName || '').trim()) { message.warning('请输入菜单名称'); return }
+  if (menuForm.menuType === 'F' && !String(menuForm.perms || '').trim()) { message.warning('按钮权限标识不能为空'); return }
+  menuSaving.value = true
+  try {
+    const result: any = menuEditing.value ? await api.put('/system/menu', menuForm) : await api.post('/system/menu', menuForm)
+    if (result.code !== 200) throw new Error(result.msg || '保存菜单失败')
+    menuModalOpen.value = false
+    message.success('菜单已保存；路由权限会在重新登录后重新加载')
+    await load()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存菜单失败') }
+  finally { menuSaving.value = false }
+}
+function removeMenu(row: Record<string, any>) {
+  Modal.confirm({ title: '删除菜单', content: `确认删除“${row.menuName}”吗？如存在子菜单或角色授权，框架会拒绝删除。`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/system/menu/' + row.menuId)
+    if (result.code !== 200) throw new Error(result.msg || '删除菜单失败')
+    message.success('菜单已删除')
+    await load()
+  } })
+}
+/** 查看或新增框架客户端授权配置。 / Load or initialize an OAuth client configuration. */
+async function editClient(row?: Record<string, any>) {
+  clientEditing.value = !!row
+  Object.assign(clientForm, { id: undefined, clientId: '', clientKey: '', clientSecret: '', grantTypeList: ['password'], deviceType: 'pc', accessPathList: [], ipWhitelistList: [], activeTimeout: 1800, timeout: 86400, status: '0' })
+  if (row) {
+    try {
+      const result: any = await api.get('/system/client/' + row.id)
+      if (result.code !== 200) throw new Error(result.msg || '读取客户端配置失败')
+      Object.assign(clientForm, result.data, {
+        grantTypeList: result.data?.grantTypeList || String(result.data?.grantType || '').split(',').filter(Boolean),
+        accessPathList: result.data?.accessPathList || String(result.data?.accessPath || '').split(',').filter(Boolean),
+        ipWhitelistList: result.data?.ipWhitelistList || String(result.data?.ipWhitelist || '').split(',').filter(Boolean),
+      })
+    } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取客户端配置失败'); return }
+  }
+  clientModalOpen.value = true
+}
+async function saveClient() {
+  if (!String(clientForm.clientKey || '').trim() || !String(clientForm.clientSecret || '').trim()) { message.warning('客户端 Key 和客户端密钥均为必填项'); return }
+  clientSaving.value = true
+  try {
+    const payload = { ...clientForm, clientKey: String(clientForm.clientKey).trim(), clientSecret: String(clientForm.clientSecret).trim() }
+    const result: any = clientEditing.value ? await api.put('/system/client', payload) : await api.post('/system/client', payload)
+    if (result.code !== 200) throw new Error(result.msg || '保存客户端配置失败')
+    clientModalOpen.value = false
+    message.success('客户端配置已保存')
+    await load()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存客户端配置失败') }
+  finally { clientSaving.value = false }
+}
+function changeClientStatus(row: Record<string, any>) {
+  const status = String(row.status) === '0' ? '1' : '0'
+  Modal.confirm({ title: status === '0' ? '启用客户端' : '停用客户端', content: `确认${status === '0' ? '启用' : '停用'}客户端“${row.clientKey}”吗？`, okText: '确认', cancelText: '取消', async onOk() {
+    const result: any = await api.put('/system/client/changeStatus', { clientId: row.clientId, status })
+    if (result.code !== 200) throw new Error(result.msg || '修改客户端状态失败')
+    message.success('客户端状态已更新')
+    await load()
+  } })
+}
+function removeClient(row: Record<string, any>) {
+  Modal.confirm({ title: '删除客户端', content: `确认删除客户端“${row.clientKey}”吗？删除后使用该客户端凭证的集成应用将无法继续认证。`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/system/client/' + row.id)
+    if (result.code !== 200) throw new Error(result.msg || '删除客户端失败')
+    message.success('客户端配置已删除')
+    await load()
+  } })
+}
+/** 读取对象存储详情；列表接口会隐藏密钥，详情只在授权用户打开编辑时读取。 / Retrieve storage credentials only for an authorized editor. */
+async function editStorageConfig(row?: Record<string, any>) {
+  storageEditing.value = !!row
+  Object.assign(storageForm, { ossConfigId: undefined, configKey: '', accessKey: '', secretKey: '', bucketName: '', prefix: '', endpoint: '', domainUrl: '', isHttps: 'N', status: 'N', region: '', ext1: '', remark: '', accessPolicy: '0' })
+  if (row) {
+    try {
+      const result: any = await api.get('/resource/oss/config/' + row.ossConfigId)
+      if (result.code !== 200) throw new Error(result.msg || '读取对象存储配置失败')
+      Object.assign(storageForm, result.data)
+    } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取对象存储配置失败'); return }
+  }
+  storageModalOpen.value = true
+}
+async function saveStorageConfig() {
+  const required = ['configKey', 'accessKey', 'secretKey', 'bucketName', 'endpoint', 'accessPolicy']
+  if (required.some(key => !String(storageForm[key] || '').trim())) { message.warning('配置标识、访问密钥、私钥、存储桶、访问站点和桶权限类型均为必填项'); return }
+  storageSaving.value = true
+  try {
+    const result: any = storageEditing.value ? await api.put('/resource/oss/config', storageForm) : await api.post('/resource/oss/config', storageForm)
+    if (result.code !== 200) throw new Error(result.msg || '保存对象存储配置失败')
+    storageModalOpen.value = false
+    message.success('对象存储配置已保存')
+    await load()
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存对象存储配置失败') }
+  finally { storageSaving.value = false }
+}
+function changeStorageStatus(row: Record<string, any>) {
+  if (row.status === 'Y') { message.info('当前已是默认存储。请在其他配置上选择“设为默认”来切换。'); return }
+  Modal.confirm({ title: '设为默认存储', content: `确认将“${row.configKey}”设为默认对象存储吗？切换后新上传文件会使用该配置。`, okText: '设为默认', cancelText: '取消', async onOk() {
+    const result: any = await api.put('/resource/oss/config/changeStatus', { ossConfigId: row.ossConfigId, status: 'Y' })
+    if (result.code !== 200) throw new Error(result.msg || '修改对象存储状态失败')
+    message.success('对象存储默认配置已更新')
+    await load()
+  } })
+}
+function removeStorageConfig(row: Record<string, any>) {
+  Modal.confirm({ title: '删除对象存储配置', content: `确认删除配置“${row.configKey}”吗？如果配置仍被系统使用，框架会阻止删除。`, okText: '删除', cancelText: '取消', okType: 'danger', async onOk() {
+    const result: any = await api.delete('/resource/oss/config/' + row.ossConfigId)
+    if (result.code !== 200) throw new Error(result.msg || '删除对象存储配置失败')
+    message.success('对象存储配置已删除')
+    await load()
+  } })
+}
 watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined; resetFilters() }, { immediate: true })
 </script>
 <template>
   <StandardListLayout>
-    <template v-if="isLogs || kind === 'files'" #filters>
+    <template v-if="isLogs || kind === 'files' || kind === 'online' || kind === 'dictionary' || kind === 'menu-directory' || kind === 'clients' || kind === 'storage-config' || (kind === 'parameters' && parameterView === 'framework')" #filters>
       <label v-if="kind === 'files'" class="zy-filter-field"><span>文件名</span><a-input v-model:value="fileName" allow-clear placeholder="搜索原文件名" style="width: 240px" @press-enter="fileFilter = fileName.trim(); search()" /></label>
+      <template v-else-if="kind === 'online'">
+        <label class="zy-filter-field"><span>登录账号</span><a-input v-model:value="account" allow-clear placeholder="输入账号" style="width: 200px" @press-enter="load" /></label>
+        <label class="zy-filter-field"><span>登录 IP</span><a-input v-model:value="ipAddress" allow-clear placeholder="输入 IP 地址" style="width: 180px" @press-enter="load" /></label>
+      </template>
+      <template v-else-if="kind === 'dictionary'">
+        <label class="zy-filter-field"><span>字典名称</span><a-input v-model:value="dictionaryName" allow-clear placeholder="输入字典名称" style="width: 200px" @press-enter="page=1;load()" /></label>
+        <label class="zy-filter-field"><span>字典类型</span><a-input v-model:value="dictionaryType" allow-clear placeholder="输入字典类型" style="width: 200px" @press-enter="page=1;load()" /></label>
+      </template>
+      <template v-else-if="kind === 'menu-directory'">
+        <label class="zy-filter-field"><span>菜单名称</span><a-input v-model:value="dictionaryName" allow-clear placeholder="输入菜单名称" style="width: 220px" @press-enter="page=1;load()" /></label>
+        <label class="zy-filter-field"><span>状态</span><a-select v-model:value="outcome" allow-clear placeholder="全部状态" style="width: 130px" :options="[{label:'启用',value:'0'},{label:'停用',value:'1'}]" /></label>
+      </template>
+      <template v-else-if="kind === 'clients' || kind === 'storage-config'">
+        <label class="zy-filter-field"><span>{{ kind==='clients'?'客户端 Key':'配置标识' }}</span><a-input v-model:value="recordKeyword" allow-clear :placeholder="kind==='clients'?'输入客户端 Key':'输入对象存储配置标识'" style="width:240px" @press-enter="page=1;load()" /></label>
+      </template>
+      <label v-else-if="kind==='parameters' && parameterView==='framework'" class="zy-filter-field"><span>参数键</span><a-input v-model:value="recordKeyword" allow-clear placeholder="输入参数键" style="width:260px" @press-enter="load" /></label>
       <template v-else>
       <div class="head-filters">
-      <a-radio-group v-model:value="category">
+      <a-radio-group v-if="props.kind === 'logs'" v-model:value="category">
         <a-radio-button v-for="item in categories" :key="item.key" :value="item.key">{{ item.label }}</a-radio-button>
       </a-radio-group>
       <label class="zy-filter-field"><span>{{ kind === 'operlog' ? '操作人' : '登录账号' }}</span><a-input v-model:value="account" allow-clear :placeholder="kind === 'operlog' ? '搜索操作人' : '搜索登录账号'"
@@ -604,6 +980,9 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
       <div v-if="isLogs" class="filter-bar">
         <a-button type="primary" :loading="loading" @click="search">查询</a-button>
         <a-button @click="resetFilters">重置</a-button>
+        <a-button v-if="can(kind === 'loginInfo' ? 'monitor:logininfo:export' : 'monitor:operlog:export')" @click="exportLogs">导出</a-button>
+        <a-button v-if="can(kind === 'loginInfo' ? 'monitor:logininfo:remove' : 'monitor:operlog:remove')" :disabled="!logSelectedRowKeys.length" danger @click="deleteSelectedLogs">删除所选</a-button>
+        <a-button v-if="can(kind === 'loginInfo' ? 'monitor:logininfo:remove' : 'monitor:operlog:remove')" danger @click="clearLogs">清空全部</a-button>
         <span class="filter-spacer" />
         <a-dropdown v-model:open="columnSettingsOpen" :trigger="['click']" placement="bottomRight">
           <a-button>⚙ 列设置</a-button>
@@ -629,13 +1008,24 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
         <a-button type="primary" :loading="loading" @click="fileFilter = fileName.trim(); search()">查询</a-button>
         <a-button @click="fileName = ''; fileFilter = ''; search()">重置</a-button>
       </div>
+      <div v-else-if="kind === 'online' || kind === 'dictionary' || kind === 'menu-directory' || kind === 'clients' || kind === 'storage-config'" class="filter-bar">
+        <template v-if="kind === 'dictionary' && can('system:dict:add')"><a-button type="primary" @click="editDictionary()">新增字典类型</a-button></template>
+        <a-button v-if="kind==='dictionary' && can('system:dict:export')" @click="exportFrameworkList('/system/dict/type/export','字典类型.xlsx',{dictName:dictionaryName||undefined,dictType:dictionaryType||undefined})">导出</a-button>
+        <template v-if="kind === 'dictionary' && can('system:dict:remove')"><a-button @click="refreshDictionaryCache">刷新字典缓存</a-button></template>
+        <template v-if="kind === 'menu-directory' && can('system:menu:add')"><a-button type="primary" @click="editMenu()">新增菜单</a-button><a-alert type="warning" show-icon message="菜单写操作由框架限定超级管理员；当前织云导航使用静态路由，新增菜单记录不会自动生成业务页面，请勿随意修改在线生产路由与权限标识。" /></template>
+        <template v-if="kind === 'clients' && can('system:client:add')"><a-button type="primary" @click="editClient()">新增客户端</a-button></template>
+        <a-button v-if="kind==='clients' && can('system:client:export')" @click="exportFrameworkList('/system/client/export','客户端配置.xlsx',{clientKey:recordKeyword||undefined})">导出</a-button>
+        <template v-if="kind === 'storage-config' && can('system:ossConfig:add')"><a-button type="primary" @click="editStorageConfig()">新增存储配置</a-button></template>
+        <a-button type="primary" :loading="loading" @click="kind==='online' ? load() : (page=1,load())">查询</a-button>
+        <a-button @click="kind==='online' ? resetOnlineFilters() : kind==='dictionary' ? resetDictionaryFilters() : kind==='menu-directory' ? (dictionaryName='',outcome=undefined,page=1,load()) : (recordKeyword='',page=1,load())">重置</a-button>
+      </div>
       <div v-else-if="kind === 'parameters'" class="parameter-actions">
-        <div><h2>系统参数</h2><span>配置影响系统各模块的默认行为</span></div>
-        <a-button :loading="loading" @click="load">刷新设置</a-button>
+        <div><h2>{{ parameterView==='business'?'业务参数':'框架参数' }}</h2><span>{{ parameterView==='business'?'配置织云业务模块的默认行为':'维护框架参数，修改可能影响系统运行' }}</span></div>
+        <a-space><a-segmented v-model:value="parameterView" :options="[{label:'业务参数',value:'business'},{label:'框架参数',value:'framework'}]" @change="page=1;recordKeyword='';load()"/><template v-if="parameterView==='framework'"><a-button v-if="can('system:config:add')" type="primary" @click="addConfig">新增参数</a-button><a-button v-if="can('system:config:export')" @click="exportFrameworkList('/system/config/export','系统参数.xlsx',{configKey:recordKeyword||undefined})">导出</a-button><a-button v-if="can('system:config:remove')" @click="refreshConfigCache">刷新参数缓存</a-button><a-button type="primary" :loading="loading" @click="load">查询</a-button><a-button @click="recordKeyword='';page=1;load()">重置</a-button></template><a-button :loading="loading" @click="load">刷新设置</a-button></a-space>
       </div>
       <a-button v-else type="primary" :loading="loading" @click="load">刷新</a-button>
     </template>
-    <section v-if="kind === 'parameters'" class="settings-page" :aria-busy="loading">
+    <section v-if="kind === 'parameters' && parameterView === 'business'" class="settings-page" :aria-busy="loading">
       <div class="settings-section-title">业务规则</div>
       <a-card class="setting-card" :bordered="false">
         <div class="setting-heading"><div><h3>客户订单默认下线日期</h3><p>根据 PO 默认交期提前自然日生成下线日期；订单中可自行修改，已保存日期不会因参数变化而改变。</p></div></div>
@@ -766,32 +1156,106 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
         <div class="setting-footer"><a-tag :color="ossPreviewRow?.configValue === 'true' ? 'green' : 'default'">{{ ossPreviewRow?.configValue === 'true' ? '已开启' : '已关闭' }}</a-tag><a-button v-if="ossPreviewRow && can('system:config:edit')" type="link" @click="editConfig(ossPreviewRow)">编辑</a-button></div>
       </a-card>
     </section>
-    <a-table v-else class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="index"
+    <a-table v-else class="zy-fill-table" :columns="columns" :data-source="rows" :loading="loading" row-key="id" :row-selection="isLogs ? logRowSelection : undefined"
       :size="isLogs ? 'middle' : undefined" :table-layout="isLogs ? 'fixed' : undefined"
       :scroll="isLogs ? { x: columns.reduce((sum, column) => sum + (column.width ?? 110), 0), y: 'calc(100vh - 390px)' } : { y: 'calc(100vh - 330px)' }"
-      :pagination="{ current: page, pageSize: isLogs ? pageSize : 20, total, showSizeChanger: isLogs, showQuickJumper: isLogs, showTotal: isLogs ? (count: number) => `共 ${count} 条` : undefined, onChange: (value: number, size: number) => { page = value; pageSize = size; load() } }">
+      :pagination="{ current: page, pageSize: isLogs ? pageSize : kind==='parameters' && parameterView==='framework' ? 100 : 20, total, showSizeChanger: isLogs, showQuickJumper: isLogs, showTotal: isLogs ? (count: number) => `共 ${count} 条` : undefined, onChange: (value: number, size: number) => { page = value; pageSize = size; load() } }">
       <template #bodyCell="{ column, text, record, index }">
         <template v-if="column.key === 'fileAction' && can('system:oss:download') && !String(record.originalName).startsWith('.')">
           <a-button v-if="/^\.?(png|jpe?g|gif|webp)$/i.test(String(record.fileSuffix))" type="link" @click="downloadFile(record, true)">预览</a-button>
           <a-button type="link" @click="downloadFile(record)">下载</a-button>
         </template>
         <template v-else-if="column.key === 'sequence'">{{ (page - 1) * pageSize + index + 1 }}</template>
+        <template v-else-if="column.key === 'action' && kind==='parameters' && parameterView==='framework'"><a-button v-if="can('system:config:edit')" type="link" size="small" @click="editConfig(record)">编辑</a-button><a-button v-if="can('system:config:remove')" type="link" danger size="small" @click="removeConfig(record)">删除</a-button></template>
         <a-button v-else-if="column.key === 'action' && can('system:config:edit') && record.configKey === 'sys.oss.previewListResource'" type="link" @click="editConfig(record)">编辑</a-button>
+        <template v-else-if="column.key === 'logAction'"><a-button v-if="kind==='loginInfo' && can('monitor:logininfo:unlock') && String(record.status)!=='0'" type="link" size="small" @click="unlockAccount(record)">解锁账号</a-button></template>
+        <template v-else-if="column.key === 'onlineAction'"><a-button v-if="can('monitor:online:forceLogout')" type="link" danger size="small" @click="forceLogout(record)">强制下线</a-button></template>
+        <template v-else-if="column.key === 'dictionaryAction'"><a-button type="link" size="small" @click="openDictionaryItems(record)">字典数据</a-button><a-button v-if="can('system:dict:edit')" type="link" size="small" @click="editDictionary(record)">编辑</a-button><a-button v-if="can('system:dict:remove')" type="link" danger size="small" @click="removeDictionary(record)">删除</a-button></template>
+        <template v-else-if="column.key === 'menuType'"><a-tag>{{ ({M:'目录',C:'菜单',F:'按钮'} as Record<string,string>)[String(text)] || text || '—' }}</a-tag></template>
+        <template v-else-if="column.key === 'menuAction'"><a-button v-if="can('system:menu:edit')" type="link" size="small" @click="editMenu(record)">编辑</a-button><a-button v-if="can('system:menu:remove')" type="link" danger size="small" @click="removeMenu(record)">删除</a-button></template>
+        <template v-else-if="column.key === 'clientAction'"><a-button v-if="can('system:client:edit')" type="link" size="small" @click="editClient(record)">编辑</a-button><a-button v-if="can('system:client:edit')" type="link" size="small" @click="changeClientStatus(record)">{{ String(record.status)==='0'?'停用':'启用' }}</a-button><a-button v-if="can('system:client:remove')" type="link" danger size="small" @click="removeClient(record)">删除</a-button></template>
+        <template v-else-if="column.key === 'storageAction'"><a-button v-if="can('system:ossConfig:edit')" type="link" size="small" @click="editStorageConfig(record)">编辑</a-button><a-button v-if="can('system:ossConfig:edit') && record.status!=='Y'" type="link" size="small" @click="changeStorageStatus(record)">设为默认</a-button><a-tag v-else-if="record.status==='Y'" color="green">当前默认</a-tag><a-button v-if="can('system:ossConfig:remove')" type="link" danger size="small" @click="removeStorageConfig(record)">删除</a-button></template>
         <a-button v-else-if="column.key === 'auditDetail'" type="link" @click="selected = record">查看</a-button>
         <template v-else-if="column.key === 'status' && ['operlog', 'loginInfo'].includes(kind)"><a-tag :color="String(text) === '0' ? 'green' : 'red'">{{ String(text) === '0' ? '成功' : '失败' }}</a-tag></template>
         <template v-else-if="column.key === 'loginTime' && typeof text === 'number'">{{ new Date(text).toLocaleString('zh-CN') }}</template>
+        <template v-else-if="column.key === 'status' && kind==='clients'"><a-tag :color="String(text)==='0'?'green':'red'">{{ String(text)==='0'?'启用':'停用' }}</a-tag></template>
+        <template v-else-if="column.key === 'status' && kind==='storage-config'"><a-tag :color="text==='Y'?'green':'default'">{{ text==='Y'?'默认':'未启用' }}</a-tag></template>
       </template>
     </a-table>
     <a-modal v-if="kind === 'files'" :open="!!previewUrl" title="图片预览" :footer="null" @cancel="closePreview">
       <img v-if="previewUrl" :src="previewUrl" alt="文件预览" style="display: block; max-width: 100%; max-height: 70vh; margin: auto" />
     </a-modal>
-    <a-modal v-if="kind === 'parameters'" v-model:open="configDialog" title="编辑系统参数" :confirm-loading="configSaving" @ok="saveConfig">
+    <a-modal v-if="kind === 'parameters'" v-model:open="configDialog" :title="configEditing ? '编辑系统参数' : '新增系统参数'" :confirm-loading="configSaving" :mask-closable="false" :keyboard="false" ok-text="保存" cancel-text="取消" @ok="saveConfig">
       <a-form layout="vertical">
         <a-form-item label="参数名称"><a-input v-model:value="editingConfig.configName" /></a-form-item>
-        <a-form-item label="参数键"><a-input v-model:value="editingConfig.configKey" disabled /></a-form-item>
-        <a-form-item label="参数值"><a-switch :checked="editingConfig.configValue === 'true'" checked-children="开启" un-checked-children="关闭" @change="editingConfig.configValue = $event ? 'true' : 'false'" /></a-form-item>
+        <a-form-item label="参数键"><a-input v-model:value="editingConfig.configKey" :disabled="configEditing" /></a-form-item>
+        <a-form-item label="参数值"><a-switch v-if="editingConfig.configKey==='sys.oss.previewListResource'" :checked="editingConfig.configValue === 'true'" checked-children="开启" un-checked-children="关闭" @change="editingConfig.configValue = $event ? 'true' : 'false'" /><a-textarea v-else v-model:value="editingConfig.configValue" :rows="4" /></a-form-item>
+        <a-form-item label="参数来源"><a-select v-model:value="editingConfig.configType" :options="[{value:'Y',label:'系统内置'},{value:'N',label:'用户自定义'}]" /></a-form-item>
         <a-form-item label="说明"><a-input v-model:value="editingConfig.remark" /></a-form-item>
       </a-form>
+    </a-modal>
+    <a-modal v-if="kind === 'dictionary'" v-model:open="dictionaryTypeModalOpen" :title="dictionaryEditing ? '编辑字典类型' : '新增字典类型'" :confirm-loading="dictionarySaving" :mask-closable="false" :keyboard="false" ok-text="保存" cancel-text="取消" @ok="saveDictionary">
+      <a-form layout="vertical"><a-form-item label="字典名称" required><a-input v-model:value="dictionaryForm.dictName" :maxlength="100" placeholder="例如：订单状态" /></a-form-item><a-form-item label="字典类型" required><a-input v-model:value="dictionaryForm.dictType" :disabled="dictionaryEditing" :maxlength="100" placeholder="例如：order_status（小写字母、数字、下划线）" /></a-form-item><a-form-item label="备注"><a-textarea v-model:value="dictionaryForm.remark" :rows="3" /></a-form-item></a-form>
+    </a-modal>
+    <a-drawer v-if="kind === 'dictionary'" :open="dictionaryDrawerOpen" :title="`字典数据：${selectedDictionary?.dictName || ''}`" width="760" @close="dictionaryDrawerOpen=false">
+      <div class="dict-drawer-tools"><span>字典类型：<a-tag color="blue">{{ selectedDictionary?.dictType }}</a-tag></span><a-space><a-button v-if="can('system:dict:export')" @click="exportFrameworkList('/system/dict/data/export',`${selectedDictionary?.dictName || '字典数据'}.xlsx`,{dictType:selectedDictionary?.dictType})">导出数据</a-button><a-button v-if="can('system:dict:add')" type="primary" @click="editDictionaryItem()">新增数据项</a-button></a-space></div>
+      <a-table :columns="[{title:'排序',dataIndex:'dictSort',width:70},{title:'标签',dataIndex:'dictLabel',width:140},{title:'键值',dataIndex:'dictValue',width:120},{title:'默认',dataIndex:'isDefault',width:70},{title:'备注',dataIndex:'remark'},{title:'操作',key:'itemAction',width:110}]" :data-source="dictionaryItems" :loading="dictionaryItemsLoading" row-key="dictCode" :pagination="false" size="small">
+        <template #bodyCell="{column,record}"><a-tag v-if="columnField(column)==='isDefault'" :color="record.isDefault==='Y'?'blue':'default'">{{ record.isDefault==='Y'?'是':'否' }}</a-tag><span v-else-if="column.key==='itemAction'"><a-button v-if="can('system:dict:edit')" type="link" size="small" @click="editDictionaryItem(record)">编辑</a-button><a-button v-if="can('system:dict:remove')" type="link" danger size="small" @click="removeDictionaryItem(record)">删除</a-button></span><span v-else>{{ record[columnField(column)]||'—' }}</span></template>
+        <template #emptyText><a-empty description="暂无字典数据" /></template>
+      </a-table>
+    </a-drawer>
+    <a-modal v-if="kind === 'dictionary'" v-model:open="dictionaryItemModalOpen" :title="dictionaryEditing ? '编辑字典数据' : '新增字典数据'" :confirm-loading="dictionarySaving" :mask-closable="false" :keyboard="false" ok-text="保存" cancel-text="取消" @ok="saveDictionaryItem">
+      <a-form layout="vertical"><div class="dict-form-grid"><a-form-item label="字典标签" required><a-input v-model:value="dictionaryItemForm.dictLabel" :maxlength="100" /></a-form-item><a-form-item label="字典键值" required><a-input v-model:value="dictionaryItemForm.dictValue" :maxlength="100" /></a-form-item><a-form-item label="排序"><a-input-number v-model:value="dictionaryItemForm.dictSort" :min="0" :precision="0" style="width:100%" /></a-form-item><a-form-item label="默认项"><a-switch :checked="dictionaryItemForm.isDefault==='Y'" checked-children="是" un-checked-children="否" @change="dictionaryItemForm.isDefault=$event?'Y':'N'" /></a-form-item><a-form-item label="列表样式"><a-select v-model:value="dictionaryItemForm.listClass" :options="['default','primary','success','info','warning','danger'].map(value=>({value,label:value}))" /></a-form-item><a-form-item label="样式类名"><a-input v-model:value="dictionaryItemForm.cssClass" /></a-form-item></div><a-form-item label="备注"><a-textarea v-model:value="dictionaryItemForm.remark" :rows="2" /></a-form-item></a-form>
+    </a-modal>
+    <a-modal v-if="kind === 'menu-directory'" v-model:open="menuModalOpen" :title="menuEditing ? '编辑菜单权限' : '新增菜单权限'" width="760px" :confirm-loading="menuSaving" :mask-closable="false" :keyboard="false" ok-text="保存" cancel-text="取消" @ok="saveMenu">
+      <a-alert type="warning" show-icon message="菜单路由和权限标识会影响框架入口及角色授权；织云当前使用静态前端路由，新增菜单记录不会自动生成页面。框架接口要求超级管理员角色，请谨慎维护。" style="margin-bottom:16px" />
+      <a-form layout="vertical"><div class="dict-form-grid">
+        <a-form-item label="菜单类型" required><a-select v-model:value="menuForm.menuType" :options="[{value:'M',label:'目录'},{value:'C',label:'菜单页面'},{value:'F',label:'按钮权限'}]" /></a-form-item>
+        <a-form-item label="上级菜单"><a-select v-model:value="menuForm.parentId" show-search option-filter-prop="label" :options="[{value:0,label:'顶级目录'},...rows.filter(row=>row.menuType!=='F' && String(row.menuId)!==String(menuForm.menuId)).map(row=>({value:menuOptionValue(row),label:`${row.parentName ? row.parentName+' / ' : ''}${row.menuName}`}))]" /></a-form-item>
+        <a-form-item label="菜单名称" required><a-input v-model:value="menuForm.menuName" :maxlength="50" /></a-form-item>
+        <a-form-item label="显示顺序" required><a-input-number v-model:value="menuForm.orderNum" :min="0" :precision="0" style="width:100%" /></a-form-item>
+        <template v-if="menuForm.menuType!=='F'"><a-form-item label="路由地址"><a-input v-model:value="menuForm.path" :maxlength="200" /></a-form-item><a-form-item label="组件路径"><a-input v-model:value="menuForm.component" :maxlength="200" /></a-form-item></template>
+        <a-form-item label="权限标识"><a-input v-model:value="menuForm.perms" :maxlength="100" placeholder="例如 system:example:list" /></a-form-item>
+        <a-form-item label="图标"><a-input v-model:value="menuForm.icon" placeholder="Ant Design 图标名" /></a-form-item>
+        <a-form-item label="状态"><a-select v-model:value="menuForm.status" :options="[{value:'0',label:'启用'},{value:'1',label:'停用'}]" /></a-form-item>
+        <a-form-item label="显示"><a-select v-model:value="menuForm.visible" :options="[{value:'0',label:'显示'},{value:'1',label:'隐藏'}]" /></a-form-item>
+        <a-form-item label="外链"><a-select v-model:value="menuForm.isFrame" :options="[{value:'N',label:'否'},{value:'Y',label:'是'}]" /></a-form-item>
+        <a-form-item label="缓存页面"><a-select v-model:value="menuForm.isCache" :options="[{value:'Y',label:'是'},{value:'N',label:'否'}]" /></a-form-item>
+        <a-form-item label="激活菜单路径"><a-input v-model:value="menuForm.activeMenu" /></a-form-item>
+        <a-form-item label="路由参数 JSON"><a-input v-model:value="menuForm.queryParam" placeholder="留空或填写合法 JSON 对象" /></a-form-item>
+      </div><a-form-item label="备注"><a-textarea v-model:value="menuForm.remark" :rows="2" /></a-form-item></a-form>
+    </a-modal>
+    <a-modal v-if="kind === 'clients'" v-model:open="clientModalOpen" :title="clientEditing ? '编辑客户端' : '新增客户端'" width="760px" :confirm-loading="clientSaving" :mask-closable="false" :keyboard="false" ok-text="保存" cancel-text="取消" @ok="saveClient">
+      <a-alert type="warning" show-icon message="客户端密钥属于认证凭证。保存或轮换密钥后，依赖该客户端的应用需要同步更新配置。" style="margin-bottom:16px" />
+      <a-form layout="vertical"><div class="dict-form-grid">
+        <a-form-item label="客户端 Key" required><a-input v-model:value="clientForm.clientKey" :maxlength="100" /></a-form-item>
+        <a-form-item label="客户端 ID"><a-input v-model:value="clientForm.clientId" :disabled="clientEditing" placeholder="新增时可留空，由框架生成" /></a-form-item>
+        <a-form-item label="客户端密钥" required><a-input-password v-model:value="clientForm.clientSecret" autocomplete="new-password" /></a-form-item>
+        <a-form-item label="设备类型"><a-select v-model:value="clientForm.deviceType" :options="[{value:'pc',label:'PC'},{value:'android',label:'安卓'},{value:'ios',label:'iOS'},{value:'xcx',label:'小程序'}]" /></a-form-item>
+        <a-form-item label="授权方式" required><a-select v-model:value="clientForm.grantTypeList" mode="multiple" :options="[{value:'password',label:'密码认证'},{value:'sms',label:'短信认证'},{value:'email',label:'邮件认证'},{value:'xcx',label:'小程序认证'},{value:'social',label:'三方登录认证'}]" /></a-form-item>
+        <a-form-item label="状态"><a-select v-model:value="clientForm.status" :options="[{value:'0',label:'启用'},{value:'1',label:'停用'}]" /></a-form-item>
+        <a-form-item label="Token 活跃超时（秒）"><a-input-number v-model:value="clientForm.activeTimeout" :min="-1" style="width:100%" /></a-form-item>
+        <a-form-item label="Token 固定超时（秒）"><a-input-number v-model:value="clientForm.timeout" :min="-1" style="width:100%" /></a-form-item>
+        <a-form-item label="允许访问路径"><a-select v-model:value="clientForm.accessPathList" mode="tags" :token-separators="[',']" placeholder="输入路径后回车；留空按框架规则" /></a-form-item>
+        <a-form-item label="IP 白名单"><a-select v-model:value="clientForm.ipWhitelistList" mode="tags" :token-separators="[',']" placeholder="输入 IP 或网段后回车" /></a-form-item>
+      </div></a-form>
+    </a-modal>
+    <a-modal v-if="kind === 'storage-config'" v-model:open="storageModalOpen" :title="storageEditing ? '编辑对象存储配置' : '新增对象存储配置'" width="820px" :confirm-loading="storageSaving" :mask-closable="false" :keyboard="false" ok-text="保存配置" cancel-text="取消" @ok="saveStorageConfig">
+      <a-alert type="warning" show-icon message="此处是文件存储连接凭证。设为默认会影响新上传文件；删除前框架会检查配置引用情况。" style="margin-bottom:16px" />
+      <a-form layout="vertical"><div class="dict-form-grid">
+        <a-form-item label="配置标识" required><a-input v-model:value="storageForm.configKey" :maxlength="100" /></a-form-item>
+        <a-form-item label="存储桶名称" required><a-input v-model:value="storageForm.bucketName" :maxlength="100" /></a-form-item>
+        <a-form-item label="访问密钥" required><a-input-password v-model:value="storageForm.accessKey" autocomplete="off" /></a-form-item>
+        <a-form-item label="私钥" required><a-input-password v-model:value="storageForm.secretKey" autocomplete="new-password" /></a-form-item>
+        <a-form-item label="访问站点" required><a-input v-model:value="storageForm.endpoint" placeholder="填写对象存储服务 Endpoint" /></a-form-item>
+        <a-form-item label="区域"><a-input v-model:value="storageForm.region" /></a-form-item>
+        <a-form-item label="对象前缀"><a-input v-model:value="storageForm.prefix" /></a-form-item>
+        <a-form-item label="自定义域名"><a-input v-model:value="storageForm.domainUrl" /></a-form-item>
+        <a-form-item label="连接使用 HTTPS"><a-select v-model:value="storageForm.isHttps" :options="[{value:'Y',label:'是'},{value:'N',label:'否'}]" /></a-form-item>
+        <a-form-item label="桶访问策略" required><a-select v-model:value="storageForm.accessPolicy" :options="[{value:'0',label:'私有'},{value:'1',label:'公开'},{value:'2',label:'自定义'}]" /></a-form-item>
+        <a-form-item label="新增后设为默认"><a-select v-model:value="storageForm.status" :options="[{value:'Y',label:'是'},{value:'N',label:'否'}]" /></a-form-item>
+        <a-form-item label="扩展配置"><a-input v-model:value="storageForm.ext1" /></a-form-item>
+      </div><a-form-item label="备注"><a-textarea v-model:value="storageForm.remark" :rows="2" /></a-form-item></a-form>
     </a-modal>
     <a-modal :open="!!selected" title="操作日志详情" :width="760" :footer="null" @cancel="selected = undefined">
       <a-descriptions v-if="selected" bordered :column="1" size="small">
@@ -853,4 +1317,6 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
 .col-set-panel { width: 220px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29, 33, 41, .12); }
 .col-set-item { padding: 2px 8px; }
 .col-set-foot { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 0; }
+.dict-drawer-tools { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.dict-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 14px; }
 </style>

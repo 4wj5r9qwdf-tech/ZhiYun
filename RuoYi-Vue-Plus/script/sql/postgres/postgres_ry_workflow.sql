@@ -370,7 +370,7 @@ COMMENT ON COLUMN flow_spel.create_time IS '创建时间';
 COMMENT ON COLUMN flow_spel.update_by IS '更新者';
 COMMENT ON COLUMN flow_spel.update_time IS '更新时间';
 
-INSERT INTO flow_spel VALUES (1762400000000000001, 'spelRuleComponent', 'selectDeptLeaderById', 'initiatorDeptId', '#{@spelRuleComponent.selectDeptLeaderById(#initiatorDeptId)}', '根据部门id获取部门负责人', '0', '0', 1761000000000000103, 1761100000000000001, now(), 1761100000000000001, now());
+INSERT INTO flow_spel VALUES (1762400000000000001, 'spelRuleComponent', 'selectOrgLeaderById', 'initiatorOrgId', '#{@spelRuleComponent.selectOrgLeaderById(#initiatorOrgId)}', '发起人所在部门负责人', '0', '0', 1761000000000000103, 1761100000000000001, now(), 1761100000000000001, now());
 INSERT INTO flow_spel VALUES (1762400000000000002, NULL, NULL, 'initiator', '${initiator}', '流程发起人', '0', '0', 1761000000000000103, 1761100000000000001, now(), 1761100000000000001, now());
 
 -- ----------------------------

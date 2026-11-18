@@ -245,6 +245,7 @@ CREATE INDEX IF NOT EXISTS idx_sys_todo_module ON sys_todo (module_key, menu_key
 CREATE TABLE IF NOT EXISTS sys_person_ext (
     user_id            bigint        NOT NULL,          -- 主键=sys_user.user_id（员工ID，不变）
     -- 基本信息
+    dingtalk_account   varchar(128),                    -- 人员手工登记的钉钉号
     marital_status     varchar(10),                     -- 婚姻状况 未婚/已婚/离异
     cert_type          varchar(20),                     -- 证件类型 身份证/护照/其他
     cert_no            varchar(50),                     -- 证件号码（敏感，脱敏）
@@ -284,6 +285,8 @@ CREATE TABLE IF NOT EXISTS sys_person_ext (
 );
 
 COMMENT ON TABLE  sys_person_ext              IS '人员扩展信息（一对一挂sys_user；任职/合同薪酬/社保保险/证件/住宿登记）';
+ALTER TABLE sys_person_ext ADD COLUMN IF NOT EXISTS dingtalk_account varchar(128);
+COMMENT ON COLUMN sys_person_ext.dingtalk_account IS '人员登记的钉钉号；仅作账号信息，钉钉身份绑定和消息推送待接入';
 COMMENT ON COLUMN sys_person_ext.user_id      IS '主键=sys_user.user_id（员工ID，不变）';
 COMMENT ON COLUMN sys_person_ext.cert_no      IS '证件号码（敏感，脱敏展示）';
 COMMENT ON COLUMN sys_person_ext.hire_date    IS '入职日期（必填）';
@@ -1825,20 +1828,20 @@ CREATE INDEX IF NOT EXISTS idx_rd_style_customer ON rd_style(customer_id);
 CREATE INDEX IF NOT EXISTS idx_rd_style_category ON rd_style(category_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_rd_style_cover ON rd_style(cover_oss_id) WHERE cover_oss_id IS NOT NULL;
 COMMENT ON TABLE rd_style IS '款式主档，研发、样衣任务和生产订单共用';
-COMMENT ON COLUMN rd_style.style_id IS '跨业务引用的稳定款式ID';
-COMMENT ON COLUMN rd_style.internal_code IS '款号，全局不区分大小写唯一';
-COMMENT ON COLUMN rd_style.style_name IS '款式名称';
-COMMENT ON COLUMN rd_style.customer_id IS '所属客户，无客户的自主研发可留空';
-COMMENT ON COLUMN rd_style.category_id IS '公共分类节点，执行人员分类权限';
-COMMENT ON COLUMN rd_style.season IS '季节，例如2026秋冬';
-COMMENT ON COLUMN rd_style.description IS '款式说明';
-COMMENT ON COLUMN rd_style.cover_oss_id IS '私有款式主图文件ID';
-COMMENT ON COLUMN rd_style.status IS '0启用，1停用，停用后不可新选';
-COMMENT ON COLUMN rd_style.remark IS '款式备注';
-COMMENT ON COLUMN rd_style.create_by IS '创建账号ID';
-COMMENT ON COLUMN rd_style.create_time IS '创建时间';
-COMMENT ON COLUMN rd_style.update_by IS '最后修改账号ID';
-COMMENT ON COLUMN rd_style.update_time IS '最后修改时间';
+COMMENT ON COLUMN rd_style.style_id IS '款式档案主键，订单、样衣和 BOM 通过此稳定 ID 引用';
+COMMENT ON COLUMN rd_style.internal_code IS '客户款号，款式对外识别编码；有效档案中忽略大小写唯一';
+COMMENT ON COLUMN rd_style.style_name IS '款式名称，用于档案、订单和生产任务展示';
+COMMENT ON COLUMN rd_style.customer_id IS '所属客户主键，关联 customer_master.customer_id；自主研发且未归属客户时可为空';
+COMMENT ON COLUMN rd_style.category_id IS '款式所属分类节点，关联 base_category.category_id；查询及新引用受人员分类授权控制';
+COMMENT ON COLUMN rd_style.season IS '款式季节统计维度，新数据使用不含年份的季节选项，历史文本保留原值';
+COMMENT ON COLUMN rd_style.description IS '款式整体说明，不替代颜色尺码、套装配套或 BOM 明细';
+COMMENT ON COLUMN rd_style.cover_oss_id IS '款式主图文件 ID，关联 sys_oss.oss_id；通过私有文件接口鉴权读取';
+COMMENT ON COLUMN rd_style.status IS '档案状态：0 启用，可供新业务选择；1 停用，仅保留历史引用显示';
+COMMENT ON COLUMN rd_style.remark IS '款式档案补充备注，不存订单处理意见';
+COMMENT ON COLUMN rd_style.create_by IS '创建款式档案的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN rd_style.create_time IS '款式档案首次创建时间';
+COMMENT ON COLUMN rd_style.update_by IS '最后修改款式档案的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN rd_style.update_time IS '款式档案最后一次保存时间';
 COMMENT ON INDEX rd_style_pkey IS '款式稳定主键';
 COMMENT ON INDEX uq_rd_style_internal_code IS '款号唯一校验';
 COMMENT ON INDEX idx_rd_style_customer IS '客户维度查询与引用检查';
@@ -1882,7 +1885,7 @@ ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS production_mode varchar(12) NOT NU
 ALTER TABLE rd_style ADD COLUMN IF NOT EXISTS same_hanger boolean NOT NULL DEFAULT false
     CHECK (NOT same_hanger OR production_mode='combined');
 COMMENT ON COLUMN rd_style.production_mode IS '款式生产模式：single 单款，combined 合并生产套装，separate 分开生产套装';
-COMMENT ON COLUMN rd_style.same_hanger IS '合并生产套装是否要求所有子款在同一衣架生产';
+COMMENT ON COLUMN rd_style.same_hanger IS '是否要求合并生产套装的所有组成子款共用同一衣架：true=要求，false=不要求；仅合并生产方式适用';
 
 CREATE TABLE IF NOT EXISTS rd_style_member (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -1895,11 +1898,11 @@ CREATE TABLE IF NOT EXISTS rd_style_member (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_member_child ON rd_style_member(child_id);
 COMMENT ON TABLE rd_style_member IS '套装与独立子款的组成关系，移除关系不删除子款';
-COMMENT ON COLUMN rd_style_member.style_id IS '套装款式ID';
-COMMENT ON COLUMN rd_style_member.child_id IS '单款子款ID';
-COMMENT ON COLUMN rd_style_member.role_name IS '子款在本套装内的用途，如上衣或帽子';
-COMMENT ON COLUMN rd_style_member.quantity IS '每套含本子款的件数';
-COMMENT ON COLUMN rd_style_member.sort_order IS '套装内的展示顺序';
+COMMENT ON COLUMN rd_style_member.style_id IS '所属套装款式主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_member.child_id IS '组成套装的独立单款主键，关联 rd_style.style_id；移除组成不删除子款档案';
+COMMENT ON COLUMN rd_style_member.role_name IS '子款在此套装中的业务名称，例如上衣、下装或帽子';
+COMMENT ON COLUMN rd_style_member.quantity IS '每一套包含的本子款件数，必须为正整数';
+COMMENT ON COLUMN rd_style_member.sort_order IS '套装子款显示和处理顺序，数值越小越靠前';
 
 CREATE TABLE IF NOT EXISTS rd_style_color (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -1908,8 +1911,8 @@ CREATE TABLE IF NOT EXISTS rd_style_color (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_color_color ON rd_style_color(color_id);
 COMMENT ON TABLE rd_style_color IS '单款可用颜色';
-COMMENT ON COLUMN rd_style_color.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_color.color_id IS '公共颜色ID';
+COMMENT ON COLUMN rd_style_color.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_color.color_id IS '单款可用颜色主键，关联 base_color.color_id';
 
 CREATE TABLE IF NOT EXISTS rd_style_size (
     style_id bigint NOT NULL REFERENCES rd_style(style_id) ON DELETE CASCADE,
@@ -1918,8 +1921,8 @@ CREATE TABLE IF NOT EXISTS rd_style_size (
 );
 CREATE INDEX IF NOT EXISTS idx_rd_style_size_size ON rd_style_size(size_id);
 COMMENT ON TABLE rd_style_size IS '单款可用尺码，保存具体尺码而非尺码组';
-COMMENT ON COLUMN rd_style_size.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_size.size_id IS '公共尺码ID';
+COMMENT ON COLUMN rd_style_size.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_size.size_id IS '单款可用尺码主键，关联 sys_size.id；此处保存实际尺码而非尺码组';
 
 CREATE TABLE IF NOT EXISTS rd_style_spec_exclusion (
     style_id bigint NOT NULL,
@@ -1930,9 +1933,9 @@ CREATE TABLE IF NOT EXISTS rd_style_spec_exclusion (
     FOREIGN KEY (style_id,size_id) REFERENCES rd_style_size(style_id,size_id) ON DELETE CASCADE
 );
 COMMENT ON TABLE rd_style_spec_exclusion IS '单款明确排除的颜色尺码组合，其余组合由所选颜色和尺码自动生成';
-COMMENT ON COLUMN rd_style_spec_exclusion.style_id IS '单款ID';
-COMMENT ON COLUMN rd_style_spec_exclusion.color_id IS '不可配对的颜色ID';
-COMMENT ON COLUMN rd_style_spec_exclusion.size_id IS '不可配对的尺码ID';
+COMMENT ON COLUMN rd_style_spec_exclusion.style_id IS '单款档案主键，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_spec_exclusion.color_id IS '被排除组合的颜色主键，关联 base_color.color_id';
+COMMENT ON COLUMN rd_style_spec_exclusion.size_id IS '被排除组合的尺码主键，关联 sys_size.id';
 
 -- 让款式分组可在录入首个标签之前维护。
 INSERT INTO sys_tag_module(module_key,module_name) VALUES ('rd_style','款式档案')
@@ -1960,10 +1963,10 @@ CREATE TABLE IF NOT EXISTS rd_style_attachment (
  PRIMARY KEY(style_id,oss_id)
 );
 COMMENT ON TABLE rd_style_attachment IS '款式与子款的图片、标识及文档附件，按款式权限控制访问';
-COMMENT ON COLUMN rd_style_attachment.style_id IS '所属款式ID，套装和子款分别维护';
-COMMENT ON COLUMN rd_style_attachment.oss_id IS '私有文件ID，同一文件只可关联一个款式';
-COMMENT ON COLUMN rd_style_attachment.category IS '附件类型：款式图片、主标、尺码标、洗标、吊牌、吊牌贴纸或文档';
-COMMENT ON COLUMN rd_style_attachment.sort_order IS '同款附件展示顺序';
+COMMENT ON COLUMN rd_style_attachment.style_id IS '所属款式或子款主键，关联 rd_style.style_id；套装及子款各自维护附件';
+COMMENT ON COLUMN rd_style_attachment.oss_id IS '私有对象存储文件主键，关联 sys_oss.oss_id；同一文件仅能关联一个款式';
+COMMENT ON COLUMN rd_style_attachment.category IS '附件类型：style_image 款式图片、main_label 主标、size_label 尺码标、wash_label 洗标、hang_tag 吊牌、tag_sticker 吊牌贴纸、document 文档';
+COMMENT ON COLUMN rd_style_attachment.sort_order IS '同一款式同类附件的展示顺序，数值越小越靠前';
 DO $$
 DECLARE app_role text;
 BEGIN
@@ -1984,12 +1987,12 @@ CREATE TABLE IF NOT EXISTS rd_style_set_spec (
     CONSTRAINT rd_style_set_spec_name_unique UNIQUE (style_id, color_name, size_name) DEFERRABLE INITIALLY IMMEDIATE
 );
 COMMENT ON TABLE rd_style_set_spec IS '套装常用配色配码规格';
-COMMENT ON COLUMN rd_style_set_spec.id IS '套装规格ID';
-COMMENT ON COLUMN rd_style_set_spec.style_id IS '所属套装款式ID';
-COMMENT ON COLUMN rd_style_set_spec.color_name IS '套装配色名称';
-COMMENT ON COLUMN rd_style_set_spec.size_name IS '套装尺码名称';
-COMMENT ON COLUMN rd_style_set_spec.remark IS '规格备注';
-COMMENT ON COLUMN rd_style_set_spec.sort_order IS '展示顺序';
+COMMENT ON COLUMN rd_style_set_spec.id IS '套装规格记录主键，供本表子款配套明细关联';
+COMMENT ON COLUMN rd_style_set_spec.style_id IS '所属套装款式，关联 rd_style.style_id；删除套装档案时级联删除其规格';
+COMMENT ON COLUMN rd_style_set_spec.color_name IS '套装配色方案名称，用于业务员识别整套颜色搭配';
+COMMENT ON COLUMN rd_style_set_spec.size_name IS '套装尺码方案名称；可与各子款实际尺码不同';
+COMMENT ON COLUMN rd_style_set_spec.remark IS '该套装配色配码方案的补充说明';
+COMMENT ON COLUMN rd_style_set_spec.sort_order IS '规格方案显示顺序，数值越小越靠前';
 CREATE TABLE IF NOT EXISTS rd_style_set_spec_item (
     spec_id BIGINT NOT NULL REFERENCES rd_style_set_spec(id) ON DELETE CASCADE,
     child_id BIGINT NOT NULL REFERENCES rd_style(style_id),
@@ -1998,10 +2001,10 @@ CREATE TABLE IF NOT EXISTS rd_style_set_spec_item (
     PRIMARY KEY (spec_id, child_id)
 );
 COMMENT ON TABLE rd_style_set_spec_item IS '套装规格对应的子款颜色尺码';
-COMMENT ON COLUMN rd_style_set_spec_item.spec_id IS '所属套装规格ID';
-COMMENT ON COLUMN rd_style_set_spec_item.child_id IS '组成子款ID';
-COMMENT ON COLUMN rd_style_set_spec_item.color_id IS '子款颜色ID';
-COMMENT ON COLUMN rd_style_set_spec_item.size_id IS '子款尺码ID';
+COMMENT ON COLUMN rd_style_set_spec_item.spec_id IS '所属套装规格，关联 rd_style_set_spec.id；删除规格时级联删除配套明细';
+COMMENT ON COLUMN rd_style_set_spec_item.child_id IS '本配套中的单款子款，关联 rd_style.style_id';
+COMMENT ON COLUMN rd_style_set_spec_item.color_id IS '该子款实际使用的颜色，关联 base_color.color_id';
+COMMENT ON COLUMN rd_style_set_spec_item.size_id IS '该子款实际使用的尺码，关联 sys_size.id；允许同套装内子款异码';
 CREATE INDEX IF NOT EXISTS idx_rd_style_set_spec_item_child ON rd_style_set_spec_item(child_id);
 
 -- 沿用款式档案的应用数据库角色。
@@ -2027,12 +2030,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_material_code ON inv_m
 DROP INDEX IF EXISTS uq_inv_material_variant_code;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inv_material_variant_name ON inv_material_variant(material_id,lower(name));
 COMMENT ON TABLE inv_material_variant IS '物料可独立引用的库存规格，停用保留历史标识';
-COMMENT ON COLUMN inv_material.multi_spec IS '是否要求业务明细指定物料规格，false 表示按档案引用';
-COMMENT ON COLUMN inv_material_variant.variant_id IS '物料规格主键，供BOM及后续库存单据引用';
-COMMENT ON COLUMN inv_material_variant.material_id IS '所属物料，关联 inv_material.material_id';
-COMMENT ON COLUMN inv_material_variant.code IS '物料规格编码，同一物料内不区分大小写唯一';
-COMMENT ON COLUMN inv_material_variant.name IS '规格名称，同一物料内不区分大小写唯一';
-COMMENT ON COLUMN inv_material_variant.status IS '状态：0启用，1停用';
+COMMENT ON COLUMN inv_material.multi_spec IS '是否启用多规格：true=业务行必须指定一个物料规格，false=直接引用物料主档';
+COMMENT ON COLUMN inv_material_variant.variant_id IS '物料规格稳定主键，BOM、采购和库存明细使用此 ID 区分规格库存';
+COMMENT ON COLUMN inv_material_variant.material_id IS '所属物料主键，关联 inv_material.material_id；删除物料时须先处理其规格';
+COMMENT ON COLUMN inv_material_variant.code IS '物料规格编码；同一物料内忽略大小写唯一，不同物料允许复用编码';
+COMMENT ON COLUMN inv_material_variant.name IS '物料规格名称；同一物料内忽略大小写唯一';
+COMMENT ON COLUMN inv_material_variant.status IS '规格状态：0 启用，可用于新业务；1 停用，仅保留历史引用';
 DO $$ DECLARE app_role text; BEGIN
  SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
  EXECUTE format('GRANT SELECT,INSERT,UPDATE ON public.inv_material_variant TO %I',app_role);
@@ -2043,8 +2046,8 @@ COMMIT;
 BEGIN;
 ALTER TABLE inv_material ADD COLUMN IF NOT EXISTS variant_fields jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE inv_material_variant ADD COLUMN IF NOT EXISTS attributes jsonb NOT NULL DEFAULT '{}';
-COMMENT ON COLUMN inv_material.variant_fields IS '当前属性模板中按独立规格填写的字段键数组';
-COMMENT ON COLUMN inv_material_variant.attributes IS '按模板字段键保存该物料规格的属性值，单位由模板定义';
+COMMENT ON COLUMN inv_material.variant_fields IS '物料档案中改为逐规格维护的模板稳定字段键数组；未列出的字段仍按物料主档共用';
+COMMENT ON COLUMN inv_material_variant.attributes IS '本物料规格的属性值 JSON，以模板稳定字段键为键，字段值类型和单位遵循所选规格模板';
 COMMIT;
 
 BEGIN;
@@ -2101,11 +2104,11 @@ ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS create_time timestamptz;
 ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS update_by bigint;
 ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_by bigint;
 ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS release_time timestamptz;
-COMMENT ON COLUMN rd_style_bom.create_by IS '创建本版本的用户 ID，历史版本可能未记录';
-COMMENT ON COLUMN rd_style_bom.create_time IS '本版本首次保存时间，历史版本可能未记录';
-COMMENT ON COLUMN rd_style_bom.update_by IS '最近一次保存本版本的用户 ID';
-COMMENT ON COLUMN rd_style_bom.release_by IS '发布本版本的用户 ID，历史版本可能未记录';
-COMMENT ON COLUMN rd_style_bom.release_time IS '本版本发布时间，历史版本可能未记录';
+COMMENT ON COLUMN rd_style_bom.create_by IS '创建本 BOM 版本的登录人员，关联 sys_user.user_id；旧版本可能为空';
+COMMENT ON COLUMN rd_style_bom.create_time IS '本 BOM 版本首次保存时间；迁移前历史版本可能为空';
+COMMENT ON COLUMN rd_style_bom.update_by IS '最近一次保存本 BOM 版本的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN rd_style_bom.release_by IS '发布本 BOM 版本的登录人员，关联 sys_user.user_id；草稿或历史版本可能为空';
+COMMENT ON COLUMN rd_style_bom.release_time IS '本 BOM 版本正式发布的时间；未发布版本为空';
 ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS bom_code varchar(60);
 ALTER TABLE rd_style_bom ADD COLUMN IF NOT EXISTS preparer_id bigint;
 -- 历史记录使用专用前缀保留稳定标识，避免与新单日期流水冲突。
@@ -2114,18 +2117,18 @@ UPDATE rd_style_bom SET preparer_id = create_by WHERE preparer_id IS NULL;
 ALTER TABLE rd_style_bom ALTER COLUMN bom_code SET NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_rd_style_bom_code ON rd_style_bom (lower(bom_code));
 COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
-COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，关联 sys_user.user_id；可在制单时选择，与记录创建人和实际操作审计人分开';
 
 COMMENT ON TABLE rd_style_bom IS '款式用料清单版本，发布版保留用料与单位快照';
-COMMENT ON COLUMN rd_style_bom.id IS '用料清单版本主键';
+COMMENT ON COLUMN rd_style_bom.id IS '款式 BOM 版本主键，供订单算料和审批关联使用';
 COMMENT ON COLUMN rd_style_bom.bom_code IS 'BOM 单号，全局唯一，可编辑；系统默认按日期和流水号生成';
-COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，可由制单时选择；与系统创建人及操作审计人分开记录';
+COMMENT ON COLUMN rd_style_bom.preparer_id IS '业务制单人，关联 sys_user.user_id；可在制单时选择，与记录创建人和实际操作审计人分开';
 COMMENT ON COLUMN rd_style_bom.style_id IS '所属款式，关联 rd_style.style_id';
-COMMENT ON COLUMN rd_style_bom.version IS '同款式内唯一的正整数版本号，默认递增，草稿可编辑';
-COMMENT ON COLUMN rd_style_bom.status IS 'draft草稿、released已发布';
-COMMENT ON COLUMN rd_style_bom.remark IS '版本说明';
-COMMENT ON COLUMN rd_style_bom.rules IS '结构化用料规则，含子款、用料位置、适用色码、物料及用量单位快照';
-COMMENT ON COLUMN rd_style_bom.update_time IS '最近保存或发布时间';
+COMMENT ON COLUMN rd_style_bom.version IS '同一款式内唯一的正整数版本号；新建时建议递增，草稿可编辑';
+COMMENT ON COLUMN rd_style_bom.status IS '版本状态：draft 草稿，可修改；released 已发布，供订单算料使用且不可覆盖';
+COMMENT ON COLUMN rd_style_bom.remark IS '本 BOM 版本的变更原因或业务说明';
+COMMENT ON COLUMN rd_style_bom.rules IS '结构化用料 JSON，按子款及适用颜色尺码保存物料、物料规格、颜色、单位、换算系数和用量快照';
+COMMENT ON COLUMN rd_style_bom.update_time IS '本 BOM 版本最近保存或发布的时间';
 INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
 SELECT 1762900000000000130,parent_id,'款式 BOM',20,'style-boms','rd/StyleBomManage','N','Y','C','0','0','rd:bom:list','#',now()
 FROM sys_menu WHERE perms='rd:style:list'
@@ -2163,4 +2166,249 @@ BEGIN
     SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON sys_user_business_duty TO %I',app_role);
 END $$;
+COMMIT;
+-- 审批模块独立挂载角色权限；个人功能此前对登录人员开放，升级时保留现有角色访问。
+BEGIN;
+CREATE TEMP TABLE approval_permission_migration_flag ON COMMIT DROP AS
+SELECT NOT EXISTS (SELECT 1 FROM sys_menu WHERE menu_id=1763200000000000000) AS first_install;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time) VALUES
+(1763200000000000000,0,'审批',70,'approval','','N','Y','M','0','0','','#',now()),
+(1763200000000000001,1763200000000000000,'流程定义',10,'definitions','approval/definitions','N','Y','C','0','0','workflow:definition:list','#',now()),
+(1763200000000000002,1763200000000000000,'我的待办',20,'waiting','approval/waiting','N','Y','C','0','0','approval:waiting:list','#',now()),
+(1763200000000000003,1763200000000000000,'我发起的',30,'initiated','approval/initiated','N','Y','C','0','0','approval:initiated:list','#',now()),
+(1763200000000000004,1763200000000000000,'我的已办',40,'finished','approval/finished','N','Y','C','0','0','approval:finished:list','#',now()),
+(1763200000000000005,1763200000000000000,'审批对象配置',50,'bindings','approval/bindings','N','Y','C','0','0','approval:binding:list','#',now()),
+(1763200000000000006,1763200000000000002,'审批办理',10,'#','','N','Y','F','0','0','approval:waiting:handle','#',now()),
+(1763200000000000007,1763200000000000005,'配置审批对象',10,'#','','N','Y','F','0','0','approval:binding:edit','#',now()),
+(1763200000000000008,1763200000000000001,'新增流程',10,'#','','N','Y','F','0','0','workflow:definition:add','#',now()),
+(1763200000000000009,1763200000000000001,'发布流程',20,'#','','N','Y','F','0','0','workflow:definition:publish','#',now())
+ON CONFLICT (menu_id) DO NOTHING;
+-- 迁移前个人审批功能未限制角色；沿用访问权限，之后可在角色管理中调整。
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT r.role_id,m.menu_id FROM sys_role r CROSS JOIN sys_menu m
+WHERE (SELECT first_install FROM approval_permission_migration_flag) AND r.del_flag='0' AND m.menu_id IN (1763200000000000000,1763200000000000002,1763200000000000003,1763200000000000004,1763200000000000006)
+ON CONFLICT DO NOTHING;
+-- 管理权限按已有等价权限迁移，不向无相关权限的角色额外授予配置权。
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT rm.role_id, target.menu_id FROM sys_role_menu rm JOIN sys_menu old ON old.menu_id=rm.menu_id
+JOIN sys_menu target ON target.menu_id=CASE old.perms WHEN 'workflow:definition:list' THEN 1763200000000000001 WHEN 'workflow:definition:add' THEN 1763200000000000008 WHEN 'workflow:definition:publish' THEN 1763200000000000009 WHEN 'system:config:list' THEN 1763200000000000005 WHEN 'system:config:edit' THEN 1763200000000000007 END
+WHERE (SELECT first_install FROM approval_permission_migration_flag)
+ON CONFLICT DO NOTHING;
+COMMIT;
+-- 将框架预置的部门负责人表达式接到织云组织架构。
+UPDATE flow_spel
+SET method_name='selectOrgLeaderById', method_params='initiatorOrgId',
+    view_spel='#{@spelRuleComponent.selectOrgLeaderById(#initiatorOrgId)}',
+    remark='发起人所在部门负责人', update_time=now()
+WHERE component_name='spelRuleComponent'
+  AND method_name='selectDeptLeaderById' AND method_params='initiatorDeptId';
+
+-- 沿用框架原有按钮 ID 和角色关系，将维护权限显示在审批模块下。
+UPDATE sys_menu
+SET parent_id=1763200000000000001, status='0'
+WHERE parent_id=1761400000000011620
+  AND perms IN ('workflow:definition:query','workflow:definition:edit','workflow:definition:remove',
+                'workflow:definition:export','workflow:definition:import','workflow:definition:copy','workflow:definition:active')
+  AND EXISTS (SELECT 1 FROM sys_menu WHERE menu_id=1763200000000000001);
+-- 将框架原有流程分类菜单挂入审批模块，保留原有权限编号和角色授权。
+UPDATE sys_menu SET parent_id=1763200000000000000,menu_name='流程类别',path='categories',component='approval/categories',status='0',visible='0'
+WHERE menu_id=1761400000000011622 AND EXISTS (SELECT 1 FROM sys_menu WHERE menu_id=1763200000000000000);
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT role_id,1763200000000000000 FROM sys_role_menu WHERE menu_id=1761400000000011622
+ON CONFLICT DO NOTHING;
+-- 在审批模块注册个人抄送入口，保留此前可查看抄送的角色访问。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+VALUES(1763200000000000010,1763200000000000000,'我的抄送',45,'copies','approval/copies','N','Y','C','0','0','approval:copy:list','#',now())
+ON CONFLICT (menu_id) DO NOTHING;
+INSERT INTO sys_role_menu(role_id,menu_id)
+SELECT DISTINCT role_id,1763200000000000010 FROM sys_role_menu WHERE menu_id=1761400000000011628
+ON CONFLICT DO NOTHING;
+-- 框架前端能力接入：恢复原有菜单入口并补充新控制台权限。
+-- 保留已存在菜单ID和角色授权；新入口仅登记为可分配权限，不默认授予任何角色。
+BEGIN;
+
+-- 在应用的审批和系统管理目录下补齐框架页面入口。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT v.menu_id,v.parent_id,v.menu_name,v.order_num,v.path,v.component,'N','Y','C','0','0',v.perms,'#',now()
+FROM (VALUES
+ (1763300000000000001::bigint,1763200000000000000::bigint,'流程实例',60,'instances','approval/instances','workflow:instance:list'),
+ (1763300000000000002::bigint,1763200000000000000::bigint,'任务监控',70,'task-monitor','approval/task-monitor','workflow:task:list'),
+ (1763300000000000003::bigint,1763200000000000000::bigint,'流程表达式',80,'expressions','approval/expressions','workflow:spel:list'),
+ (1763300000000000004::bigint,1763200000000000000::bigint,'请假流程示例',90,'leave-demo','approval/leave-demo','workflow:leave:list'),
+ (1763300000000000011::bigint,1761400000000000001::bigint,'通知公告',110,'notice','system/notice/index','system:notice:list'),
+ (1763300000000000012::bigint,1761400000000000001::bigint,'登录日志',120,'loginInfo','monitor/loginInfo/index','monitor:logininfo:list'),
+ (1763300000000000013::bigint,1761400000000000001::bigint,'代码生成',130,'generator','tool/gen/index','tool:gen:list'),
+ (1763300000000000014::bigint,1761400000000000001::bigint,'Admin 监控',140,'admin-monitor','monitor/admin/index','monitor:admin:list'),
+ (1763300000000000015::bigint,1761400000000000001::bigint,'SnailJob 任务调度',150,'snailjob','system/snailjob/index','system:snailjob:list'),
+ (1763300000000000016::bigint,1761400000000000001::bigint,'SnailAI 智能体',160,'snailai','system/snailai/index','system:snailai:list'),
+ (1763300000000000017::bigint,1761400000000000001::bigint,'接口文档',170,'api-docs','system/api-docs/index','system:api-docs:list')
+) AS v(menu_id,parent_id,menu_name,order_num,path,component,perms)
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu existing WHERE existing.perms=v.perms)
+ON CONFLICT(menu_id) DO NOTHING;
+
+-- 复用旧框架菜单记录和角色关系，迁移到当前系统目录并启用入口。
+UPDATE sys_menu SET parent_id=1763200000000000000,menu_name='流程实例',order_num=60,path='instances',component='approval/instances',menu_type='C',visible='0',status='0'
+WHERE perms='workflow:instance:list';
+UPDATE sys_menu SET parent_id=1763200000000000000,menu_name='任务监控',order_num=70,path='task-monitor',component='approval/task-monitor',menu_type='C',visible='0',status='0'
+WHERE perms='workflow:task:list';
+UPDATE sys_menu SET parent_id=1763200000000000000,menu_name='流程表达式',order_num=80,path='expressions',component='approval/expressions',menu_type='C',visible='0',status='0'
+WHERE perms='workflow:spel:list';
+UPDATE sys_menu SET parent_id=1763200000000000000,menu_name='请假流程示例',order_num=90,path='leave-demo',component='approval/leave-demo',menu_type='C',visible='0',status='0'
+WHERE perms='workflow:leave:list';
+
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='通知公告',order_num=110,path='notice',component='system/notice/index',menu_type='C',visible='0',status='0'
+WHERE perms='system:notice:list';
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='登录日志',order_num=120,path='loginInfo',component='monitor/loginInfo/index',menu_type='C',visible='0',status='0'
+WHERE perms='monitor:logininfo:list';
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='代码生成',order_num=130,path='generator',component='tool/gen/index',menu_type='C',visible='0',status='0'
+WHERE perms='tool:gen:list';
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='Admin 监控',order_num=140,path='admin-monitor',component='monitor/admin/index',menu_type='C',visible='0',status='0'
+WHERE perms='monitor:admin:list';
+
+-- SnailJob、SnailAI 与接口文档入口；升级时按固定菜单 ID 对齐，不复制已有权限标识。
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='SnailJob 任务调度',order_num=150,path='snailjob',component='system/snailjob/index',menu_type='C',visible='0',status='0',perms='system:snailjob:list'
+WHERE menu_id=1763300000000000015;
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='SnailAI 智能体',order_num=160,path='snailai',component='system/snailai/index',menu_type='C',visible='0',status='0',perms='system:snailai:list'
+WHERE menu_id=1763300000000000016;
+UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='接口文档',order_num=170,path='api-docs',component='system/api-docs/index',menu_type='C',visible='0',status='0',perms='system:api-docs:list'
+WHERE menu_id=1763300000000000017;
+
+-- 确保框架端点所需的可分配操作权限存在；不自动写入 sys_role_menu。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT v.menu_id,parent.menu_id,v.menu_name,v.order_num,'#','','N','Y','F','0','0',v.perms,'#',now()
+FROM (VALUES
+ (1763300000000000101::bigint,'实例查询','workflow:instance:query','workflow:instance:list',1),
+ (1763300000000000102::bigint,'实例变量查看','workflow:instance:variableQuery','workflow:instance:list',2),
+ (1763300000000000103::bigint,'实例变量修改','workflow:instance:variable','workflow:instance:list',3),
+ (1763300000000000104::bigint,'实例暂停恢复','workflow:instance:active','workflow:instance:list',4),
+ (1763300000000000105::bigint,'实例删除','workflow:instance:remove','workflow:instance:list',5),
+ (1763300000000000106::bigint,'实例作废','workflow:instance:invalid','workflow:instance:list',6),
+ (1763300000000000107::bigint,'实例撤销','workflow:instance:cancel','workflow:instance:list',7),
+ (1763300000000000108::bigint,'任务改派','workflow:task:edit','workflow:task:list',1),
+ (1763300000000000109::bigint,'表达式查看','workflow:spel:query','workflow:spel:list',1),
+ (1763300000000000110::bigint,'表达式新增','workflow:spel:add','workflow:spel:list',2),
+ (1763300000000000111::bigint,'表达式修改','workflow:spel:edit','workflow:spel:list',3),
+ (1763300000000000112::bigint,'表达式删除','workflow:spel:remove','workflow:spel:list',4),
+ (1763300000000000113::bigint,'请假示例查看','workflow:leave:query','workflow:leave:list',1),
+ (1763300000000000114::bigint,'请假示例新增','workflow:leave:add','workflow:leave:list',2),
+ (1763300000000000115::bigint,'请假示例修改','workflow:leave:edit','workflow:leave:list',3),
+ (1763300000000000116::bigint,'请假示例删除','workflow:leave:remove','workflow:leave:list',4),
+ (1763300000000000117::bigint,'通知公告详情','system:notice:query','system:notice:list',1),
+ (1763300000000000118::bigint,'通知公告新增','system:notice:add','system:notice:list',2),
+ (1763300000000000119::bigint,'通知公告修改','system:notice:edit','system:notice:list',3),
+ (1763300000000000120::bigint,'通知公告删除','system:notice:remove','system:notice:list',4),
+ (1763300000000000121::bigint,'代码生成查看','tool:gen:query','tool:gen:list',1),
+ (1763300000000000122::bigint,'代码生成配置','tool:gen:edit','tool:gen:list',2),
+ (1763300000000000123::bigint,'代码生成删除','tool:gen:remove','tool:gen:list',3),
+ (1763300000000000124::bigint,'代码生成导入','tool:gen:import','tool:gen:list',4),
+ (1763300000000000125::bigint,'代码生成预览','tool:gen:preview','tool:gen:list',5),
+ (1763300000000000126::bigint,'代码下载','tool:gen:code','tool:gen:list',6),
+ (1763300000000000127::bigint,'登录日志删除','monitor:logininfo:remove','monitor:logininfo:list',1),
+ (1763300000000000128::bigint,'登录日志导出','monitor:logininfo:export','monitor:logininfo:list',2),
+ (1763300000000000129::bigint,'登录账户解锁','monitor:logininfo:unlock','monitor:logininfo:list',3)
+) AS v(menu_id,menu_name,perms,parent_perm,order_num)
+JOIN sys_menu parent ON parent.perms=v.parent_perm AND parent.menu_type='C'
+WHERE NOT EXISTS(SELECT 1 FROM sys_menu existing WHERE existing.perms=v.perms)
+ON CONFLICT(menu_id) DO NOTHING;
+
+-- 将已存在的按钮授权节点挂到对应功能页面下，保留其 menu_id 和角色授权关系。
+UPDATE sys_menu child SET parent_id=parent.menu_id,status='0'
+FROM sys_menu parent
+WHERE child.menu_type='F'
+  AND ((child.perms LIKE 'workflow:instance:%' AND parent.perms='workflow:instance:list')
+    OR (child.perms LIKE 'workflow:task:%' AND parent.perms='workflow:task:list')
+    OR (child.perms LIKE 'workflow:spel:%' AND parent.perms='workflow:spel:list')
+    OR (child.perms LIKE 'workflow:leave:%' AND parent.perms='workflow:leave:list')
+    OR (child.perms LIKE 'system:notice:%' AND parent.perms='system:notice:list')
+    OR (child.perms LIKE 'tool:gen:%' AND parent.perms='tool:gen:list')
+    OR (child.perms LIKE 'monitor:logininfo:%' AND parent.perms='monitor:logininfo:list'));
+
+COMMIT;
+
+-- SnailAI ERP 员工对话和 MCP 调用诊断记录。
+-- 管理页与 API 使用 system:snailai:trace:list；脚本不默认授权任何角色。
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS sys_snail_ai_chat_trace (
+    trace_id          varchar(36)  NOT NULL,
+    user_id           bigint       NOT NULL,
+    nickname          varchar(100) NOT NULL DEFAULT '',
+    agent_id          bigint,
+    conversation_id   varchar(128) NOT NULL DEFAULT '',
+    question          text         NOT NULL DEFAULT '',
+    answer            text         NOT NULL DEFAULT '',
+    attachment_summary text        NOT NULL DEFAULT '[]',
+    visible_tools     text         NOT NULL DEFAULT '[]',
+    status            varchar(24)  NOT NULL DEFAULT 'RUNNING',
+    error_message     text         NOT NULL DEFAULT '',
+    duration_ms       bigint       NOT NULL DEFAULT 0,
+    started_at        timestamp    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at       timestamp,
+    CONSTRAINT sys_snail_ai_chat_trace_pk PRIMARY KEY (trace_id)
+);
+
+COMMENT ON TABLE sys_snail_ai_chat_trace IS 'SnailAI ERP员工对话诊断记录，含提问、回复、可见工具和运行状态；限授权管理员查看';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.trace_id IS 'ERP 本地随机诊断编号，不是 SnailAI 对话编号';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.user_id IS '发起本轮对话的 ERP 员工ID';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.nickname IS '发起时的员工昵称快照';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.agent_id IS '本轮使用的 SnailAI 智能体ID';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.conversation_id IS 'SnailAI 对话编号';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.question IS '员工本轮提问，长度受应用限制';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.answer IS '本轮模型流式文本回复';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.attachment_summary IS '附件名称、类型、大小和解析字符数，不保存原始文件或音频';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.visible_tools IS '按发起员工权限过滤后交给本轮模型的工具清单';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.status IS '本轮状态：RUNNING、SUCCEEDED、FAILED 或 CANCELLED';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.error_message IS '失败或取消原因，服务端已限制长度并脱敏';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.duration_ms IS '本轮处理耗时，单位毫秒';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.started_at IS '本轮开始时间';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.finished_at IS '本轮结束时间';
+
+CREATE INDEX IF NOT EXISTS idx_snail_ai_trace_started ON sys_snail_ai_chat_trace (started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_snail_ai_trace_user_started ON sys_snail_ai_chat_trace (user_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_snail_ai_trace_status_started ON sys_snail_ai_chat_trace (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_snail_ai_trace_conversation ON sys_snail_ai_chat_trace (conversation_id);
+
+CREATE TABLE IF NOT EXISTS sys_snail_ai_tool_trace (
+    event_id           varchar(36)  NOT NULL,
+    trace_id           varchar(36)  NOT NULL,
+    tool_name          varchar(160) NOT NULL,
+    tool_description   varchar(1000) NOT NULL DEFAULT '',
+    arguments_preview  text         NOT NULL DEFAULT '',
+    result_preview     text         NOT NULL DEFAULT '',
+    status             varchar(24)  NOT NULL DEFAULT 'RUNNING',
+    error_message      text         NOT NULL DEFAULT '',
+    duration_ms        bigint       NOT NULL DEFAULT 0,
+    started_at         timestamp    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at        timestamp,
+    CONSTRAINT sys_snail_ai_tool_trace_pk PRIMARY KEY (event_id),
+    CONSTRAINT sys_snail_ai_tool_trace_chat_fk FOREIGN KEY (trace_id)
+        REFERENCES sys_snail_ai_chat_trace (trace_id) ON DELETE CASCADE
+);
+
+COMMENT ON TABLE sys_snail_ai_tool_trace IS 'SnailAI 本轮 MCP/Skill 工具调用诊断事件';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.event_id IS '工具调用事件随机编号';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.trace_id IS '所属 ERP 员工对话诊断编号';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_name IS '实际调用的 MCP 或本地 Skill 工具名';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_description IS '工具说明快照';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.arguments_preview IS '脱敏并截断后的工具输入预览';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.result_preview IS '脱敏并截断后的工具结果预览';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.status IS '工具调用状态：RUNNING、SUCCEEDED、FAILED 或 NOT_APPROVED';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.error_message IS '工具失败或未获确认原因';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.duration_ms IS '工具调用耗时，单位毫秒';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.started_at IS '工具调用开始时间';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.finished_at IS '工具调用结束时间';
+
+CREATE INDEX IF NOT EXISTS idx_snail_ai_tool_trace_parent_time ON sys_snail_ai_tool_trace (trace_id, started_at);
+
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1763300000000000018,1761400000000000001,'智能体对话记录',180,'snailai-traces','system/snailai/traces','N','Y','C','0','0','system:snailai:trace:list','#',now()
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu WHERE perms='system:snailai:trace:list')
+ON CONFLICT(menu_id) DO NOTHING;
+
+UPDATE sys_menu
+   SET parent_id=1761400000000000001, menu_name='智能体对话记录', order_num=180,
+       path='snailai-traces', component='system/snailai/traces', menu_type='C', visible='0', status='0',
+       perms='system:snailai:trace:list'
+ WHERE menu_id=1763300000000000018;
+
 COMMIT;

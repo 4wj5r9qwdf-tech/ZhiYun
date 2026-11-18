@@ -206,6 +206,7 @@ public class ColorController {
         }
         return false;
     }
+    /** 将颜色档案的变更整理为字段级业务审计，并避免记录无关请求数据。 / Build a field-level audit snapshot for color changes without retaining unrelated request data. */
 
     private Map<String, Object> auditSnapshot(Long id, boolean lock) {
         return BusinessAudit.snapshot(jdbc, "SELECT color_code AS \"颜色编码\",color_name AS \"颜色名称\",color_value AS \"色值\",sort_order AS \"排序\",status AS \"状态\",remark AS \"备注\" FROM base_color WHERE color_id=?" + (lock ? " FOR UPDATE" : ""), id);

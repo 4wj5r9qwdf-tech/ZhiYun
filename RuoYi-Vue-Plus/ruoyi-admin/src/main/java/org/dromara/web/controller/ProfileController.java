@@ -57,8 +57,11 @@ public class ProfileController {
     @GetMapping("/messages")
     public R<List<Map<String, Object>>> messages() {
         Long userId = LoginHelper.getUserId();
+        // 仅向当前收件人返回公告类别的正文快照，其他消息正文不扩大暴露范围。
+        // Return notice snapshots only to the current recipient; do not expose other message bodies.
         return R.ok(jdbcTemplate.queryForList(
             "SELECT m.message_id, m.title, m.message, m.type, m.category, m.path, m.create_time, " +
+            "CASE WHEN m.category='notice' THEN m.content ELSE NULL END AS notice_content, " +
             "CASE WHEN r.user_id IS NULL THEN '0' ELSE '1' END AS read_flag " +
             "FROM sys_message m LEFT JOIN sys_message_receipt r ON r.message_id=m.message_id AND r.user_id=? " +
             "WHERE (m.send_user_ids='0' OR ?=ANY(string_to_array(replace(m.send_user_ids,' ',''),','))) " +

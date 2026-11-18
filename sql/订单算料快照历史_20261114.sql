@@ -9,12 +9,12 @@ CREATE TABLE IF NOT EXISTS biz_order_demand_history (
 );
 CREATE INDEX IF NOT EXISTS ix_order_demand_history_order ON biz_order_demand_history(order_id,replaced_at DESC,id DESC);
 COMMENT ON TABLE biz_order_demand_history IS '客户订单重新算料前的历史用料快照，不覆盖原 BOM 与物料需求';
-COMMENT ON COLUMN biz_order_demand_history.id IS '历史快照内部主键';
-COMMENT ON COLUMN biz_order_demand_history.order_id IS '来源客户订单';
-COMMENT ON COLUMN biz_order_demand_history.order_revision IS '原快照被替换前的订单版本';
-COMMENT ON COLUMN biz_order_demand_history.demand IS '原用料需求及 BOM、单位换算、供料来源快照';
-COMMENT ON COLUMN biz_order_demand_history.replaced_by IS '发起重新算料的人员';
-COMMENT ON COLUMN biz_order_demand_history.replaced_at IS '快照替换时间';
+COMMENT ON COLUMN biz_order_demand_history.id IS '算料历史快照内部主键';
+COMMENT ON COLUMN biz_order_demand_history.order_id IS '来源客户订单主键，关联 biz_customer_order.id';
+COMMENT ON COLUMN biz_order_demand_history.order_revision IS '本历史快照对应的订单修订号，记录新算料结果替换前的版本';
+COMMENT ON COLUMN biz_order_demand_history.demand IS '被替换的订单用料需求 JSON，保留 PO、款式规格、BOM版本、物料单位换算和供料方式';
+COMMENT ON COLUMN biz_order_demand_history.replaced_by IS '执行重新算料并替换当前需求的员工账号，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_order_demand_history.replaced_at IS '历史需求快照写入时间';
 DO $$ DECLARE app_role text;
 BEGIN
     SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;

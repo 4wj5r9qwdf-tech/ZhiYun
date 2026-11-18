@@ -26,6 +26,8 @@ const firstChar = ref('织')
 const messages = ref<any[]>([])
 const unread = ref(0)
 const showMsg = ref(false)
+const copiedOrder = ref<any>()
+const selectedNotice = ref<any>()
 
 // 搜索（a-auto-complete：v-model:value + :options + @select）
 const keyword = ref('')
@@ -107,7 +109,25 @@ async function markMessageRead(item: any) {
 async function openMessage(item:any) {
   await markMessageRead(item)
   const path=String(item.path || '')
-  if (/^\/approve\/waiting\?taskId=\d+$/.test(path)) { showMsg.value=false; await router.push(path) }
+  const noticeMatch = path.match(/^\/system\/notice\?noticeId=(\d+)$/)
+  if (noticeMatch && item.category === 'notice') {
+    // 公告正文来自当前用户已收到的消息快照，不依赖公告管理权限，也不通过编号读取任意公告。
+    selectedNotice.value = {
+      title: item.message || '通知公告',
+      content: item.notice_content || '',
+      createTime: item.create_time || '',
+    }
+    showMsg.value = false
+    return
+  }
+  const copyMatch = path.match(/^\/approve\/copy\?taskId=(\d+)$/)
+  if (copyMatch) {
+    try { const result:any = await api.get('/approval/customer-orders/copies/' + copyMatch[1]); if (result.code !== 200) throw Error(result.msg); copiedOrder.value=result.data; showMsg.value=false }
+    catch (error:any) { message.error(error?.response?.data?.msg || error.message || '抄送记录不可用') }
+    return
+  }
+  const target = /^\/approve\/(waiting\?taskId|initiated\?instanceId)=\d+$/.test(path) ? path : path === '/task/taskWaiting' ? '/approve/waiting' : path === '/task/myDocument' ? '/approve/initiated' : ''
+  if (target) { showMsg.value=false; await router.push(target) }
 }
 
 // 全局搜索：输入≥1字节触发（后端支持中文），命中跳转
@@ -272,6 +292,14 @@ async function savePassword() {
     </div>
 
     <div class="tools">
+      <a-modal :open="!!selectedNotice" :title="selectedNotice?.title || '通知公告'" :width="760" :footer="null" @cancel="selectedNotice=undefined">
+        <div class="notice-meta">发布时间：{{ (selectedNotice?.createTime || '').slice(0, 16) || '—' }}</div>
+        <div class="notice-content">{{ selectedNotice?.content || '本条通知未附带正文。' }}</div>
+      </a-modal>
+      <a-modal :open="!!copiedOrder" title="抄送的客户订单" :width="800" :footer="null" @cancel="copiedOrder=undefined">
+        <a-descriptions v-if="copiedOrder" bordered size="small" :column="2"><a-descriptions-item label="订单编号">{{ copiedOrder.orderNo }}</a-descriptions-item><a-descriptions-item label="客户">{{ copiedOrder.document?.customerName || '—' }}</a-descriptions-item><a-descriptions-item label="公司">{{ copiedOrder.document?.companyName || '—' }}</a-descriptions-item><a-descriptions-item label="订单日期">{{ copiedOrder.document?.date || '—' }}</a-descriptions-item></a-descriptions>
+        <h4 style="margin-top:20px">审批记录</h4><a-timeline><a-timeline-item v-for="(item,index) in copiedOrder?.history || []" :key="index"><strong>{{ item.nodeName }}</strong> · {{ item.approver || '系统' }} · {{ item.action === 'PASS' ? '通过' : item.action === 'REJECT' ? '退回' : '记录' }}<div>{{ item.message || '' }}</div><small>{{ item.updateTime || '' }}</small></a-timeline-item></a-timeline>
+      </a-modal>
       <!-- 通知铃铛：a-badge 未读角标 + a-dropdown 下拉面板 -->
       <a-dropdown :trigger="['click']" placement="bottomRight" @open-change="onMsgOpenChange">
         <a-badge :count="unread" :overflow-count="99" class="bell-badge">
@@ -286,7 +314,7 @@ async function savePassword() {
             <div v-for="m in messages" :key="m.message_id" class="msg-item" :class="{ unread: m.read_flag === '0' }">
               <div class="msg-item-title">{{ m.title || '（无标题）' }}</div>
               <div class="msg-item-body">{{ m.message || '' }}</div>
-              <div class="msg-item-time">{{ (m.create_time || '').slice(0, 16) }} <a v-if="m.path && /^\/approve\/waiting\?taskId=\d+$/.test(m.path)" @click.stop="openMessage(m)">查看待办</a> <a v-if="m.read_flag === '0'" @click.stop="markMessageRead(m)">标记已读</a></div>
+              <div class="msg-item-time">{{ (m.create_time || '').slice(0, 16) }} <a v-if="m.path && m.category === 'notice' && /^\/system\/notice\?noticeId=\d+$/.test(m.path)" @click.stop="openMessage(m)">查看公告</a> <a v-if="m.path && (/^\/approve\/(waiting\?taskId|initiated\?instanceId|copy\?taskId)=\d+$/.test(m.path) || ['/task/taskWaiting','/task/myDocument'].includes(m.path))" @click.stop="openMessage(m)">查看审批</a> <a v-if="m.read_flag === '0'" @click.stop="markMessageRead(m)">标记已读</a></div>
             </div>
           </div>
         </template>
@@ -390,6 +418,8 @@ async function savePassword() {
 .msg-item-title { font-size: 13px; font-weight: 600; color: #1D2129; margin-bottom: 2px; }
 .msg-item-body { font-size: 12px; color: #4E5969; margin-bottom: 2px; }
 .msg-item-time { font-size: 11px; color: #C9CDD4; }
+.notice-meta { margin-bottom: 12px; color: #86909C; font-size: 12px; }
+.notice-content { max-height: 55vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #1D2129; line-height: 1.75; }
 
 .user { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .avatar { background: #1E5EFF; color: #fff; font-size: 13px; font-weight: 600; }

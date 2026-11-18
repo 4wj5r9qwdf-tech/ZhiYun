@@ -254,7 +254,7 @@ public class PersonController {
     private String selectSql() {
         return "SELECT u.user_id, u.user_id::text AS user_id_text, u.user_name AS job_no, u.nick_name AS name, u.gender, " +
             "  u.status AS account_status, u.phone_number, u.org_id, d.org_name, e.emp_status, e.emp_type, " +
-            "  e.hire_date, e.card_no, e.is_dorm, " +
+            "  e.hire_date, e.card_no, e.is_dorm, e.dingtalk_account, " +
             "  (SELECT string_agg(p.post_name, '、') FROM sys_user_post up JOIN sys_post p ON up.post_id=p.post_id WHERE up.user_id=u.user_id) AS posts, " +
             "  (SELECT string_agg(r.role_name, '、') FROM sys_user_role ur JOIN sys_role r ON ur.role_id=r.role_id WHERE ur.user_id=u.user_id) AS roles, " +
             "  (SELECT string_agg(CASE d.duty_code WHEN 'SALES' THEN '业务员' WHEN 'FOLLOWER' THEN '跟单员' WHEN 'PURCHASER' THEN '采购员' WHEN 'PLANNER' THEN '计划员' WHEN 'WAREHOUSE' THEN '仓管员' WHEN 'QUALITY' THEN '质检员' END, '、' ORDER BY d.duty_code) FROM sys_user_business_duty d WHERE d.user_id=u.user_id) AS business_duties " +
@@ -331,7 +331,8 @@ public class PersonController {
     }
 
     /**
-     * 组织树人数角标：每个节点 = 该节点及下级的在册人数（与树节点筛选同口径，角标数 = 点选后列表数）。
+     * 组织树人数角标：每个节点统计本节点及下级的在册人员，口径与点选组织节点后的列表筛选一致。
+     * Organization-tree badge counts include active employees in the node and descendants, matching the list filter.
      */
     @SaCheckPermission("system:person:query")
     @GetMapping("/org-counts")
@@ -496,13 +497,15 @@ public class PersonController {
             str(body.get("email")), str(body.get("phoneNumber")), str(body.get("gender")),
             BCrypt.hashpw(password), str(body.getOrDefault("status", "0")), str(body.get("remark")));
         saveExt(userId, body);
+        saveDingTalkAccount(userId, body);
         saveRelations(userId, body);
         recordPersonAudit(userId, "新增人员", java.util.Map.of(), personAuditSnapshot(userId), false);
         return R.ok();
     }
 
     /**
-     * 编辑人员（不改工号/密码；工号变更走单独接口）。
+     * 修改人员及其档案关系；工号和密码不在此接口修改，工号变更使用专用接口。
+     * Update an employee and related profile links; job number and password changes use dedicated endpoints.
      */
     @SaCheckPermission("system:person:edit")
     @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
@@ -531,13 +534,15 @@ public class PersonController {
                 str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
         }
         saveExt(userId, body);
+        saveDingTalkAccount(userId, body);
         saveRelations(userId, body);
         recordPersonAudit(userId, "修改人员", before, personAuditSnapshot(userId), pwd != null && !pwd.isBlank());
         return R.ok();
     }
 
     /**
-     * 重置密码为默认 123456。
+     * 将人员登录密码重置为系统默认初始密码，并写入人员变更审计。
+     * Reset the employee login password to the default initial password and record the personnel audit event.
      */
     @SaCheckPermission("system:person:resetPwd")
     @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
@@ -671,11 +676,12 @@ public class PersonController {
             java.util.Map.of("id",userId.toString(),"name",java.util.Objects.toString(name,""),"action",action,"changes",changes));
     }
 
+    /** 读取人员可审计字段快照，并以安全占位值记录敏感字段变化。 / Capture auditable personnel fields while representing sensitive changes without exposing their values. */
     private Map<String,Object> personAuditSnapshot(Long userId) {
         var snapshot = jdbcTemplate.queryForMap("""
             SELECT u.nick_name AS "姓名",u.org_id::text AS "组织 ID",u.email AS "邮箱",
                    u.user_name AS "工号",u.del_flag AS "删除标记",u.phone_number AS "电话",u.gender AS "性别",u.status AS "账号状态",u.remark AS "备注",
-                   e.marital_status AS "婚姻状况",e.cert_type AS "证件类型",e.cert_no AS "证件号码",
+                   e.dingtalk_account AS "钉钉号",e.marital_status AS "婚姻状况",e.cert_type AS "证件类型",e.cert_no AS "证件号码",
                    e.nation AS "民族",e.education AS "学历",e.birth_date::text AS "出生日期",
                    e.graduate_school AS "毕业学校",e.native_place AS "籍贯",e.address AS "住址",
                    e.cert_expire_date::text AS "证件有效期",e.hire_date::text AS "入职日期",
@@ -697,6 +703,7 @@ public class PersonController {
         return snapshot;
     }
 
+    /** 保存人员扩展档案，并将小组 ID 与组织节点名称保持一致。 / Persist employee extensions and keep the group ID aligned with its organization-node name. */
     private void saveExt(Long userId, Map<String, Object> body) {
         @SuppressWarnings("unchecked")
         Map<String, Object> ext = body.get("ext") instanceof Map ? (Map<String, Object>) body.get("ext") : java.util.Map.of();
@@ -739,7 +746,16 @@ public class PersonController {
             ext.getOrDefault("isDorm", "0"));
     }
 
-    /** 保存岗位/角色关系（全删重插）。 */
+    /** 保存用户手工登记的钉钉号；旧客户端未传此字段时保留已有值。 / Persist a manually entered DingTalk account while preserving it when older clients omit the field. */
+    private void saveDingTalkAccount(Long userId, Map<String, Object> body) {
+        if (!(body.get("ext") instanceof Map<?, ?> ext) || !ext.containsKey("dingTalkAccount")) return;
+        Object raw = ext.get("dingTalkAccount");
+        String value = raw == null ? null : raw.toString().trim();
+        if (value != null && value.length() > 128) throw new ServiceException("钉钉号不能超过128个字符");
+        jdbcTemplate.update("UPDATE sys_person_ext SET dingtalk_account=? WHERE user_id=?", value == null || value.isEmpty() ? null : value, userId);
+    }
+
+    /** 保存岗位、角色和业务职责关联；先清理旧集合，再整体写入防止重复关系。 / Replace post, role and business-duty links as complete sets to prevent stale or duplicate relations. */
     private void saveRelations(Long userId, Map<String, Object> body) {
         jdbcTemplate.update("DELETE FROM sys_user_post WHERE user_id=?", userId);
         jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
