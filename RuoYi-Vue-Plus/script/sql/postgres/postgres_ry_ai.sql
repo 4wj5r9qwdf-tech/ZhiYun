@@ -487,8 +487,23 @@ CREATE TABLE sai_rag_document_image
     update_dt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMENT ON TABLE sai_rag_document_image IS 'RAG document parsed image table';
-COMMENT ON COLUMN sai_rag_document_image.resource_id IS 'Linked resource id in sai_resource';
+COMMENT ON TABLE sai_rag_document_image IS 'RAG 文档解析图片索引，保存图片位置、识别文字和图注，供知识库检索与问答引用';
+COMMENT ON COLUMN sai_rag_document_image.id IS '文档解析图片记录主键';
+COMMENT ON COLUMN sai_rag_document_image.rag_id IS '所属知识库 ID，对应 sai_rag.id；本表通过业务 ID 关联';
+COMMENT ON COLUMN sai_rag_document_image.document_id IS '来源文档 ID，对应 sai_rag_document.id；本表通过业务 ID 关联';
+COMMENT ON COLUMN sai_rag_document_image.chunk_id IS '关联的文本或图片分块 ID，对应 sai_rag_chunk.id；未生成分块时为空';
+COMMENT ON COLUMN sai_rag_document_image.resource_id IS '图片资源 ID，对应 sai_resource.id；未登记资源文件时为空';
+COMMENT ON COLUMN sai_rag_document_image.image_index IS '图片在来源文档中的顺序号';
+COMMENT ON COLUMN sai_rag_document_image.image_url IS '解析后图片的存储地址或访问地址';
+COMMENT ON COLUMN sai_rag_document_image.caption IS '图片内容说明或解析生成的图注';
+COMMENT ON COLUMN sai_rag_document_image.figure_no IS '来源文档中的图号，例如图 1 或 Figure 1';
+COMMENT ON COLUMN sai_rag_document_image.figure_title IS '来源文档中图片对应的标题';
+COMMENT ON COLUMN sai_rag_document_image.section_title IS '图片所在的文档章节标题';
+COMMENT ON COLUMN sai_rag_document_image.source_page IS '图片在来源文档中的页码';
+COMMENT ON COLUMN sai_rag_document_image.document_name IS '解析时记录的来源文档名称快照';
+COMMENT ON COLUMN sai_rag_document_image.ocr_text IS '从图片中识别出的文字内容';
+COMMENT ON COLUMN sai_rag_document_image.create_dt IS '图片解析索引记录创建时间';
+COMMENT ON COLUMN sai_rag_document_image.update_dt IS '图片解析索引记录最后更新时间';
 
 CREATE TRIGGER trigger_sai_rag_document_image_update
     BEFORE UPDATE ON sai_rag_document_image
@@ -859,3 +874,57 @@ INSERT INTO sai_openapi_user VALUES (1, '1', '46ed53c6a20044c7bbd870848e80f92f',
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval(pg_get_serial_sequence('sai_openapi_user', 'id'), COALESCE((SELECT MAX(id) FROM sai_openapi_user), 1), TRUE);
+
+-- 织云：智能体聊天文件原件与用户、智能体及会话的归属。
+CREATE TABLE IF NOT EXISTS zy_snail_chat_file (
+    id varchar(36) PRIMARY KEY,
+    resource_id bigint NOT NULL UNIQUE,
+    owner_id bigint NOT NULL,
+    agent_id bigint NOT NULL,
+    conversation_id varchar(128) NOT NULL,
+    original_name varchar(200) NOT NULL,
+    file_size bigint NOT NULL CHECK (file_size > 0),
+    file_type varchar(16) NOT NULL,
+    create_time timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zy_snail_chat_file_owner_conversation
+    ON zy_snail_chat_file (owner_id, agent_id, conversation_id, create_time);
+COMMENT ON TABLE zy_snail_chat_file IS '智能体聊天原始文件与用户、智能体及会话的归属关系';
+COMMENT ON COLUMN zy_snail_chat_file.id IS '文件归属记录的随机标识';
+COMMENT ON COLUMN zy_snail_chat_file.resource_id IS 'SnailAI 原生资源编号';
+COMMENT ON COLUMN zy_snail_chat_file.owner_id IS '上传者在智能体后台的用户编号';
+COMMENT ON COLUMN zy_snail_chat_file.agent_id IS '所属智能体编号';
+COMMENT ON COLUMN zy_snail_chat_file.conversation_id IS '所属会话编号';
+COMMENT ON COLUMN zy_snail_chat_file.original_name IS '上传时的原始文件名';
+COMMENT ON COLUMN zy_snail_chat_file.file_size IS '原始文件字节数';
+COMMENT ON COLUMN zy_snail_chat_file.file_type IS '经服务端校验的文件扩展名';
+COMMENT ON COLUMN zy_snail_chat_file.create_time IS '文件上传时间';
+-- 智能体提出的知识入库草稿；确认前不得写入共享知识库。
+CREATE TABLE IF NOT EXISTS zy_snail_knowledge_draft (
+    id VARCHAR(36) PRIMARY KEY,
+    owner_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL,
+    conversation_id VARCHAR(64) NOT NULL,
+    rag_id BIGINT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT NOT NULL,
+    status VARCHAR(24) NOT NULL DEFAULT 'PENDING',
+    document_id BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TIMESTAMP
+);
+COMMENT ON TABLE zy_snail_knowledge_draft IS '智能体知识入库候选与人工确认记录';
+COMMENT ON COLUMN zy_snail_knowledge_draft.id IS '草稿唯一编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.owner_id IS '发起和确认的后台用户编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.agent_id IS '发起智能体编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.conversation_id IS '发起会话编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.rag_id IS '目标知识库编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.title IS '拟入库标题';
+COMMENT ON COLUMN zy_snail_knowledge_draft.content IS '待确认知识正文';
+COMMENT ON COLUMN zy_snail_knowledge_draft.source IS '内容来源说明';
+COMMENT ON COLUMN zy_snail_knowledge_draft.status IS '状态：PENDING待确认、SUBMITTING提交中、SUBMITTED已提交处理、REJECTED已拒绝、FAILED提交失败';
+COMMENT ON COLUMN zy_snail_knowledge_draft.document_id IS '提交后创建的知识文档编号';
+COMMENT ON COLUMN zy_snail_knowledge_draft.created_at IS '草稿创建时间';
+COMMENT ON COLUMN zy_snail_knowledge_draft.confirmed_at IS '人工确认时间';
+CREATE INDEX IF NOT EXISTS idx_zy_snail_knowledge_draft_owner ON zy_snail_knowledge_draft(owner_id, agent_id, conversation_id, created_at);

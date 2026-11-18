@@ -1,10 +1,10 @@
 spring:
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/ry-vue?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${SNAILAI_DB_HOST:127.0.0.1}:${SNAILAI_DB_PORT:5432}/${SNAILAI_DB_NAME:zhizhun_snailai}
+    username: ${SNAILAI_DB_USER:snailai_app}
+    password: ${SNAILAI_DB_PASSWORD:}
     hikari:
       connection-timeout: 30000
       validation-timeout: 5000
@@ -13,6 +13,10 @@ spring:
       idle-timeout: 600000
       max-lifetime: 900000
       keepaliveTime: 30000
+
+server:
+  # WSL 开发端口只绑定本机，供同机 Windows 浏览器通过 localhost 转发访问。
+  address: ${SNAILAI_BIND_ADDRESS:127.0.0.1}
 
 --- # 监控中心配置
 spring.boot.admin.client:
@@ -24,5 +28,13 @@ spring.boot.admin.client:
     metadata:
       username: ${spring.boot.admin.client.username}
       userpassword: ${spring.boot.admin.client.password}
-  username: @monitor.username@
-  password: @monitor.password@
+  username: ${SUPER_ADMIN_USERNAME}
+  password: ${SUPER_ADMIN_PASSWORD}
+
+--- # 本地体验设置
+snail-ai:
+  # 本地体验不依赖尚未部署的文档解析与 OCR 服务。
+  rag:
+    docling:
+      enabled: ${SNAIL_AI_RAG_DOCLING_ENABLED:false}
+      paddle-ocr-enabled: false
