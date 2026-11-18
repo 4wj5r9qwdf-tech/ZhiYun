@@ -1,3 +1,8 @@
+---
+name: zhiyun-post-management
+description: 查询和维护织云 ERP 岗位档案、岗位状态及组织筛选。适用于员工明确要求查询、新增、修改、启停或删除岗位。
+---
+
 # 岗位管理 Skill
 
 ## 适用范围
@@ -9,6 +14,15 @@
 - API 契约：[岗位管理API.md](../../API/岗位管理API.md)
 - MCP 工具：`post_list`、`post_get`、`post_options`、`post_create`、`post_update`、`post_set_status`、`post_delete`、`post_org_tree`。
 - 工具已加入后端代码；运行时发现状态需在后端启动后用 MCP 客户端核对。未发现工具时不得假称 MCP 可调用。
+- 调用参数必须按工具 schema 传递；具体格式见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+按岗位名称关键词分页查询；不需要的 `query` 筛选对象可省略：
+
+```json
+{"name":"post_list","arguments":{"keyword":"业务员","pageNum":1,"pageSize":20}}
+```
 
 ## 操作规则
 

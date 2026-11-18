@@ -1,8 +1,10 @@
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-11-08
+> 更新日期：2026-11-18
 > 说明：功能 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
+
+> MCP 调用方请先阅读[智能体 Skill 索引](../Skills/README.md)及[通用 MCP 调用指南](../Skills/MCP调用指南.md)。每个功能 Skill 包含工具名和可复制的 `arguments` 示例；运行时 `tools/list` 的 `inputSchema` 是参数必填规则的最终依据。
 
 ---
 
@@ -15,10 +17,11 @@
 ```bash
 curl -X POST http://127.0.0.1:8080/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"clientId":"e5cd7e4891bf95d1d19206ce24a7b32e","grantType":"password","username":"admin","password":"[已从Git历史清理的凭据]"}'
+  -d '{"clientId":"e5cd7e4891bf95d1d19206ce24a7b32e","grantType":"password","username":"<当前员工工号>","password":"<当前员工密码>"}'
 ```
 
 - `clientId`：固定应用标识（非密钥，前端源码同款）
+- 示例中的账号和密码为占位符；调用时使用当前员工自己的登录凭据，不要把真实口令写入文档、代码或 Git。
 - 成功返回 `data.access_token`（有效期见后端配置，过期重新登录）
 - 登录失败：`{"code":500,"data":null,"msg":"用户不存在/密码错误"}`
 
@@ -54,6 +57,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | 分类管理 | `category` | [分类管理API.md](分类管理API.md) | 体系与节点 REST/MCP 已实现，已有发现及读写验证记录 | 2026-11-06 用户验收通过 |
 | 颜色管理 | `color` | [颜色管理API.md](颜色管理API.md) | 用户验收通过（2026-11-07）；8个MCP工具发现，目录/选项/编码建议及颜色CRUD/启停真实调用通过 | 2026-11-07 |
 | 物料档案 | `material` | [物料档案API.md](物料档案API.md) | 一期、二期用户验收通过；运行时发现 9/9 MCP 工具，物料列表、业务选项、属性模板已实调，写工具未实调 | 2026-11-13 |
+| 物料需求计划 | `material_demand_plan` | [物料需求计划API.md](物料需求计划API.md) | REST 与审批业务联动已实现；前后端构建通过、开发库迁移已应用；待用户验收；MCP/Skill 尚未接入 | — |
 | 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST/MCP 已实现；本轮补齐 9 个工具，运行时验证见测试清单 | 2026-11-04 |
 | 尺码组管理 | `size_group` | [尺码组管理API.md](尺码组管理API.md) | REST/MCP 已实现；本轮补齐 8 个工具，运行时验证见测试清单 | 2026-11-04 |
 | 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
@@ -63,6 +67,8 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | 建筑档案 | `building` | [建筑档案API.md](建筑档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
 | 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；CSV 导入没有独立批量 API | 2026-11-05 |
 | 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；MCP 批量新增按行提交并返回部分成功结果 | 2026-11-05 |
+| 框架原生能力接入 | `framework_native` | [框架原生能力接入API.md](框架原生能力接入API.md) | 系统管理、审批监控、代码生成、独立控制台和 Swagger 已接入；角色权限记录已核对；MCP 不开放高权限系统维护操作 | 2026-11-17 |
+| SnailAI 员工侧入口 | snail_ai_employee | [SnailAI员工侧入口API.md](SnailAI员工侧入口API.md) | ERP 右上角入口、员工 OpenAPI 身份、短时会话关联、MCP 权限过滤、写操作确认与本地 Skill 读取代码已完成；实时工具发现与员工验收待验证 | — |
 
 ---
 
@@ -178,7 +184,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 > 权限码：位置查询 `inventory:location:list/query`，维护 `inventory:location:add/edit/remove`；规则设置 `system:config:edit`。MCP 支持单条及逐行部分成功的批量新增；见[完整仓库布局契约](仓库布局API.md)。
 
-> 2026-11-07 认证 MCP 会话 `tools/list` 共发现 102 个工具；尺码、尺码组和仓库布局本轮新增的 18 个工具均可发现。本索引已列出的业务 REST 能力均有对应 MCP 工具映射；仓库布局 CSV 文件由调用方解析后可使用逐条提交的批量新增工具。实际调用核验范围见[测试与验收清单](../测试与验收清单.md)。
+> 2026-11-17 认证 MCP 会话 `tools/list` 实际发现 125 个工具，其中 123 个属于织云业务工具，另有 2 个 `ruoyi-demo` 框架示例工具。REST/OpenAPI 与 MCP 并非逐接口一一映射：框架系统维护、代码生成和独立控制台仍通过受权限保护的 REST/前端入口使用；MCP 不提供通用 HTTP、SQL 或系统配置写入能力。标签、人员、客户订单及审批的业务 MCP 工具尚未接入，不能据此宣称所有 ERP REST 接口都有 MCP。当前工具发现与权限记录核对见[测试与验收清单](../测试与验收清单.md)。
 
 ### 客户档案 customer_master（`/system/customer`）
 
@@ -203,11 +209,26 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 一期职责代码：`SALES` 业务员、`FOLLOWER` 跟单员、`PURCHASER` 采购员、`PLANNER` 计划员、`WAREHOUSE` 仓管员、`QUALITY` 质检员。职责仅用于单据责任人候选过滤和服务端引用校验，不授予菜单/操作/数据权限。客户订单业务员、跟单员候选分别按 `SALES`、`FOLLOWER` 过滤；采购单实现时按 `PURCHASER` 过滤，采购操作权限仍单独校验。
 
+人员钉钉号：列表和详情返回 `dingtalk_account`；新增及修改通过 `ext.dingTalkAccount` 传入，选填，去除首尾空白，最长 128 字符，空字符串清空；未提供该字段时保留旧值。详情需要 `system:person:query` 并受人员数据范围约束，新增和修改分别需要 `system:person:add` 和 `system:person:edit`，变更纳入人员业务审计。该字段仅登记钉钉号，尚未完成钉钉企业身份校验、绑定或消息推送。人员档案 MCP 工具尚未接入，不应声称可通过 MCP 查询或修改此字段。
+
 客户订单 PO 支持 `offlineDate` 默认下线日期；`GET /order/customer-orders/options` 返回 `offlineLeadDays`，由系统参数 `order.customer.offlineLeadDays` 设置，未设置时为 0 个自然日。前端按 PO 默认交期计算建议日期，允许手动修改，保存后作为订单快照。`POST /system/config/order-offline-lead-days` 接收整数 `days`（0–3650），需要系统参数编辑权限。款式规格行支持 `unitPrice` 加工单价（可空、非负、最多两位小数），服务端以精确十进制计算 `processingAmount`；空单价代表待填写，不等同零。单款单价按件，套装单价按套。订单总额按各规格金额汇总，缺失单价时标记金额未完整。
 
-客户订单 `POST /order/customer-orders/{id}/transition` 支持 `action=unsubmit`（待审核转草稿，需要制单权限，清除需求快照）和 `action=unapprove`（已审核转待审核，需要审核权限，保留需求快照），均要求提交当前 `revision`、符合订单访问范围，并记录业务审计。后续下游单据接入后须在反审核事务中检查有效引用，阻止已执行订单被直接反审核。
+客户订单 `POST /order/customer-orders/{id}/transition` 支持 `action=unsubmit`（待审核转草稿，需要制单权限，清除需求快照）和 `action=unapprove`（已审核转待审核，需要审核权限，保留需求快照），均要求提交当前 `revision`、符合订单访问范围，并记录业务审计。反审核时会在同一事务检查是否存在未取消的物料需求计划；存在时必须先处理计划，不允许直接反审核。其他下游单据接入后还需补齐对应引用检查。
 
-客户订单提交和审核不以 BOM 完成作为前置条件；草稿中的用料试算是临时预览。已审核订单可调用 `POST /order/customer-orders/{id}/demand/calculate`，提交当前 `revision`；已有快照时还须明确传入 `recalculate=true`。接口要求订单列表及制单权限和订单数据访问范围；存在有效关联物料需求计划时阻止计算，避免覆盖计划调整。BOM 缺失或用料不完整时返回 `saved=false` 和带缺失原因的 `plans`，不写入正式快照；全部完整时返回 `saved=true`、`plans` 和最新 `order`，事务内归档旧用料快照、保存新快照并记录业务审计。订单列表 `demandState` 区分未算料、已算料、BOM 更新、BOM 不可用和待核对。历史表增量见 `sql/订单算料快照历史_20261114.sql`；独立物料需求计划单的重生成及统一审批联动仍待实现。
+客户订单提交和审核不以 BOM 完成作为前置条件；草稿中的用料试算是临时预览。已审核订单可调用 `POST /order/customer-orders/{id}/demand/calculate`，提交当前 `revision`；已有快照时还须明确传入 `recalculate=true`。接口要求订单列表及制单权限和订单数据访问范围。关联的需求计划若仍是未调整草稿，会在同一事务内同步新的完整算料快照；计划存在人工调整、已提交或已审核状态时，重新算料会被拒绝，避免覆盖计划工作。BOM 缺失或用料不完整时返回 `saved=false` 和带缺失原因的 `plans`，不写入正式快照；全部完整时返回 `saved=true`、`plans` 和最新 `order`，事务内归档旧用料快照、保存新快照并记录业务审计。订单列表 `demandState` 区分未算料、已算料、BOM 更新、BOM 不可用和待核对。历史表增量见 `sql/订单算料快照历史_20261114.sql`。独立物料需求计划接口、字段、审批、权限和迁移状态见[物料需求计划 API 契约](物料需求计划API.md)；前后端构建与 WSL 开发库迁移已通过，待用户验收；MCP/Skill 尚未接入。
+
+### 物料需求计划 material_demand_plan（`/order/material-demand-plans`）
+
+| 方法 + 路径 | 说明 | 读/写 |
+|---|---|---|
+| `GET /order/material-demand-plans/list` | 按计划号、来源订单、客户、PO、单据状态和算料状态查询 | 只读 |
+| `GET /order/material-demand-plans/{id}` | 查询计划主单、来源明细、物料汇总及数量调整历史 | 只读 |
+| `GET /order/material-demand-plans/eligible-orders` | 查询可补生成计划的已审核订单 | 只读 |
+| `POST /order/material-demand-plans/generate/{orderId}` | 从已审核订单幂等补生成需求计划草稿 | 写 |
+| `PUT /order/material-demand-plans/{id}/quantities` | 按修订号保存计划数量并记录调整原因 | 写 |
+| `POST /order/material-demand-plans/{id}/transition` | 提交、撤回、直接审核/退回或取消计划 | 写 |
+
+> 独立接口契约、参数、权限、幂等、副作用及审批前置见[物料需求计划 API 契约](物料需求计划API.md)。全部写入口使用 `@RepeatSubmit`，业务层另以来源订单幂等、修订号和状态校验防止重复生成/过期覆盖。MCP 工具未注册，不能通过智能体运行时调用。
 
 ### 公司档案 company（`/system/company`）
 

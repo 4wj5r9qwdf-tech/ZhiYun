@@ -25,6 +25,22 @@ description: 查询和维护织云 ERP 尺码组，包括组内尺码及顺序�
 
 工具必须使用当前员工本人身份，不得使用超管代办或通用 HTTP/SQL 工具。
 
+通用 MCP 参数和调用结构见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+查询尺码组及组内尺码：
+
+```json
+{"name":"size_group_list","arguments":{}}
+```
+
+新业务选择尺码组时使用 `size_group_options`，并核对组与组内尺码的 `selectable` 状态：
+
+```json
+{"name":"size_group_options","arguments":{}}
+```
+
 ## 执行规则
 
 - 查询尺码组时展示编号、名称、状态及有序组内尺码；停用项明确标注。

@@ -34,6 +34,24 @@ description: 查询织云 ERP 仓库内的库区、货架、货位及其层级�
 3. 需要单条完整信息时调用 `warehouse_layout_get`。ID 始终用十进制字符串。
 4. 编码建议工具只查询建议，不预留、不新增。解释编码由仓库编码与每级编码段逐级组成，建议值可编辑。
 
+参数与 JSON-RPC 调用格式见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+### 查询调用示例
+
+读取所有可见仓库的库区—货架—货位树时，`warehouseId` 可省略：
+
+```json
+{"name":"warehouse_layout_tree","arguments":{}}
+```
+
+指定仓库查询位置列表时，`warehouseId` 必填；父级、层级、关键词和状态都是可选项：
+
+```json
+{"name":"warehouse_layout_list","arguments":{"warehouseId":"123456789012345678","level":2,"status":"active"}}
+```
+
+示例仓库 ID 仅为格式示例，实际调用前先由 `warehouse_list` 返回该 ID。货架层级是 `2`；不要把状态值作为层级值传递。
+
 ## 写入请求处理
 
 用户明确要求写入时，先查询并展示仓库、父级、类型、完整字段或规则及其影响，等待员工本次确认后再调用对应工具。失败后先查询核对，不能盲目重试新增。CSV 内容由调用方解析并确认后，可以调用 `warehouse_layout_batch_create`。

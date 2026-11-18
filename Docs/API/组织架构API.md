@@ -50,12 +50,14 @@
   "orderNum":10,
   "leader":"20001",
   "phone":"13800000000",
-  "email":"leader@example.com",
+  "email":"department@example.com",
   "status":"0"
 }
 ```
 
 新增时省略 `orgId`。必填为 `orgName`、`orderNum`；`parentId` 按目标层级提供。`orgCategory` 为业务类别，建筑是独立物理档案；业务管辖关系与树层级相互独立。
+
+页面中的“部门电话”和“部门邮箱”分别对应现有字段 `phone` 和 `email`，用于登记部门联系方式；`leader` 是负责人用户 ID。部门邮箱目前不自动接收审批通知，选择部门审批时匹配部门人员，不等同于只选择部门负责人。
 
 成功响应示例：`{"code":200,"msg":"操作成功","data":null}`。管辖关系请求体是最终 ID 数组，例如 `["10002","10003"]`；空数组代表清空全部。
 

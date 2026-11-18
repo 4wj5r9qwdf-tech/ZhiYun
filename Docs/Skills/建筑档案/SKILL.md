@@ -1,3 +1,8 @@
+---
+name: zhiyun-building-record
+description: 查询和维护织云 ERP 建筑档案，包括用途、编码、楼层、面积、地址和状态。
+---
+
 # 建筑档案 Skill
 
 ## 适用范围
@@ -9,6 +14,15 @@
 - API 契约：[建筑档案API.md](../../API/建筑档案API.md)
 - MCP 工具：`building_list`、`building_get`、`building_create`、`building_update`、`building_delete`。
 - 工具已加入后端代码；运行时发现状态需在后端启动后用 MCP 客户端核对。未发现工具时不得假称 MCP 可调用。
+- 通用 MCP 参数和调用外层示例见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+按名称/编码/地址关键词和启用状态筛选建筑；其他可选条件省略：
+
+```json
+{"name":"building_list","arguments":{"keyword":"厂房","status":"0"}}
+```
 
 ## 操作规则
 

@@ -1,3 +1,8 @@
+---
+name: zhiyun-unit-management
+description: 查询和维护织云 ERP 全局计量单位、固定换算关系及换算规则。用于员工明确提出单位目录或换算配置操作。
+---
+
 # 计量单位
 
 > 版本：v1
@@ -7,6 +12,22 @@
 ## 适用与契约
 
 用于全局单位查询、固定换算与单位建档维护，完整字段见 `Docs/API/计量单位API.md`。工具 `unit_list/options/convert/create/update/delete`（完整工具名分别为 `unit_list`、`unit_options`、`unit_convert`、`unit_create`、`unit_update`、`unit_delete`）。
+
+调用参数名与 ID 规则见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+先读取单位目录，并从结果复制实际单位 ID；`unit_convert` 的 `fromId` 是待换算单位，`toId` 是库存/参照单位：
+
+```json
+{"name":"unit_list","arguments":{}}
+```
+
+```json
+{"name":"unit_convert","arguments":{"fromId":"123456789012345678","toId":"123456789012345679","quantity":"125.5"}}
+```
+
+示例 ID 仅展示十进制字符串格式；调用时替换为同一有效换算关系中的真实 ID。
 
 ## 执行步骤
 

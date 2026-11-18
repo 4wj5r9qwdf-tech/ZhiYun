@@ -1,3 +1,8 @@
+---
+name: zhiyun-material-record
+description: 查询和维护织云 ERP 物料档案、分类、单位、颜色及多规格属性。适用于员工明确提出物料资料查询或维护。
+---
+
 # 物料档案 Skill
 
 ## 适用场景
@@ -46,6 +51,28 @@
 - `material_delete`
 
 工具契约见[物料档案 API](../../API/物料档案API.md)。物料档案一期于 2026-11-08 验收通过；该日运行时已发现 9 个 MCP 工具。工具是否可调用及写入权限仍应按当前运行环境核实，不以发现结果代替写调用验证。
+
+调用时优先使用 `material_list` 查管理目录，传入单个名为 `filter` 的筛选对象；不要把筛选字段直接放在 `arguments` 顶层。通用规则见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+查询“棉布”相关且启用的物料：
+
+```json
+{"name":"material_list","arguments":{"filter":{"keyword":"棉布","status":"0"}}}
+```
+
+按当前员工分类授权查询全部物料时，省略筛选对象：
+
+```json
+{"name":"material_list","arguments":{}}
+```
+
+用于新业务选择物料时调用 `material_options`；该工具只返回当前员工可见范围内启用的物料：
+
+```json
+{"name":"material_options","arguments":{}}
+```
 
 
 填写规格模板前调用 `material_spec_templates` 查询当下模板和字段定义，向用户展示模板及规格值后提交 `specTemplateCode` 和 `specValues`。模板由用户直接选择，不得依赖或硬编码模板数量或模板目录。更新时省略模板字段可以保留已有选择。数字规格使用十进制字符串，是否字段使用布尔值。项目可在后续迭代为不同模板增加规格字段；调用方须按目录动态呈现并保留未展示的既有字段。新增字段使用稳定字段键，且同一键在不同模板中必须表示相同业务含义。

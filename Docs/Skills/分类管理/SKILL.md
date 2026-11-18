@@ -1,3 +1,8 @@
+---
+name: zhiyun-category-management
+description: 查询和维护织云 ERP 分类类型、分类树节点及自动编码规则。适用于员工明确要求分类体系或分类节点操作。
+---
+
 # 分类管理
 
 > 版本：v1
@@ -6,7 +11,23 @@
 
 ## 适用与契约
 
-用于独立业务分类类型及分类节点管理，字段见 `Docs/API/分类管理API.md`。工具 `category_schemes`、`category_scheme_options`、`category_scheme_create/update/delete`、`category_list`、`category_options`、`category_create/update/delete`；斜杠表示各自独立工具，如 `category_create`、`category_update`、`category_delete`。
+用于独立业务分类类型及分类节点管理，字段见 `Docs/API/分类管理API.md`。工具：`category_schemes`、`category_scheme_options`、`category_scheme_create`、`category_scheme_update`、`category_scheme_delete`、`category_list`、`category_options`、`category_create`、`category_update`、`category_delete`。
+
+通用参数类型和 MCP JSON-RPC 外层示例见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+先查分类体系；再从响应复制实际体系 ID 查询对应分类树。ID 作为十进制字符串传递：
+
+```json
+{"name":"category_schemes","arguments":{}}
+```
+
+```json
+{"name":"category_list","arguments":{"schemeId":"123456789012345678"}}
+```
+
+示例 ID 仅展示字符串格式，必须替换为 `category_schemes` 返回的真实 ID。
 
 ## 执行步骤
 

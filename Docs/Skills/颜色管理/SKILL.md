@@ -1,3 +1,8 @@
+---
+name: zhiyun-color-management
+description: 查询和维护织云 ERP 公共颜色档案、颜色业务选项及自动编码规则。
+---
+
 # 颜色管理
 
 > 版本：v1
@@ -12,6 +17,16 @@
 
 - 查询：`color_list`、`color_options`、`color_next_code`
 - 维护：`color_create`、`color_update`、`color_set_status`、`color_delete`、`color_set_code_rule`
+
+通用 MCP 请求结构和参数类型说明见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+查询颜色主档使用 `color_list`；需要给业务引用颜色时改用 `color_options`，并按 `selectable` 判断能否新选：
+
+```json
+{"name":"color_list","arguments":{}}
+```
 
 调用权限按当前员工本人检查。ID 用十进制字符串。若工具不可发现或调用失败，应如实报告 MCP 当前不可用；不得绕过 MCP 直接访问数据库。
 

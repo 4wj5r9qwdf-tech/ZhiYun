@@ -37,6 +37,22 @@ description: 查询和维护织云 ERP 尺码档案、尺码类型标签及自�
 
 工具必须使用发起员工本人的会话身份；无权动作不展示。不得使用超管代办、直接访问数据库或提供通用 HTTP/SQL 工具。
 
+通用 MCP 参数、ID 和请求结构见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+查询尺码目录以及类型标签：
+
+```json
+{"name":"size_list","arguments":{}}
+```
+
+查询业务选项时调用 `size_options`，不要把停用项当成可新引用尺码：
+
+```json
+{"name":"size_options","arguments":{}}
+```
+
 ## 执行剧本
 
 ### 查询

@@ -1,3 +1,8 @@
+---
+name: zhiyun-company-record
+description: 查询和维护织云 ERP 公司档案及登录页展示配置。适用于员工明确要求查询、新建、修改默认公司或删除档案。
+---
+
 # 公司档案 Skill
 
 ## 适用范围
@@ -9,6 +14,23 @@
 - API 契约：[公司档案API.md](../../API/公司档案API.md)
 - MCP 工具：`company_list`、`company_get`、`company_file_usage`、`company_create`、`company_update`、`company_set_default`、`company_delete`。
 - 工具已加入后端代码；运行时发现状态需在后端启动后用 MCP 客户端核对。未发现工具时不得假称 MCP 可调用。
+- 通用参数类型及 JSON-RPC 示例见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+
+## 查询调用示例
+
+调用 `company_list` 查询公司分页列表，分页参数省略时使用服务端默认值：
+
+```json
+{"name":"company_list","arguments":{}}
+```
+
+查询详情时，`companyId` 必须复制自列表响应的真实十进制字符串 ID：
+
+```json
+{"name":"company_get","arguments":{"companyId":"123456789012345678"}}
+```
+
+示例 ID 仅展示字符串格式，实际调用不得照抄该 ID。
 
 ## 操作规则
 
