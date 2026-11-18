@@ -36,14 +36,14 @@ public class MasterDataMcpTools {
     // 客户档案 customer_master
     @McpTool(name = "customer_list", description = "分页查询客户档案；联系方式在详情中按当前员工权限脱敏，需要 system:customer:list")
     public R<?> customerList(
-        @McpToolParam(description = "可选，客户编码/名称/简称关键词") String keyword,
-        @McpToolParam(description = "可选，0启用、1停用") String status,
-        @McpToolParam(description = "可选，业务员用户ID十进制字符串") String salesId,
-        @McpToolParam(description = "可选，客户标签ID十进制字符串") String tagId,
-        @McpToolParam(description = "页码，默认1") Integer pageNum,
-        @McpToolParam(description = "每页条数，默认20，最大100") Integer pageSize) {
+        @McpToolParam(description = "可选，客户编码/名称/简称关键词；省略或空白表示不筛选", required = false) String keyword,
+        @McpToolParam(description = "可选，0启用、1停用；省略表示全部状态", required = false) String status,
+        @McpToolParam(description = "可选，业务员用户ID十进制字符串；省略表示不按业务员筛选", required = false) String salesId,
+        @McpToolParam(description = "可选，客户标签ID十进制字符串；省略表示不按标签筛选", required = false) String tagId,
+        @McpToolParam(description = "可选页码；省略或小于1时按1处理", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数；省略或小于1时按20处理，最大100", required = false) Integer pageSize) {
         StpUtil.checkPermission("system:customer:list");
-        return customerController.list(blank(keyword), blank(status), parseLong(salesId), parseLong(tagId),
+        return customerController.list(filterText(keyword), filterText(status), parseLong(salesId), parseLong(tagId),
             pageNum == null ? 1 : pageNum, pageSize == null ? 20 : pageSize);
     }
 
@@ -62,7 +62,7 @@ public class MasterDataMcpTools {
     @McpTool(name = "customer_check_duplicate", description = "按客户名称检查同名数量；仅提示，不阻止保存，需要 system:customer:list")
     public R<?> customerCheckDuplicate(
         @McpToolParam(description = "待检查客户名称") String name,
-        @McpToolParam(description = "可选，当前客户ID；新增时传0") String excludeId) {
+        @McpToolParam(description = "可选，当前客户ID十进制字符串；新增时省略，省略按0处理", required = false) String excludeId) {
         StpUtil.checkPermission("system:customer:list");
         return customerController.duplicates(name, parseLong(excludeId) == null ? 0L : parseLong(excludeId));
     }
@@ -110,8 +110,8 @@ public class MasterDataMcpTools {
     // 公司档案 company
     @McpTool(name = "company_list", description = "分页查询公司档案，需要 system:company:list")
     public R<?> companyList(
-        @McpToolParam(description = "页码，默认1") Integer pageNum,
-        @McpToolParam(description = "每页条数，默认20，最大100") Integer pageSize) {
+        @McpToolParam(description = "可选页码；省略或小于1时按1处理", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数；省略或小于1时按20处理，最大100", required = false) Integer pageSize) {
         StpUtil.checkPermission("system:company:list");
         return companyController.list(pageQuery(pageNum, pageSize));
     }
@@ -155,7 +155,7 @@ public class MasterDataMcpTools {
 
     // 组织架构 org
     @McpTool(name = "org_list", description = "按条件查询组织节点，需要 system:org:list")
-    public R<?> orgList(@McpToolParam(description = "组织筛选条件，可传orgName、status、orgCategory等字段") SysOrgBo query) {
+    public R<?> orgList(@McpToolParam(description = "可选组织筛选对象，可传orgName、status、orgCategory等字段；省略表示查询全部可见组织", required = false) SysOrgBo query) {
         StpUtil.checkPermission("system:org:list");
         return orgController.list(query == null ? new SysOrgBo() : query);
     }
@@ -167,20 +167,20 @@ public class MasterDataMcpTools {
     }
 
     @McpTool(name = "org_options", description = "按ID查询组织选项，需要 system:org:query")
-    public R<?> orgOptions(@McpToolParam(description = "可选，组织ID逗号分隔；不传返回全部可选组织") String orgIds) {
+    public R<?> orgOptions(@McpToolParam(description = "可选，组织ID十进制字符串，多个用英文逗号分隔；省略返回全部可选组织", required = false) String orgIds) {
         StpUtil.checkPermission("system:org:query");
         Long[] ids = blank(orgIds) == null ? null : parseLongs(orgIds);
         return orgController.optionselect(ids);
     }
 
     @McpTool(name = "org_create", description = "新增组织节点；执行前展示上级、类别、建筑和负责人并取得确认，需要 system:org:add")
-    public R<?> orgCreate(@McpToolParam(description = "组织字段对象：parentId、orgName、orgCategory、buildingId、location、orderNum、leader、phone、email、status") SysOrgBo body) {
+    public R<?> orgCreate(@McpToolParam(description = "组织字段对象：parentId、orgName、orgCategory、buildingId、location、orderNum、leader（负责人用户ID）、phone（部门电话）、email（部门邮箱）、status") SysOrgBo body) {
         StpUtil.checkPermission("system:org:add");
         return orgController.add(body);
     }
 
     @McpTool(name = "org_update", description = "修改组织节点；执行前展示完整变化并取得确认，需要 system:org:edit")
-    public R<?> orgUpdate(@McpToolParam(description = "完整组织字段对象，必须包含orgId") SysOrgBo body) {
+    public R<?> orgUpdate(@McpToolParam(description = "完整组织字段对象，必须包含orgId；leader为负责人用户ID，phone为部门电话，email为部门邮箱") SysOrgBo body) {
         StpUtil.checkPermission("system:org:edit");
         return orgController.edit(body);
     }
@@ -215,10 +215,10 @@ public class MasterDataMcpTools {
     // 岗位管理 post
     @McpTool(name = "post_list", description = "分页查询岗位并支持名称/编码关键词，需要 system:post:list")
     public R<?> postList(
-        @McpToolParam(description = "岗位查询条件，可传postName、postCode、orgId、status等") SysPostBo query,
-        @McpToolParam(description = "可选名称或编码关键词") String keyword,
-        @McpToolParam(description = "页码，默认1") Integer pageNum,
-        @McpToolParam(description = "每页条数，默认20") Integer pageSize) {
+        @McpToolParam(description = "可选岗位筛选对象，可传postName、postCode、orgId、status等；省略表示不按对象字段筛选", required = false) SysPostBo query,
+        @McpToolParam(description = "可选名称或编码关键词；省略或空白表示不按关键词筛选", required = false) String keyword,
+        @McpToolParam(description = "可选页码；省略或小于1时按1处理", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数；省略或小于1时按20处理，最大100", required = false) Integer pageSize) {
         StpUtil.checkPermission("system:post:list");
         return postController.list(query == null ? new SysPostBo() : query, pageQuery(pageNum, pageSize), keyword);
     }
@@ -231,8 +231,8 @@ public class MasterDataMcpTools {
 
     @McpTool(name = "post_options", description = "查询岗位选择项，可按组织或岗位ID过滤，需要 system:post:query")
     public R<?> postOptions(
-        @McpToolParam(description = "可选，岗位ID逗号分隔") String postIds,
-        @McpToolParam(description = "可选，组织ID") String orgId) {
+        @McpToolParam(description = "可选，岗位ID十进制字符串，多个用英文逗号分隔；省略不按岗位ID筛选", required = false) String postIds,
+        @McpToolParam(description = "可选，组织ID十进制字符串；省略不按组织筛选", required = false) String orgId) {
         StpUtil.checkPermission("system:post:query");
         return postController.optionselect(blank(postIds) == null ? null : parseLongs(postIds), parseLong(orgId));
     }
@@ -264,7 +264,7 @@ public class MasterDataMcpTools {
     }
 
     @McpTool(name = "post_org_tree", description = "查询岗位筛选用组织树，需要 system:post:list")
-    public R<?> postOrgTree(@McpToolParam(description = "组织筛选条件，可传orgName、status、orgCategory等") SysOrgBo query) {
+    public R<?> postOrgTree(@McpToolParam(description = "可选组织筛选对象，可传orgName、status、orgCategory等；省略表示查询全部可见组织", required = false) SysOrgBo query) {
         StpUtil.checkPermission("system:post:list");
         return postController.orgTree(query == null ? new SysOrgBo() : query);
     }
@@ -272,9 +272,9 @@ public class MasterDataMcpTools {
     // 建筑档案 building
     @McpTool(name = "building_list", description = "按关键词、用途和状态查询建筑档案，需要 system:building:list")
     public R<?> buildingList(
-        @McpToolParam(description = "可选，建筑编码、名称或地址关键词") String keyword,
-        @McpToolParam(description = "可选，建筑用途类别") String buildingType,
-        @McpToolParam(description = "可选，0启用、1停用") String status) {
+        @McpToolParam(description = "可选，建筑编码、名称或地址关键词；省略或空白表示不筛选", required = false) String keyword,
+        @McpToolParam(description = "可选，建筑用途类别；省略表示全部用途", required = false) String buildingType,
+        @McpToolParam(description = "可选，0启用、1停用；省略表示全部状态", required = false) String status) {
         StpUtil.checkPermission("system:building:list");
         return buildingController.list(blank(keyword), blank(buildingType), blank(status));
     }
@@ -323,5 +323,10 @@ public class MasterDataMcpTools {
 
     private String blank(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    /** MCP 字符串筛选参数即使未提供，也向业务查询传空串，避免 null 进入筛选逻辑。 / Normalize omitted MCP text filters to empty strings before invoking business queries. */
+    private String filterText(String value) {
+        return value == null ? "" : value.trim();
     }
 }

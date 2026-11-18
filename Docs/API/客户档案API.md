@@ -14,7 +14,7 @@
 
 | 工具 | 权限 | 类型/约束 |
 |---|---|---|
-| `customer_list` | `system:customer:list` | 只读分页；联系方式脱敏策略按员工权限 |
+| `customer_list` | `system:customer:list` | 只读分页；关键词、状态、业务员ID、标签ID均可省略或传空值；联系方式脱敏策略按员工权限 |
 | `customer_category_counts` | `system:customer:list` | 只读统计 |
 | `customer_get` | `system:customer:list` | 详情；无编辑权限时联系方式脱敏 |
 | `customer_check_duplicate` | `system:customer:list` | 只读同名检查，仅提醒 |
@@ -39,6 +39,8 @@
 | `PUT /system/customer/{id}` | 更新主档并整体替换联系人、地址、标签集合 | `system:customer:edit` | 目标状态幂等、仍写审计；需员工确认 |
 | `PUT /system/customer/{id}/status` | `{ "status":"0" }` 启用或 `1` 停用 | `system:customer:edit` | 状态幂等；保留历史；需员工确认 |
 | `DELETE /system/customer/{id}` | 删除客户及其联系人/地址 | `system:customer:remove` | 非幂等；仅无业务外键引用时删除；需员工确认 |
+
+客户列表筛选中的 `keyword`、`status`、`salesId`、`tagId` 均为可选参数。REST 未传值、MCP 未提供值或传入空白文本时均按“不增加该筛选条件”处理；`status` 仅识别 `0`（启用）和 `1`（停用），其他值不参与筛选。分页参数默认 `pageNum=1`、`pageSize=20`，每页最大100条。
 
 ### 新增/修改请求体
 

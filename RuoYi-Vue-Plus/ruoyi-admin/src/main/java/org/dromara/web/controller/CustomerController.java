@@ -27,10 +27,14 @@ public class CustomerController {
         @RequestParam(defaultValue="") String status, @RequestParam(required=false) Long salesId,
         @RequestParam(required=false) Long tagId, @RequestParam(defaultValue="1") int pageNum,
         @RequestParam(defaultValue="20") int pageSize) {
+        // HTTP 请求参数有默认值，但 MCP 等 Java 内部调用会绕过 Spring 参数绑定，故在业务入口统一兜底。
+        // HTTP binds defaults, while direct Java callers such as MCP bypass that layer; normalize optional filters here.
+        String keywordFilter = keyword == null ? "" : keyword.trim();
+        String statusFilter = status == null ? "" : status.trim();
         List<Object> args = new ArrayList<>();
         String where = " WHERE 1=1";
-        if (!keyword.isBlank()) { where += " AND (c.customer_code ILIKE ? OR c.customer_name ILIKE ? OR c.customer_short_name ILIKE ?)"; for(int i=0;i<3;i++) args.add("%"+keyword.trim()+"%"); }
-        if (Set.of("0","1").contains(status)) { where += " AND c.status=?"; args.add(status); }
+        if (!keywordFilter.isBlank()) { where += " AND (c.customer_code ILIKE ? OR c.customer_name ILIKE ? OR c.customer_short_name ILIKE ?)"; for(int i=0;i<3;i++) args.add("%"+keywordFilter+"%"); }
+        if ("0".equals(statusFilter) || "1".equals(statusFilter)) { where += " AND c.status=?"; args.add(statusFilter); }
         if (salesId != null) { where += " AND c.sales_representative_id=?"; args.add(salesId); }
         if (tagId != null) { where += " AND EXISTS (SELECT 1 FROM sys_tag_relation r WHERE r.module_key='customer_master' AND r.record_id=c.customer_id AND r.tag_id=?)"; args.add(tagId); }
         Long total=jdbc.queryForObject("SELECT count(*) FROM customer_master c"+where,Long.class,args.toArray());

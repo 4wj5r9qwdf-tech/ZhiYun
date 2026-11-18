@@ -18,9 +18,9 @@ public class MaterialMcpTools {
 
     /** 按人员分类范围查询物料。 / List materials within the employee's category grants. */
     @McpTool(name="material_list",description="查询物料档案；服务端按人员分类权限过滤，需要 inventory:material:list 权限")
-    public R<?> list(@McpToolParam(description="可选搜索和筛选：keyword、schemeId、categoryId、status") Map<String,Object> filter){
+    public R<?> list(@McpToolParam(description="可选筛选对象：keyword字符串、schemeId/categoryId十进制字符串、status为0启用或1停用；省略或空对象查询当前人员分类权限内的全部物料", required = false) Map<String,Object> filter){
         StpUtil.checkPermission("inventory:material:list");
-        return controller.list(text(filter,"keyword"),number(filter.get("schemeId")),number(filter.get("categoryId")),text(filter,"status"));
+        return controller.list(text(filter,"keyword"),number(value(filter,"schemeId")),number(value(filter,"categoryId")),text(filter,"status"));
     }
 
     /** 读取可用分类供授权范围内的物料维护选择。 / Read visible category choices. */
@@ -29,7 +29,7 @@ public class MaterialMcpTools {
 
     /** 读取启用物料业务选项。 / Read enabled material choices within category scope. */
     @McpTool(name="material_options",description="查询当前人员分类权限范围内启用的物料选项及启用规格，需要员工登录")
-    public R<?> options(@McpToolParam(description="可选的物料编码、名称、规格或型号关键字")String keyword){StpUtil.checkLogin();return controller.options(keyword);}
+    public R<?> options(@McpToolParam(description="可选的物料编码、名称、规格或型号关键字；省略或空白表示返回全部可见的启用物料", required = false)String keyword){StpUtil.checkLogin();return controller.options(keyword);}
 
     /** 读取规格模板的字段定义。 / Load available specification field definitions. */
     @McpTool(name="material_spec_templates", description="查询物料属性模板、启用状态、字段键、类型和单位，需要员工登录")
@@ -58,6 +58,7 @@ public class MaterialMcpTools {
     @McpTool(name="material_delete",description="删除物料；存在业务引用时后端拒绝并要求停用，执行前展示物料编码名称并取得确认，需要 inventory:material:remove 权限")
     public R<?> delete(@McpToolParam(description="物料ID十进制字符串")String id){StpUtil.checkPermission("inventory:material:remove");return controller.remove(Long.valueOf(id));}
 
-    private String text(Map<String,Object> map,String key){Object value=map.get(key);return value==null?null:value.toString();}
+    private String text(Map<String,Object> map,String key){Object value=value(map,key);return value==null?null:value.toString();}
+    private Object value(Map<String,Object> map,String key){return map==null?null:map.get(key);}
     private Long number(Object value){try{return value==null?null:Long.valueOf(value.toString());}catch(Exception e){return null;}}
 }
