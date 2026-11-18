@@ -126,7 +126,9 @@ function applySizeGroup(value: unknown) {
 const chosenLabels = (ids: string[], options: Reference[]) =>
   ids.map(id => options.find(item => item.value === id)?.label || id)
 const previewUrls = new Set<string>()
+/** 创建用于图片预览的临时地址并登记以便释放。 / Create a temporary image-preview URL and track it for cleanup. */
 function imageUrl(blob: Blob) { const url = URL.createObjectURL(blob); previewUrls.add(url); return url }
+/** 为附件列表加载受权限保护的缩略图。 / Load authorized thumbnails for style attachments. */
 async function loadAttachmentThumbnails(styleId: string, items: StyleAttachment[]) {
   await Promise.all(items.filter(item => item.category !== 'document' && item.ossId && !item.legacyCover).map(async item => {
     try {
@@ -181,9 +183,11 @@ function categoryPath(categoryId?: string) {
   }
   return path.join(' / ')
 }
+/** 按颜色或尺码档案将 ID 列表格式化为名称。 / Resolve color or size identifiers to display names. */
 function specText(ids: string[], options: Reference[]) {
   return chosenLabels(ids || [], options).join('、') || '—'
 }
+/** 汇总被该款式作为子款使用的套装信息。 / Find sets that reference this style as a component. */
 function parentSets(row: Row) {
   return rows.value.filter(item => item.productionMode !== 'single' && item.members?.some(member => member.childId === row.id))
     .map(item => item.styleCode + ' · ' + item.name).join('、') || '—'
@@ -203,6 +207,7 @@ async function loadListCovers(catalog: Row[]) {
     } catch { /* 图片不可用时显示占位，列表仍可使用。 */ }
   }))
 }
+/** 打开列表主图预览并确保读取当前行的私有图片。 / Open the list-cover preview using the authorized private image. */
 async function previewListCover(row: Row) {
   try {
     const blob = await api.get(endpoint + '/' + row.id + '/cover', { responseType: 'blob' }) as unknown as Blob
@@ -232,6 +237,7 @@ const formCategoryTree = computed(() => {
   }
   return [...types.values()]
 })
+/** 切换款式分类类型并重置不兼容的分类选择。 / Change the style category scheme and clear incompatible category selections. */
 function changeFormScheme(value: unknown) {
   formSchemeId.value = typeof value === 'string' ? value : undefined
   const selected = categories.value.find(row => row.id === form.value.categoryId)
@@ -259,12 +265,14 @@ const styleTree = computed(() => {
   return scheme ? allStyleTree.value.filter(node => node.key === 'scheme:' + scheme) : allStyleTree.value
 })
 
+/** 切换分类树显示范围且不扩大人员授权边界。 / Change the visible tree scheme without expanding employee access. */
 function changeVisibleScheme(value?: unknown) {
   const selected = typeof value === 'string' && value ? value : undefined
   visibleSchemeId.value = selected ?? defaultSchemeId.value
   schemeFilter.value = visibleSchemeId.value
   categoryFilter.value = undefined
 }
+/** 重置分类树筛选和高亮状态。 / Reset category-tree filters and selection state. */
 function resetStyleTree() {
   changeVisibleScheme()
 }
@@ -305,6 +313,7 @@ const selectedCategoryIds = computed(() => {
   }
   return ids
 })
+/** 按所选分类节点及其可见后代过滤款式列表。 / Filter styles by the selected category and visible descendants. */
 function selectStyleTree(keys: (string | number)[]) {
   const key = String(keys[0] || '')
   if (key.startsWith('scheme:')) { schemeFilter.value = key.slice(7); categoryFilter.value = undefined }
@@ -364,6 +373,7 @@ function clearPreview() {
   preview.value = ''
 }
 
+/** 初始化空白款式档案，并应用有效的页面分类定位。 / Initialize a blank style and apply a valid initial category context. */
 function openAdd(previous?: Form) {
   clearPreview()
   editId.value = undefined
@@ -470,6 +480,7 @@ async function openMemberEditor(member: Member, edit: boolean, appendOnSave = fa
   original.value = formSnapshot()
 }
 
+/** 恢复套装编辑前的主档草稿，避免子款弹窗覆盖父表单。 / Restore the parent set draft after editing a child record. */
 function restoreSetDraft(savedChildId?: string) {
   const draft = setDraft.value
   if (!draft) return
@@ -512,6 +523,7 @@ async function loadChildSpecs(ids: string[]) {
 const selectedChildIds = computed(() => form.value.productionMode === 'single' || compositionRestricted.value
   ? [] : form.value.members.flatMap(member => member.childId ? [member.childId] : []))
 watch(() => selectedChildIds.value.join(','), () => void loadChildSpecs(selectedChildIds.value))
+/** 读取子款颜色尺码并构造套装配套候选值。 / Load child color-size options for set-pairing selection. */
 function childSpecOptions(item: SetSpecItem, type: 'color' | 'size') {
   const detail = childConfigurations.value[item.childId]
   if (!detail) return []
@@ -520,11 +532,13 @@ function childSpecOptions(item: SetSpecItem, type: 'color' | 'size') {
     : specOptions.value.sizes.filter(size => item.colorId && detail.sizeIds.includes(size.value) && !size.disabled
       && !detail.excludedPairs.some(pair => pair.colorId === item.colorId && pair.sizeId === size.value))
 }
+/** 检查套装规格是否完整匹配所有组成子款。 / Check that a set specification includes valid pairings for every member. */
 function alignSetSpec(spec: SetSpec) {
   spec.items = selectedChildIds.value.map(childId => spec.items.find(item => item.childId === childId) || { childId })
 }
 let nextSpecDraft = 0
 const expandedSetSpecs = ref<string[]>([])
+/** 新增一个套装配色配码方案及其子款组合。 / Add a set color-size scheme and its child-style pairings. */
 function addSetSpec(source?: SetSpec) {
   const draftKey = 'new-' + ++nextSpecDraft
   // 复制配套选择，规格名称留空以便录入新的配色或尺码。
@@ -534,6 +548,7 @@ function addSetSpec(source?: SetSpec) {
   form.value.setSpecs.push(spec)
   expandedSetSpecs.value = [draftKey]
 }
+/** 生成子款已选颜色尺码的名称。 / Build the selected color-size label for a child style. */
 function childSpecName(childId: string) {
   return rows.value.find(row => row.id === childId)?.name
     || form.value.members.find(member => member.childId === childId)?.roleName || '已移除子款'
@@ -541,6 +556,7 @@ function childSpecName(childId: string) {
 const childrenWithoutPairs = computed(() => selectedChildIds.value.filter(childId =>
   childConfigurations.value[childId] && !childSpecOptions({ childId }, 'color').some(color =>
     childSpecOptions({ childId, colorId: color.value }, 'size').length)))
+/** 汇总套装规格中各子款的颜色尺码搭配。 / Summarize child pairings in a set specification. */
 function setSpecSummary(spec: SetSpec) {
   return spec.items.map(item => {
     const color = specOptions.value.colors.find(option => option.value === item.colorId)?.label
@@ -548,11 +564,13 @@ function setSpecSummary(spec: SetSpec) {
     return childSpecName(item.childId) + '：' + (color && size ? color + ' / ' + size : '待配套')
   }).join('；')
 }
+/** 判断套装规格是否缺少组成子款或有效配套。 / Detect missing members or invalid pairings in a set specification. */
 function setSpecNeedsAlignment(spec: SetSpec) {
   return spec.items.length !== selectedChildIds.value.length
     || spec.items.some(item => !selectedChildIds.value.includes(item.childId))
 }
 
+/** 调整套装组成子款的展示和处理顺序。 / Reorder set members for display and downstream processing. */
 function moveMember(index: number, step: number) {
   const members = form.value.members
   const next = index + step
@@ -561,12 +579,14 @@ function moveMember(index: number, step: number) {
   members.splice(next, 0, member)
 }
 
+/** 设置单款可用颜色尺码组合并保持排除关系一致。 / Update available single-style pairs while preserving exclusions. */
 function setAvailable(colorId: string, available: string[]) {
   const selected = new Set(available)
   form.value.excludedPairs = form.value.excludedPairs.filter(pair => pair.colorId !== colorId)
     .concat(form.value.sizeIds.filter(sizeId => !selected.has(sizeId)).map(sizeId => ({ colorId, sizeId })))
 }
 
+/** 取得所选尺码组中可用于当前款式的尺码。 / Resolve sizes from the selected size group for the current style. */
 function availableSizes(colorId: string) {
   return form.value.sizeIds.filter(sizeId => !form.value.excludedPairs.some(pair => pair.colorId === colorId && pair.sizeId === sizeId))
 }
@@ -617,6 +637,7 @@ function closeAttachmentPreview() {
   attachmentPreview.value = ''
 }
 
+/** 打开款式附件预览并释放上一次临时地址。 / Preview a style attachment and release the previous temporary URL. */
 async function previewAttachment(item: StyleAttachment) {
   if (item.category === 'document') return downloadAttachment(item)
   try {
@@ -629,6 +650,7 @@ async function previewAttachment(item: StyleAttachment) {
   } catch (error) { message.error(foundationError(error)) }
 }
 
+/** 通过受权限保护的文件接口下载款式附件。 / Download a style attachment through its authorized file endpoint. */
 async function downloadAttachment(item: StyleAttachment) {
   if (item.file) {
     const url = URL.createObjectURL(item.file)
@@ -647,6 +669,7 @@ async function downloadAttachment(item: StyleAttachment) {
   } catch (error) { message.error(foundationError(error)) }
 }
 
+/** 关闭款式编辑窗口前确认是否丢弃未保存资料。 / Confirm before discarding unsaved style data when closing. */
 function close() {
   if (saving.value || detailLoading.value) return
   const discard = () => {
@@ -716,6 +739,7 @@ async function save(andAdd = false) {
   finally { saving.value = false }
 }
 
+/** 对影响子款或规格的变更请求用户确认。 / Confirm changes that affect set members or specifications. */
 function confirmChange(row: Row, remove = false) {
   const next = row.status === '0' ? '1' : '0'
   const action = remove ? '删除' : next === '0' ? '启用' : '停用'

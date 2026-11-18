@@ -24,6 +24,7 @@ type SpecField = { key: string; label: string; type: 'text' | 'integer' | 'decim
 type SpecTemplate = { code: string; name: string; active: boolean; fields: SpecField[] }
 type MaterialUnit = { unitId: string | undefined; mode: 'FIXED' | 'VARIABLE'; referenceUnitId: string | undefined; factor: string; inventoryFactor?: string | null; purchase: boolean; usage: boolean }
 type LegacySpecKey = 'fabricWeightGsm' | 'fabricWidthCm' | 'composition'
+/** 判断属性键是否仍存于历史面料字段中。 / Identify specification keys retained in legacy fabric columns. */
 function isLegacySpecKey(key: string): key is LegacySpecKey {
   return key === 'fabricWeightGsm' || key === 'fabricWidthCm' || key === 'composition'
 }
@@ -78,10 +79,12 @@ function updateSpecValue(key: string, value: SpecValue) {
   else form.value.specValues[key] = value
 }
 
+/** 按模板元数据取得物料属性的显示名称。 / Resolve a material-attribute label from template metadata. */
 function specFieldLabel(field: SpecField) {
   return field.unit ? `${field.label}（${field.unit}）` : field.label
 }
 
+/** 读取当前规格字段可选值并保留已有历史值。 / Load options for the active field while preserving historical selections. */
 function specOptions(field: SpecField) {
   if (field.type === 'boolean') return [{ label: '是', value: 'true' }, { label: '否', value: 'false' }]
   return (field.options ?? []).map(value => ({ label: value, value }))
@@ -116,6 +119,7 @@ function activeSpecValues() {
   return Object.fromEntries((activeSpecTemplate.value?.fields ?? []).filter(field => !variantAttributeFields.value.includes(field)).map(field => [field.key, specValue(field.key) ?? null]))
 }
 
+/** 切换属性模板前保存可恢复值并清除不适用输入。 / Preserve recoverable values and clear incompatible inputs when changing templates. */
 function changeSpecTemplate(value: unknown) {
   const code = typeof value === 'string' ? value : null
   if (code === form.value.specTemplateCode) return
@@ -163,9 +167,11 @@ const materialUnitOptions = computed(() => units.value.filter(unit => unit.id !=
   (unit.selectable || form.value.materialUnits.some(item => item.unitId === unit.id)))
   .map(unit => ({ value: unit.id, label: `${unit.name}（${unit.code}）${unit.selectable ? '' : '（已停用）'}`, disabled: !unit.selectable })))
 
+/** 增加一条物料专属的采购或辅助单位换算配置。 / Add a material-specific purchase or auxiliary-unit conversion. */
 function addMaterialUnit() {
   form.value.materialUnits.push({ unitId: undefined, mode: 'FIXED', referenceUnitId: form.value.inventoryUnitId, factor: '', purchase: false, usage: true })
 }
+/** 将档案中已配置的单位快速加入物料单位设置。 / Add commonly configured units to the material's unit settings. */
 function addCommonUnits() {
   for (const unit of units.value) {
     if (unit.selectable && unit.baseUnitId === form.value.inventoryUnitId && !form.value.materialUnits.some(item => item.unitId === unit.id)) {
@@ -173,12 +179,14 @@ function addCommonUnits() {
     }
   }
 }
+/** 选择单位后初始化用途、换算方式及参照单位。 / Initialize usage and conversion settings after a unit is selected. */
 function selectMaterialUnit(item: MaterialUnit, id: string) {
   item.unitId = id
   const unit = units.value.find(entry => entry.id === id)
   item.referenceUnitId = form.value.inventoryUnitId
   item.factor = unit && unit.baseUnitId === form.value.inventoryUnitId ? showFactor(unit.factor) : ''
 }
+/** 按库存单位和固定换算链筛选合法参照单位。 / Filter valid reference units from the inventory unit and fixed-conversion chain. */
 function referenceOptions(item: MaterialUnit) {
   const ids = [form.value.inventoryUnitId, ...form.value.materialUnits.filter(other => other !== item && other.mode === 'FIXED').map(other => other.unitId)]
   return units.value.filter(unit => ids.includes(unit.id)).map(unit => ({ value: unit.id, label: unit.name }))
@@ -231,6 +239,7 @@ function buildCategoryTree(source: Category[]): CategoryTreeNode[] {
     else roots.push(node)
   }
 
+  /** 为分类树节点生成完整祖先路径便于辨认。 / Build full ancestor paths so category-tree nodes are distinguishable. */
   function labelPaths(branch: CategoryTreeNode[], parentPath = '') {
     for (const node of branch) {
       node.pathLabel = parentPath ? `${parentPath} / ${node.title}` : node.title
@@ -262,12 +271,14 @@ const selectedCategoryIds = computed(() => {
   while (changed) { changed = false; for (const item of categories.value) if (item.parentId && ids.has(item.parentId) && !ids.has(item.id)) { ids.add(item.id); changed = true } }
   return ids
 })
+/** 切换分类体系后同步树范围并清理失效选择。 / Update the tree scope and clear invalid selections when the scheme changes. */
 function changeVisibleScheme(value?: unknown) {
   const selected = typeof value === 'string' && value ? value : undefined
   visibleSchemeId.value = selected ?? defaultSchemeId.value
   schemeFilter.value = visibleSchemeId.value
   categoryFilter.value = undefined
 }
+/** 按选中的分类节点及其可见子级筛选物料。 / Filter materials by the selected category and its visible descendants. */
 function selectMaterialTree(keys: (string | number)[]) {
   const key = String(keys[0] ?? '')
   if (key.startsWith('scheme:')) { schemeFilter.value = key.slice(7); categoryFilter.value = undefined }
@@ -334,6 +345,7 @@ async function loadDefaultCategory() {
     if (!defaultResolved) message.warning('物料分类参数读取失败，请重新查询。')
   }
 }
+/** 读取分类、单位、颜色和规格模板公共数据。 / Load shared category, unit, color and specification-template data. */
 async function loadFoundation(){
   const [catRes,unitRes,colorRes,templateRes]=await Promise.all([api.get('/inventory/material/category-options'),api.get('/system/unit/options'),api.get('/system/color/options'),api.get('/inventory/material/spec-templates')]) as any[]
   if(templateRes.code!==200)throw new Error(templateRes.msg||'规格模板加载失败')
@@ -345,9 +357,13 @@ async function loadFoundation(){
   await loadDefaultCategory()
   units.value=(unitRes.data||[]).map((r:any)=>({...r,id:String(r.id)}));colors.value=(colorRes.data||[]).map((r:any)=>({...r,id:String(r.id),value:r.color_value||'',selectable:!!r.selectable}))
 }
+/** 兼容解析数据库颜色 JSON 与已结构化颜色数据。 / Parse both stored color JSON and already structured color values. */
 function parseColors(row:Material):Color[]{if(Array.isArray(row.colors))return row.colors;try{return JSON.parse(String(row.colors||'[]'))}catch{return[]}}
+/** 同步加载物料目录和公共选项，并呈现可理解的失败信息。 / Load the material catalog and shared options with actionable error feedback. */
 async function load(){loading.value=true;try{await loadFoundation();const res:any=await api.get('/inventory/material/list');if(res.code!==200)throw new Error(res.msg||'物料档案加载失败');rows.value=(res.data||[]).map((r:any)=>({...r,id:String(r.id),schemeId:String(r.schemeId),categoryId:String(r.categoryId),inventoryUnitId:String(r.inventoryUnitId),sortOrder:Number(r.sortOrder||0),colors:parseColors(r),colorsText:parseColors(r).map(c=>c.name).join('、'),variantSummary:r.multiSpec ? (r.variants || []).length + ' 个规格' : '单规格',templateName:specTemplates.value.find(t=>t.code===r.specTemplateCode)?.name || '—'}))}catch(e:any){message.error(e?.response?.data?.msg||e?.message||'物料档案加载失败')}finally{loading.value=false}}
+/** 获取可编辑物料编码建议，保存时仍由服务端校验。 / Fetch an editable material-code suggestion; the server validates it on save. */
 async function nextCode(){const res:any=await api.get('/inventory/material/next-code');if(res.code!==200)throw new Error(res.msg||'物料编码建议获取失败');return String(res.data?.code||'')}
+/** 初始化空白物料档案，不带入普通新增的上次表单。 / Initialize a blank material record without carrying over previous form values. */
 async function openAdd(again = false) {
   try {
     const defaults = again ? savedDefaults.load() : blank()
@@ -368,6 +384,7 @@ async function openAdd(again = false) {
   }
 }
 
+/** 按主键读取物料及规格、单位、颜色关系。 / Load a material and its variants, units and colors by identifier. */
 function openEdit(row: Material) {
   editMode.value = true
   form.value = {
@@ -384,7 +401,9 @@ function openEdit(row: Material) {
   initial.value = JSON.stringify(form.value)
   dialog.value = true
 }
+/** 在新增或编辑中联动分类类型和分类树。 / Keep the category type and tree synchronized in add and edit flows. */
 function onSchemeChange(){form.value.categoryId=undefined}
+/** 离开物料编辑前检查未保存改动。 / Guard against losing unsaved material changes when leaving the editor. */
 function closeForm(){if(saving.value)return;if(JSON.stringify(form.value)===initial.value){dialog.value=false;return}Modal.confirm({title:'放弃未保存的修改？',content:'关闭后，本次录入内容不会保存。',okText:'放弃修改',cancelText:'继续编辑',onOk:()=>{dialog.value=false}})}
 /** 在提交前定位缺项和重复规格，编码与名称按服务端口径忽略大小写。 / Locate missing and duplicate variant fields before submission. */
 function validateVariants() {
@@ -422,8 +441,11 @@ function validateVariants() {
   return true
 }
 
+/** 保存物料主档及其颜色、单位、共用属性和规格明细。 / Persist material data with colors, units, shared attributes and variants. */
 async function save(again=false){if(saving.value)return;if(!validateVariants())return;if(!form.value.code.trim()||!form.value.name.trim()||!form.value.schemeId||!form.value.categoryId||!form.value.inventoryUnitId){message.warning('请填写物料编码、名称，并选择分类类型、所属分类和库存单位');return}saving.value=true;try{const payload={...form.value,code:form.value.code.trim(),name:form.value.name.trim(),colorIds:form.value.colorIds||[],specValues:activeSpecValues(),variantFields:variantAttributeFields.value.map(field => field.key),variants:form.value.multiSpec ? form.value.variants : []};const res:any=editMode.value?await api.put(`/inventory/material/${form.value.id}`,payload):await api.post('/inventory/material',payload);if(res.code!==200)throw new Error(res.msg||'保存失败');message.success(editMode.value?'物料已保存':'物料已新增');if(!editMode.value)savedDefaults.save(payload);await load();if(again&&!editMode.value){dialog.value=false;await openAdd(true)}else dialog.value=false}catch(e:any){message.error(e?.response?.data?.msg||e?.message||'保存失败')}finally{saving.value=false}}
+/** 启停物料并保留已存在的 BOM 和库存历史引用。 / Change material availability while preserving BOM and inventory history. */
 function toggleStatus(row:Material){const next=row.status==='0'?'1':'0';Modal.confirm({title:`${next==='0'?'启用':'停用'}物料`,content:`确认${next==='0'?'启用':'停用'}“${row.name}（${row.code}）”吗？停用后不能用于新的业务选择，历史引用仍保留。`,okText:'确认',cancelText:'取消',onOk:async()=>{const res:any=await api.put(`/inventory/material/${row.id}/status`,{status:next});if(res.code!==200)throw new Error(res.msg||'状态更新失败');await load()}})}
+/** 删除未被其他业务引用的物料，存在引用时提示改为停用。 / Delete only unreferenced materials and direct referenced records to deactivation. */
 function remove(row:Material){Modal.confirm({title:'删除物料',content:`确认删除“${row.name}（${row.code}）”吗？已被业务引用的物料不能删除，可停用。`,okText:'确认删除',cancelText:'取消',okButtonProps:{danger:true},onOk:async()=>{const res:any=await api.delete(`/inventory/material/${row.id}`);if(res.code!==200)throw new Error(res.msg||'删除失败');message.success('物料已删除');await load()}})}
 const headers = ['物料编码','物料名称','分类类型编码','分类编码','规格尺寸','型号','品牌','材质说明',
   '库存单位编码','颜色编码','排序','备注','克重（g/m²）','幅宽（cm）','成分','辅助单位编码','规格模板编码','模板规格值','物料单位配置']
@@ -433,6 +455,7 @@ const legacyHeaders = [
   headers.slice(0, 18),
 ]
 
+/** 将导入行解析成物料字段并逐行校验。 / Parse imported rows into material fields and validate them individually. */
 function parseImport(fields: string[]) {
   const [code,name,schemeCode,categoryCode,_legacySpecification,model,brand,materialDesc,unitCode,colorCodes,
     sort,remark,fabricWeightGsm,fabricWidthCm,composition,auxiliaryCodes,specTemplateCode,specJson,materialUnitsJson] = fields.map(value => value.trim())
@@ -451,10 +474,12 @@ function parseImport(fields: string[]) {
     sortOrder,remark,fabricWeightGsm,fabricWidthCm,composition,auxiliaryCodes,specTemplateCode,specValues,materialUnitsJson }
 }
 
+/** 解析多值编码单元格，去重并保留输入顺序。 / Parse a multi-code cell, deduplicate values and preserve their order. */
 function splitCodes(value: string) {
   return (value || '').split(/[，,]/).map(code => code.trim()).filter(Boolean)
 }
 
+/** 复用物料新增校验逐条导入并返回行级结果。 / Import rows through the standard material validation path and return per-row results. */
 async function importMaterial(payload: ReturnType<typeof parseImport> | Record<string, any>) {
   const category = categories.value.find(item => item.schemeCode === payload.schemeCode &&
     item.code === payload.categoryCode && item.selectable)
@@ -490,6 +515,7 @@ async function importMaterial(payload: ReturnType<typeof parseImport> | Record<s
   if (res.code !== 200) throw new Error(res.msg || '导入失败')
 }
 
+/** 将模板属性与各物料规格属性展开为可读导出字段。 / Flatten template and variant attributes into readable export columns. */
 function exportSpecValues(row: Material) {
   const template = specTemplates.value.find(item => item.code === row.specTemplateCode)
   const entries = (template?.fields ?? [])
@@ -498,6 +524,7 @@ function exportSpecValues(row: Material) {
   return entries.length ? JSON.stringify(Object.fromEntries(entries)) : ''
 }
 
+/** 导出当前筛选的物料与规格明细。 / Export filtered material records and variant details. */
 function exportCsv() {
   const data = filtered.value.map(row => [
     row.code, row.name, schemes.value.find(scheme => scheme.value === row.schemeId)?.code || '',

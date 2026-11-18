@@ -92,6 +92,7 @@ const categoryFilterTree = computed(() => {
   return stylePickerTree.value.map(convert)
 })
 const bomTree = computed<SidebarNode[]>(() => {
+  /** 将服务端分类结构转换为侧栏树节点。 / Convert server category data into sidebar tree nodes. */
   function convert(node: PickerTreeNode): SidebarNode {
     const childCategories = node.children.map(convert)
     const styleNodes = visibleStyles.value.filter(style => style.categoryId === node.orgId)
@@ -113,6 +114,7 @@ const stylePickerColumns = [
   { title: '款式类型', dataIndex: 'type', key: 'type' }, { title: '分类', dataIndex: 'category', key: 'category' },
   { title: '客户', dataIndex: 'customer', key: 'customer' },
 ]
+/** 取得分类节点及所有后代，用于范围筛选。 / Resolve a category and its descendants for scoped filtering. */
 function categoryDescendants(id: string) {
   const ids = new Set([id])
   let changed = true
@@ -136,16 +138,19 @@ const visibleVersions = computed(() => {
     && (!filterScheme || styleCategories.value.some(category => category.id === style.categoryId && category.schemeId === filterScheme))).map(style => style.id))
   return versions.value.filter(version => !!version.styleId && allowed.has(version.styleId))
 })
+/** 响应左侧款式树选择并刷新对应 BOM 版本。 / Handle style-tree selection and load its BOM versions. */
 async function selectBomTree(keys: (string | number)[]) {
   const key = String(keys[0] || '')
   selectedTreeKey.value = key
   styleId.value = key.startsWith('style:') ? key.slice(6) : undefined
   await query()
 }
+/** 打开款式分类树选择弹窗并加载可访问款式。 / Open the category-tree style picker and load accessible styles. */
 function openStylePicker() {
   stylePickerSelected.value = styleId.value ? [styleId.value] : []
   stylePickerOpen.value = true
 }
+/** 将确认款式设为 BOM 表头款式并加载规格范围。 / Set the confirmed style on the BOM header and load its specification scope. */
 async function chooseStyle(ids: string[]) {
   const id = ids[0]
   if (!id || id === styleId.value) return
@@ -234,6 +239,7 @@ const pickerSpecKeys = ref<string[]>([])
 const pickerScope = ref<'selected' | 'all'>('selected')
 const pickerSpecs = computed(() => (specsByPart.value[pickerPartId.value] || [])
   .filter(spec => pickerScope.value === 'all' || pickerSpecKeys.value.includes(spec.key)))
+/** 生成款式所属分类的完整路径文本。 / Build the full category path for a style. */
 function categoryPath(categoryId: string) {
   const byId = new Map(materialCategories.value.map(item => [item.id, item]))
   let current = byId.get(categoryId)
@@ -382,9 +388,11 @@ let previousListSelection: { styleId?: string; treeKey: string } | undefined
 let previewSelection: { styleId?: string; context: Context } | undefined
 const originalDocument = ref('')
 const savedDraftPendingRefresh = ref<string>()
+/** 提取当前表单中用于判断未保存变更的业务快照。 / Create a business snapshot used to detect unsaved form changes. */
 function documentSnapshot() {
   return JSON.stringify({ styleId: styleId.value || null, bomCode: bomCode.value, version: versionNumber.value, preparerId: preparerId.value, remark: remark.value, rules: rules.value })
 }
+/** 打开制单人选择弹窗并读取可选员工。 / Open the preparer picker and load eligible employees. */
 async function openPreparerPicker() {
   if (!people.value.length) {
     try {
@@ -398,6 +406,7 @@ async function openPreparerPicker() {
   personPickerSelected.value = preparerId.value ? [preparerId.value] : []
   personPickerOpen.value = true
 }
+/** 用户离开未保存 BOM 编辑器前请求确认。 / Confirm before leaving an editor with unsaved BOM changes. */
 function confirmLeave(): Promise<boolean> {
   if (!open.value || readonly.value || documentSnapshot() === originalDocument.value) return Promise.resolve(true)
   return new Promise(resolve => Modal.confirm({
@@ -407,6 +416,7 @@ function confirmLeave(): Promise<boolean> {
     onOk: () => resolve(true), onCancel: () => resolve(false),
   }))
 }
+/** 关闭 BOM 编辑器并按未保存状态保护草稿内容。 / Close the BOM editor while guarding unsaved draft changes. */
 async function closeEditor() {
   if (saving.value) return
   if (await confirmLeave()) {
@@ -442,6 +452,7 @@ const canEdit = computed(() => can('rd:bom:edit'))
 const readonly = computed(() => !canEdit.value || current.value?.status === 'released')
 const groups = computed(() => context.value.parts.map(part => ({ ...part, key: part.id } as Part & { key: string })).concat(
   isSet.value ? [{ id: '', key: 'shared', label: '整套共用（按套）', quantity: 1, colors: [], sizes: [], excluded: [] }] : []))
+/** 构造符合当前分类授权的物料选项和搜索信息。 / Build material options and search metadata within category grants. */
 function materialOptions(rule: Rule) {
   const options = materialChoices.value.map(item => ({
     value: item.id, label: [item.code, item.name, item.specification].filter(Boolean).join(' · '),
@@ -458,10 +469,12 @@ const demandColumns = [
   { title: '需求数量', dataIndex: 'quantity' }, { title: '单位', dataIndex: 'unit' },
 ]
 
+/** 统一包装 BOM 操作的加载状态和错误提示。 / Centralize loading state and error feedback for BOM actions. */
 async function run(action: () => Promise<void>) {
   try { await action() } catch (error) { message.error(foundationError(error)) }
 }
 
+/** 按款式、版本及查询条件刷新 BOM 列表。 / Refresh the BOM list using style, version and current filters. */
 async function query() {
   const id = styleId.value
   loading.value = true
@@ -484,6 +497,7 @@ async function query() {
   } finally { loading.value = false }
 }
 
+/** 读取物料默认分类范围及可供 BOM 使用的资料。 / Load materials available to BOM within the configured category scope. */
 async function loadMaterialOptions() {
   const [categoryData, options, configured] = await Promise.all([
     foundationRequest<{ rows: MaterialCategory[]; restricted: boolean }>('get', '/inventory/material/category-options'),
@@ -502,6 +516,7 @@ async function loadMaterialOptions() {
   materialCategoryScopeLoaded.value = true
   materials.value = options
 }
+/** 按筛选条件查询物料选择器结果并排除已全覆盖项。 / Search picker results and exclude materials already present in every target. */
 async function findMaterials() {
   await run(loadMaterialOptions)
 }
@@ -512,6 +527,7 @@ async function loadMaterialColors(id: string, refresh = false) {
   materialColors.value[id] = await foundationRequest<Option[]>('get', endpoint + '/material/' + id + '/colors')
 }
 
+/** 把选中的物料及可选规格、颜色和单位写入规则行。 / Apply selected material, variant, color and unit to a BOM rule. */
 function selectMaterial(rule: Rule) {
   rule.materialColorId = undefined
   const picked = materials.value.find(item => item.id === rule.materialId)
@@ -561,19 +577,23 @@ const specsByPart = computed(() => Object.fromEntries(groups.value.map(group => 
   })))
   return [group.id, specs]
 })))
+/** 判断当前款式规格是否已覆盖、缺料或存在冲突。 / Classify a style specification as covered, missing or conflicting. */
 function specStatus(childId: string, spec: Spec) {
   const selected = matchedRules(childId, spec).filter(rule => !rule.omitted)
   if (!selected.length) return '待填写'
   return selected.every(rule => rule.materialId && rule.usage && rule.usageUnitId)
     ? '已填写' : '待完善'
 }
+/** 解析当前编辑的款式颜色尺码或套装规格。 / Resolve the active style color-size or set specification being edited. */
 function activeSpec(childId: string) {
   const specs = specsByPart.value[childId] || []
   return specs.find(spec => spec.key === selectedSpecs.value[childId]) ?? specs[0]
 }
+/** 判断规则的物料、规格及色码条件是否完全匹配。 / Check whether a rule exactly matches material, variant and style-pair conditions. */
 function exact(rule: Rule, spec: Pair) {
   return rule.colorId === spec.colorId && rule.sizeId === spec.sizeId
 }
+/** 筛选当前规格应显示的 BOM 用料规则。 / Filter BOM rules that apply to the active specification. */
 function matchedRules(childId: string, spec: Pair, inheritedOnly = false) {
   const matched = new Map<string, Rule[]>()
   for (const rule of rules.value) {
@@ -792,22 +812,26 @@ function fillMatrixField(row: MatrixRow, value: unknown, field: 'usage' | 'mater
     okText: '确认覆盖', cancelText: '取消', onOk: apply,
   })
 }
+/** 取得物料档案中允许用于 BOM 的单位集合。 / Resolve units enabled for BOM use by the material master. */
 function allowedUnits(rule: Rule) {
   const material = materials.value.find(item => item.id === rule.materialId)
   if (!material) return rule.usageUnitId ? [{ value: rule.usageUnitId, label: rule.usageUnitName || rule.unit || '已选单位' }] : []
   const ids = [material.inventoryUnitId, ...material.materialUnits.filter(unit => unit.usage).map(unit => unit.unitId)]
   return ids.map(id => ({ value: id, label: units.value.find(unit => unit.id === id)?.name || (id === material.inventoryUnitId ? material.inventoryUnitName : id) }))
 }
+/** 判断单位是否需要逐规格录入实际换算系数。 / Determine whether a unit requires a per-specification conversion factor. */
 function variableUnit(rule: Rule) {
   return materials.value.find(item => item.id === rule.materialId)?.materialUnits
     .some(unit => unit.unitId === rule.usageUnitId && unit.mode === 'VARIABLE')
 }
+/** 切换用料单位并更新换算快照或变量换算值。 / Change a material unit and update its fixed or variable conversion snapshot. */
 function changeUnit(rule: Rule) {
   const material = materials.value.find(item => item.id === rule.materialId)
   const item = material?.materialUnits.find(unit => unit.unitId === rule.usageUnitId)
   rule.conversionFactor = rule.usageUnitId === material?.inventoryUnitId ? '1' : item?.mode === 'FIXED' ? item.inventoryFactor || undefined : undefined
   rule.usageUnitName = units.value.find(unit => unit.id === rule.usageUnitId)?.name
 }
+/** 打开物料多选弹窗并预置当前 BOM 规格范围。 / Open the material multi-picker with the current BOM specification scope. */
 async function openMaterialPicker(childId: string) {
   const spec = activeSpec(childId)
   const targets = batchMode.value && childId ? batchSpecs.value : spec ? [spec] : []
@@ -824,6 +848,7 @@ async function openMaterialPicker(childId: string) {
     message.error(foundationError(error))
   }
 }
+/** 将已选物料批量加入当前规则或批量填写矩阵。 / Add selected materials to the current rule set or batch-entry matrix. */
 function addSelectedMaterials(ids: string[]) {
   const childId = pickerPartId.value
   const targets = pickerSpecs.value
@@ -847,9 +872,11 @@ function addSelectedMaterials(ids: string[]) {
   rules.value.push(...pending)
   message.success('已新增 ' + pending.length + ' 条用料，请填写用量')
 }
+/** 编辑继承到当前规格的共用物料，不改动其他规格快照。 / Edit a material inherited by this specification without changing other snapshots. */
 function editInherited(rule: Rule, spec: Spec) {
   rules.value.push({ ...rule, colorId: spec.colorId, sizeId: spec.sizeId })
 }
+/** 从当前 BOM 规格移除指定用料规则。 / Remove one material rule from the active BOM specification. */
 function removeRule(rule: Rule, childId: string, spec: Spec) {
   const inherited = matchedRules(childId, spec, true).some(item => item.slotId === rule.slotId && !item.omitted)
   if (exact(rule, spec)) rules.value.splice(rules.value.indexOf(rule), 1)
@@ -887,6 +914,7 @@ function removeMatrixMaterial(row: MatrixRow) {
     },
   })
 }
+/** 打开目标颜色尺码选择以复制当前用料配置。 / Choose target style pairs for copying the current material setup. */
 function openCopyTargets() {
   const source = activeSpec(activeGroupId.value)
   if (!source || !matchedRules(activeGroupId.value, source).some(rule => !rule.omitted)) {
@@ -896,6 +924,7 @@ function openCopyTargets() {
   copyTargets.value = []
   copyOpen.value = true
 }
+/** 复制物料配置到所选规格并保留各规格独立用量。 / Copy material setup to selected pairs while keeping their usage quantities independent. */
 function copyToSelected() {
   const childId = activeGroupId.value
   const source = activeSpec(childId)
@@ -925,6 +954,7 @@ function copyToSelected() {
   } else apply()
 }
 
+/** 加载 BOM 版本并初始化全部颜色尺码用料状态。 / Load a BOM version and initialize its color-size material state. */
 async function edit(row?: Version, copy = false) {
   const initialSelection = { styleId: styleId.value, treeKey: selectedTreeKey.value }
   await run(async () => {
@@ -1157,6 +1187,7 @@ async function refreshSavedDraft(id: string) {
   savedDraftPendingRefresh.value = undefined
 }
 
+/** 保存当前 BOM 草稿并保留编辑页面及服务端修订信息。 / Save the BOM draft while retaining the editor and server revision state. */
 async function save(release: boolean) {
   if (saving.value) return
   if (savedDraftPendingRefresh.value) {
@@ -1265,11 +1296,13 @@ async function save(release: boolean) {
   } finally { saving.value = false }
 }
 
+/** 检查发布版本覆盖范围并定位缺失规格或冲突规则。 / Check release coverage and identify missing pairs or conflicting rules. */
 async function checkCoverage(row: Version) {
   coverage.value = undefined
   coverageOpen.value = true
   await run(async () => { coverage.value = await foundationRequest('get', endpoint + '/' + row.id + '/coverage') })
 }
+/** 为物料规则行补齐显示字段、单位和规格快照。 / Hydrate a material-rule row with labels, units and variant snapshots. */
 async function prepareRow(row: Version) {
   if (row.styleId && row.styleId !== styleId.value) {
     const loaded = await foundationRequest<Context>('get', endpoint + '/context/' + row.styleId)
@@ -1277,6 +1310,7 @@ async function prepareRow(row: Version) {
     context.value = loaded
   }
 }
+/** 开始加载 BOM 试算结果并保留当前视图上下文。 / Load BOM preview results while preserving the current view context. */
 async function beginPreview(row: Version) {
   const original = { styleId: styleId.value, context: context.value }
   try { await prepareRow(row) } catch (error) { message.error(foundationError(error)); return }
@@ -1289,6 +1323,7 @@ async function beginPreview(row: Version) {
   demand.value = undefined
   previewOpen.value = true
 }
+/** 按款式颜色尺码展开用料明细并生成汇总视图。 / Expand material details by style pair and produce the summary view. */
 async function preview() {
   demand.value = undefined
   await run(async () => {
