@@ -13,8 +13,9 @@ logging:
 spring:
   security:
     user:
-      name: @monitor.username@
-      password: @monitor.password@
+      # 使用 ERP 超管环境变量；不在框架构建配置中保存独立监控明文凭据。
+      name: ${SUPER_ADMIN_USERNAME}
+      password: ${SUPER_ADMIN_PASSWORD}
   boot:
     admin:
       ui:
@@ -47,5 +48,5 @@ spring.boot.admin.client:
     metadata:
       username: ${spring.boot.admin.client.username}
       userpassword: ${spring.boot.admin.client.password}
-  username: @monitor.username@
-  password: @monitor.password@
+  username: ${SUPER_ADMIN_USERNAME}
+  password: ${SUPER_ADMIN_PASSWORD}

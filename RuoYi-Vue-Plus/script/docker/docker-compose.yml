@@ -102,6 +102,8 @@ services:
     environment:
       # 时区上海
       TZ: Asia/Shanghai
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:?SUPER_ADMIN_USERNAME must be set}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set}
       SERVER_PORT: 8080
       SNAIL_JOB_PORT: 28080
       SNAIL_AI_PORT: 38080
@@ -119,6 +121,8 @@ services:
     environment:
       # 时区上海
       TZ: Asia/Shanghai
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:?SUPER_ADMIN_USERNAME must be set}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set}
       SERVER_PORT: 8081
       SNAIL_JOB_PORT: 28081
       SNAIL_AI_PORT: 38081
@@ -136,6 +140,8 @@ services:
     environment:
       # 时区上海
       TZ: Asia/Shanghai
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:?SUPER_ADMIN_USERNAME must be set}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set}
     volumes:
       # 配置文件
       - /docker/monitor/logs/:/ruoyi/monitor/logs
@@ -148,6 +154,8 @@ services:
     environment:
       # 时区上海
       TZ: Asia/Shanghai
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:?SUPER_ADMIN_USERNAME must be set}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set}
     ports:
       - "8800:8800"
       - "17888:17888"
@@ -162,6 +170,8 @@ services:
     environment:
       # 时区上海
       TZ: Asia/Shanghai
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:?SUPER_ADMIN_USERNAME must be set}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:?SUPER_ADMIN_PASSWORD must be set}
       # Docling 与 PaddleOCR 服务需单独部署；host 网络模式下默认通过宿主机端口访问
       SNAIL_AI_RAG_DOCLING_ENABLED: ${SNAIL_AI_RAG_DOCLING_ENABLED:-true}
       SNAIL_AI_RAG_DOCLING_URL: ${SNAIL_AI_RAG_DOCLING_URL:-http://127.0.0.1:5100}

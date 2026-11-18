@@ -1,10 +1,10 @@
 spring:
   datasource:
     type: com.zaxxer.hikari.HikariDataSource
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/ry-vue?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: root
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${SNAILJOB_DB_HOST:127.0.0.1}:${SNAILJOB_DB_PORT:5432}/${SNAILJOB_DB_NAME:zhizhun_snailjob}
+    username: ${SNAILJOB_DB_USER:snailjob_app}
+    password: ${SNAILJOB_DB_PASSWORD:}
     hikari:
       connection-timeout: 30000
       validation-timeout: 5000
@@ -14,10 +14,14 @@ spring:
       max-lifetime: 900000
       keepaliveTime: 30000
 
+server:
+  # WSL 开发端口只绑定本机，供同机 Windows 浏览器通过 localhost 转发访问。
+  address: ${SNAILJOB_BIND_ADDRESS:127.0.0.1}
+
 --- # snail-job 服务端配置
 snail-job:
   # 服务端节点IP(默认按照`NetUtil.getLocalIpStr()`)
-  server-host:
+  server-host: ${SNAILJOB_SERVER_HOST:127.0.0.1}
   # 服务端端口号
   server-port: 17888
   # 合并日志默认保存天数
@@ -47,5 +51,5 @@ spring.boot.admin.client:
     metadata:
       username: ${spring.boot.admin.client.username}
       userpassword: ${spring.boot.admin.client.password}
-  username: @monitor.username@
-  password: @monitor.password@
+  username: ${SUPER_ADMIN_USERNAME}
+  password: ${SUPER_ADMIN_PASSWORD}

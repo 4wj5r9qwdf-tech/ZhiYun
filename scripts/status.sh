@@ -5,7 +5,15 @@ set -e
 
 echo "=== 织云 ERP 服务状态 ==="
 
-# 1. 后端
+# 1. 监控中心
+echo "[监控中心] :9090"
+if ss -tlnp 2>/dev/null | grep -q ':9090'; then
+  echo "  ✓ 运行中"
+else
+  echo "  ✗ 未运行"
+fi
+
+# 2. 后端
 echo "[后端] :8080"
 if ss -tlnp 2>/dev/null | grep -q ':8080'; then
   echo "  ✓ 运行中"
@@ -20,7 +28,7 @@ else
   echo "  ✗ 未运行"
 fi
 
-# 2. 前端
+# 3. 前端
 echo "[前端] :5273"
 if ss -tlnp 2>/dev/null | grep -q ':5273'; then
   echo "  ✓ 运行中"
@@ -28,7 +36,19 @@ else
   echo "  ✗ 未运行"
 fi
 
-# 3. 依赖服务
+# 4. 独立框架控制台与内部调度端口
+for PORT_INFO in "8800:SnailJob 管理台" "17888:SnailJob 调度 RPC" "8900:SnailAI 管理台" "18888:SnailAI gRPC"; do
+  PORT="${PORT_INFO%%:*}"
+  NAME="${PORT_INFO##*:}"
+  echo "[$NAME] :$PORT"
+  if ss -tlnp 2>/dev/null | grep -q ":$PORT"; then
+    echo "  ✓ 运行中"
+  else
+    echo "  ✗ 未运行"
+  fi
+done
+
+# 5. 依赖服务
 echo "[依赖服务]"
 for PORT_INFO in "5432:PostgreSQL" "6379:Redis" "9000:MinIO"; do
   PORT="${PORT_INFO%%:*}"

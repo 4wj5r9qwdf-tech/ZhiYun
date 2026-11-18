@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 织云 ERP - 启动脚本
 # 用法：bash scripts/start.sh
-# 启动：后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273)
+# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI
 # 日志：写项目内 logs/（已 gitignore）；不再用 /tmp（agent 沙箱里 /tmp 是隔离 tmpfs，外部看不见日志）
 set -e
 
@@ -40,12 +40,29 @@ if [[ "$IN_SANDBOX" == "1" ]]; then
   echo ""
 fi
 
-# 1. 启动后端（8080）
-echo "[1/2] 启动后端 (8080)..."
+# 1. 启动 Spring Boot Admin 监控中心（9090）
+echo "[1/5] 启动监控中心 (9090)..."
+if port_listening 9090; then
+  echo "  监控中心已在运行（:9090 监听中），跳过"
+elif [ -f RuoYi-Vue-Plus/ruoyi-extend/ruoyi-monitor-admin/target/ruoyi-monitor-admin.jar ]; then
+  MONITOR_LOG="$PROJECT_ROOT/logs/ruoyi-monitor-admin.log"
+  nohup bash scripts/run-monitor-admin.sh \
+    > "$MONITOR_LOG" 2>&1 < /dev/null &
+  MONITOR_PID=$!
+  disown "$MONITOR_PID" 2>/dev/null || true
+  echo "  监控中心 PID: $MONITOR_PID  日志: $MONITOR_LOG"
+else
+  echo "  错误：监控中心 jar 不存在，请先构建 ruoyi-monitor-admin 模块"
+  exit 1
+fi
+
+# 2. 启动后端（8080）
+echo "[2/5] 启动后端 (8080)..."
 if port_listening 8080; then
   echo "  后端已在运行（:8080 监听中），跳过"
 elif [ -f RuoYi-Vue-Plus/ruoyi-admin/target/ruoyi-admin.jar ]; then
   set -a && source .env && set +a
+  bash "$PROJECT_ROOT/scripts/prepare-snail-document-key.sh"
   cd RuoYi-Vue-Plus
   nohup java -jar ruoyi-admin/target/ruoyi-admin.jar --spring.profiles.active=dev \
     > "$BACKEND_LOG" 2>&1 < /dev/null &
@@ -59,7 +76,7 @@ else
 fi
 
 # 1.5 设置 MinIO 桶公开读（logo/登录背景等图片浏览器直显；容器重启会丢，故每次启动都设）
-echo "[1.5/2] 设置 MinIO 桶公开读 (zhizhun-files)..."
+echo "[2.5/5] 设置 MinIO 桶公开读 (zhizhun-files)..."
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^zhizhun-minio$'; then
   set -a && source .env && set +a
   docker exec zhizhun-minio sh -c "mc alias set local http://127.0.0.1:9000 '$OSS_ACCESS_KEY' '$OSS_SECRET_KEY' >/dev/null 2>&1 && mc anonymous set download local/$OSS_BUCKET" >/dev/null 2>&1 \
@@ -73,8 +90,8 @@ else
   echo "  跳过：MinIO 容器未运行"
 fi
 
-# 2. 启动前端（5273）
-echo "[2/2] 启动前端 (5273)..."
+# 3. 启动前端（5273）
+echo "[3/5] 启动前端 (5273)..."
 if port_listening 5273; then
   echo "  前端已在运行（:5273 监听中），跳过"
 else
@@ -86,8 +103,13 @@ else
   cd "$PROJECT_ROOT"
 fi
 
+# 4. 启动独立框架控制台（SnailJob 与 SnailAI）
+bash "$PROJECT_ROOT/scripts/start-framework-consoles.sh"
+
 echo ""
 echo "=== 启动中，等待服务就绪 ==="
+echo "监控中心: http://127.0.0.1:9090/admin  (日志 $PROJECT_ROOT/logs/ruoyi-monitor-admin.log)"
 echo "后端: http://127.0.0.1:8080  (日志 $BACKEND_LOG)"
 echo "前端: http://localhost:5273/login  (日志 $FRONTEND_LOG)"
+echo "SnailJob: http://127.0.0.1:8800/snail-job/  SnailAI: http://127.0.0.1:8900/snail-ai/"
 echo "查看状态：bash scripts/status.sh"

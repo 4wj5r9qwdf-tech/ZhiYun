@@ -46,7 +46,8 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
         SavedRequestAwareAuthenticationSuccessHandler successHandler = new SavedRequestAwareAuthenticationSuccessHandler();
         successHandler.setTargetUrlParameter("redirectTo");
-        successHandler.setDefaultTargetUrl(adminContextPath + "/");
+        // 控制台首页使用不带尾斜线的 context path，避免登录成功后落入不存在的路由。
+        successHandler.setDefaultTargetUrl(adminContextPath);
         PathPatternRequestMatcher.Builder mvc = PathPatternRequestMatcher.withDefaults();
         return httpSecurity
             .headers((header) ->
