@@ -42,9 +42,9 @@ public class StyleBomMcpTools {
     public R<?> preview(
         @McpToolParam(description = "BOM ID，十进制字符串") String id,
         @McpToolParam(description = "生产件数或套数") int count,
-        @McpToolParam(description = "套装规格 ID，十进制字符串", required = false) String setSpecId,
-        @McpToolParam(description = "单款颜色 ID，十进制字符串", required = false) String colorId,
-        @McpToolParam(description = "单款尺码 ID，十进制字符串", required = false) String sizeId) {
+        @McpToolParam(description = "可选，套装规格 ID 十进制字符串；单款试算时省略", required = false) String setSpecId,
+        @McpToolParam(description = "可选，单款颜色 ID 十进制字符串；套装试算时省略", required = false) String colorId,
+        @McpToolParam(description = "可选，单款尺码 ID 十进制字符串；套装试算时省略", required = false) String sizeId) {
         StpUtil.checkPermission("rd:bom:list");
         return controller.preview(Long.valueOf(id), count,
             optionalId(setSpecId), optionalId(colorId), optionalId(sizeId));
