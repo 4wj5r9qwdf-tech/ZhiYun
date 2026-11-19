@@ -3,6 +3,8 @@
 > 适用对象：通过织云 ERP MCP Server 读取或维护业务数据的智能体。
 > MCP 端点配置：`http://<ERP服务地址>/mcp`，传输协议为 Streamable HTTP。调用使用当前员工本人会话和项目要求的 `clientid`；不要把口令、Token 写进参数、Skill、提示词或日志。
 
+连接配置通常需要请求头 `Authorization: Bearer <当前员工会话Token>` 和 `clientid: <项目客户端标识>`。Token 由 MCP 客户端安全配置提供，不要放在下面的工具 `arguments` 中，也不要把真实值写进文档或聊天记录。
+
 ## 1. 先确认工具与参数
 
 1. 连接 MCP Server 后先读取 `tools/list`，确认目标工具确实出现在当前服务的工具目录中。
@@ -98,6 +100,6 @@
 
 ## 7. 工具覆盖与状态
 
-当前源码注册了基础档案、物料、尺码、款式、BOM、仓库及仓库布局 MCP 工具。各功能工具名、权限与业务边界见对应 Skill 和 API 文档；MCP Server 配置在 `RuoYi-Vue-Plus/ruoyi-admin/src/main/resources/application.yml`。
+当前 ERP 默认工具目录由基础档案、物料、尺码、款式、BOM、仓库及仓库布局共 123 个业务 MCP 工具组成。`ruoyi-demo` 中另外有 2 个生成模拟数据的演示工具，仅激活 `mcp-demo` Spring Profile 时才注册，默认不会混入 ERP 数据查询目录。各业务工具名、权限与边界见对应 Skill 和 API 文档；MCP Server 配置在 `RuoYi-Vue-Plus/ruoyi-admin/src/main/resources/application.yml`。
 
 源码注解存在不等于服务已启动、客户端已发现或调用已验证。每次交付分别记录“代码注册”“服务运行”“`tools/list` 发现”“实际工具调用”；不要用历史验证记录代替当前环境状态。

@@ -1,5 +1,6 @@
 package org.dromara.web.mcp;
 
+import org.dromara.demo.mcp.McpDemoServerTool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
@@ -28,7 +29,8 @@ class McpToolContractTest {
         SizeMcpTools.class,
         StyleBomMcpTools.class,
         StyleMcpTools.class,
-        WarehouseMcpTools.class
+        WarehouseMcpTools.class,
+        McpDemoServerTool.class
     );
     private static final List<String> OPTIONAL_WORDS = List.of("可选", "默认", "省略", "不传", "留空");
 
@@ -44,7 +46,8 @@ class McpToolContractTest {
                 for (Parameter parameter : method.getParameters()) {
                     McpToolParam metadata = parameter.getAnnotation(McpToolParam.class);
                     assertNotNull(metadata, toolClass.getSimpleName() + "." + method.getName() + " parameter " + parameter.getName());
-                    boolean describedOptional = OPTIONAL_WORDS.stream().anyMatch(metadata.description()::contains);
+                    String description = metadata.description().stripLeading();
+                    boolean describedOptional = OPTIONAL_WORDS.stream().anyMatch(description::startsWith);
                     if (describedOptional && metadata.required()) {
                         violations.add(toolClass.getSimpleName() + "." + method.getName() + "." + parameter.getName());
                     }
@@ -73,6 +76,15 @@ class McpToolContractTest {
                 assertEquals(true, names.add(tool.name()), "Duplicate MCP tool name: " + tool.name());
             }
         }
-        assertEquals(123, annotatedMethods, "Update the expected tool total when MCP registration intentionally changes");
+        assertEquals(125, annotatedMethods, "Update the expected tool total when MCP registration intentionally changes");
+    }
+
+    /** 演示工具默认不得混入 ERP 数据工具目录；只有显式激活演示 profile 才注册。 / Demo tools must stay out of the ERP catalog unless their profile is explicitly enabled. */
+    @Test
+    void demoToolsMustBeExplicitlyProfileGated() {
+        org.springframework.context.annotation.Profile profile = McpDemoServerTool.class
+            .getAnnotation(org.springframework.context.annotation.Profile.class);
+        assertNotNull(profile);
+        assertEquals(List.of("mcp-demo"), List.of(profile.value()));
     }
 }

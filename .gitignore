@@ -13,6 +13,7 @@ log/
 
 # ===== Java/Maven 构建产物 =====
 target/
+.flattened-pom.xml
 *.jar
 *.war
 *.ear
@@ -46,6 +47,7 @@ Thumbs.db
 # ===== 项目内下载的依赖缓存（不进 Git，但保留在本地）=====
 /libs/
 /vendor/
+/upload/
 /bin/ (本地工具，调用 Windows 浏览器)
 
 # ===== Python 通用 =====

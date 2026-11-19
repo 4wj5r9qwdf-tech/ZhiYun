@@ -1,5 +1,6 @@
 package org.dromara.demo.mcp;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.ai.mcp.annotation.McpResource;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
@@ -11,8 +12,8 @@ import java.util.List;
 /**
  * MCP Server 演示工具，对外提供业务数据。
  * <p>
- * 启动 `ruoyi-admin` 后，本类中的 `@McpTool` 与 `@McpResource` 会被 Spring AI
- * MCP 注解扫描器注册到当前应用的 MCP Server，默认通过同端口 `/mcp` 暴露。
+ * 仅激活 `mcp-demo` Spring Profile 时，本类中的 `@McpTool` 与 `@McpResource` 才会被
+ * Spring AI MCP 注解扫描器注册到当前应用的 MCP Server，默认通过同端口 `/mcp` 暴露。
  * <p>
  * 可被外部 MCP Client 调用的示例能力：
  * <ul>
@@ -26,6 +27,7 @@ import java.util.List;
  * @author Lion Li
  */
 @Component
+@Profile("mcp-demo")
 public class McpDemoServerTool {
 
     /**
@@ -46,7 +48,7 @@ public class McpDemoServerTool {
      * @return 演示数据列表
      */
     @McpTool(name = "demo_list_data", description = "查询演示数据列表")
-    public List<McpDemoData> listData(@McpToolParam(description = "返回条数") Integer limit) {
+    public List<McpDemoData> listData(@McpToolParam(description = "可选返回条数；省略或小于1时默认3，最大20", required = false) Integer limit) {
         int size = limit == null || limit < 1 ? 3 : Math.min(limit, 20);
         return java.util.stream.IntStream.rangeClosed(1, size)
             .mapToObj(index -> new McpDemoData(String.valueOf(index), "演示数据-" + index, "ruoyi-demo", index * 10, LocalDateTime.now()))
