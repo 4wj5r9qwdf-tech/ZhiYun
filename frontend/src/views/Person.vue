@@ -15,7 +15,7 @@ import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
 import api from '../api'
 import PersonCategoryScope from '../components/PersonCategoryScope.vue'
-import { perms } from '../utils/perms'
+import { can } from '../utils/perms'
 
 const route = useRoute()
 const categoryScopePerson = ref<{ id: string; name: string }>()
@@ -239,7 +239,7 @@ function onHeaderClick(e: MouseEvent) {
 const autoScrollWidth = computed(() => 48 + 64 + opsWidth.value + colState.value.filter(c => c.visible).reduce((sum, c) => sum + (c.width || 120), 0))
 
 const columns = computed(() => {
-  // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
+  // 序号列不参与列宽拖拽，避免与固定列分界和阴影重叠。
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }
   const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
@@ -743,7 +743,7 @@ function resetFilter() {
             </template>
             <template v-else>
               <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
-              <a-button v-if="perms.set.has('*')" size="small"
+              <a-button v-if="can('system:person:categoryScope')" size="small"
                 @click="categoryScopePerson = { id: record.user_id_text, name: record.name }">分类权限</a-button>
               <a-button size="small" @click="resetPwd(record)">重置密码</a-button>
               <a-button danger size="small" @click="removePerson(record)">删除</a-button>
@@ -969,9 +969,8 @@ function resetFilter() {
 
 <!-- 非 scoped：给 antd 原生表头 th 加右缘拖拽手柄（::after 画线，th 自带 mousedown） -->
 <style>
-.ant-table-thead > tr > th { position: relative; }
-.ant-table-thead > tr > th.zy-th-noresize::after { display: none; }
-.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
-.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
-.ant-table-thead > tr > th:active::after, .ant-table-thead > tr > th.resizing::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
+.person-table .ant-table-thead > tr > th { position: relative; }
+.person-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; transition: background .12s; }
+.person-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):hover { border-right-color: #C9CDD4; }
+.person-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):active::after { background: rgba(30,94,255,.15); }
 </style>

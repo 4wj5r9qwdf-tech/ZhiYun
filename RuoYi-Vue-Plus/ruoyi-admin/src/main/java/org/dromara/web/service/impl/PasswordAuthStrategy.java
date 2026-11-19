@@ -66,10 +66,15 @@ public class PasswordAuthStrategy implements IAuthStrategy {
         String username = loginBody.getUsername();
         String password = loginBody.getPassword();
 
+        return buildLoginVo(authenticate(username, password), client);
+    }
+
+    /** 校验账号状态和密码，供 MCP 复用同一套账号认证。 */
+    public SysUserVo authenticate(String username, String password) {
         // 1) 超管账号走配置文件（不进数据库）：命中且密码对=超管
         SysUserVo superUser = authenticateSuperAdmin(username, password);
         if (superUser != null) {
-            return buildLoginVo(superUser, client);
+            return superUser;
         }
 
         // 2) 普通账号查库：username 同时支持 工号(6位数字) 或 手机号(11位)
@@ -79,7 +84,20 @@ public class PasswordAuthStrategy implements IAuthStrategy {
             () -> !BCrypt.checkpw(password, user.getPassword()));
 
         // 3) 普通账号生成 token
-        return buildLoginVo(user, client);
+        return user;
+    }
+
+    /** MCP 后台账号复用登录失败限制，并拒绝已停用账号。 */
+    public SysUserVo authenticateMcp(String username, String password) {
+        if (StringUtils.isNotBlank(superAdminUsername) && superAdminUsername.equals(username)) {
+            loginService.checkLogin(LoginType.PASSWORD, username,
+                () -> StringUtils.isBlank(superAdminPassword) || !superAdminPassword.equals(password));
+        }
+        SysUserVo user = authenticate(username, password);
+        if (SystemConstants.DISABLE.equals(user.getStatus())) {
+            throw new UserException("user.blocked", username);
+        }
+        return user;
     }
 
     /**

@@ -430,6 +430,37 @@ public class SysConfigController extends BaseController {
         return R.ok();
     }
 
+    /** 设置客户页面的默认展示分类；权限仍由人员分类授权控制。 */
+    @SaCheckPermission("system:config:edit")
+    @Log(title="客户默认分类类型",businessType=BusinessType.UPDATE)
+    @Transactional(rollbackFor=Exception.class)
+    @PostMapping("/customer-default-category")
+    public R<Void> updateCustomerDefaultCategory(@RequestBody Map<String,Object> body) {
+        String raw=Objects.toString(body.get("schemeId"),"").trim();
+        Long schemeId=null;
+        if (!raw.isEmpty()) {
+            try { schemeId=Long.valueOf(raw); } catch (NumberFormatException e) { return R.fail("分类类型编号无效"); }
+            if (jdbcTemplate.queryForList("SELECT scheme_id FROM base_category_scheme WHERE scheme_id=? AND status='0' AND del_flag='0'",schemeId).isEmpty()) return R.fail("所选分类类型已停用或不存在");
+        }
+        String key="sales.customer.defaultCategoryScheme", value=schemeId==null ? "" : schemeId.toString();
+        SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));
+        String previousValue=previous==null ? "" : previous.getConfigValue();
+        if (!Objects.equals(previousValue,value)) {
+            if (previous==null) {
+                SysConfig config=new SysConfig();
+                config.setConfigName("客户默认分类类型"); config.setConfigKey(key); config.setConfigValue(value);
+                config.setConfigType("Y"); config.setRemark("客户档案初始展示分类类型，留空时显示全部授权分类");
+                configMapper.insert(config);
+            } else {
+                configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();
+            }
+            BusinessAudit.record(previous==null ? "设置客户默认分类类型" : "修改客户默认分类类型",key,"业务参数",
+                Map.of("分类类型",schemeName(previousValue)),Map.of("分类类型",schemeName(value)));
+            CacheUtils.evict(CacheNames.SYS_CONFIG,key);
+        }
+        return R.ok();
+    }
+
     /** 审计中使用分类类型名称，缺失或已删除时仅展示空值。 / Resolve an auditable scheme label without exposing unrelated data. */
     private String schemeName(String id){if(id==null||id.isBlank())return "全部授权分类";List<String> names=jdbcTemplate.queryForList("SELECT scheme_name FROM base_category_scheme WHERE scheme_id=?",String.class,Long.valueOf(id));return names.isEmpty()?"已失效分类类型":names.getFirst();}
 

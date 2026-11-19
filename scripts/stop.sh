@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 织云 ERP - 停止脚本
 # 用法：bash scripts/stop.sh
-# 停止：后端 + 监控中心 + SnailJob + SnailAI + 前端
+# 停止：后端 + 监控中心 + SnailJob + SnailAI + Spring AI Alibaba + 前端
 set -e
 
 echo "=== 织云 ERP 停止 ==="
@@ -19,6 +19,10 @@ echo "[3/5] 停止 SnailJob..."
 pkill -f 'ruoyi-snailjob-server.jar' 2>/dev/null && echo "  SnailJob 已停止" || echo "  SnailJob 未运行"
 echo "[4/5] 停止 SnailAI..."
 pkill -f 'ruoyi-snailai-server.jar' 2>/dev/null && echo "  SnailAI 已停止" || echo "  SnailAI 未运行"
+
+# 4.5 停止 Spring AI Alibaba 本地测试平台
+echo "[4.5/5] 停止 Spring AI Alibaba..."
+bash "$(cd "$(dirname "$0")" && pwd)/stop-spring-ai-alibaba.sh"
 
 # 5. 停前端
 echo "[5/5] 停止前端..."

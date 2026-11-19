@@ -207,6 +207,10 @@ const styleDefaultSchemeId = ref('')
 const savedStyleDefaultSchemeId = ref('')
 const styleDefaultEditing = ref(false)
 const styleDefaultSaving = ref(false)
+const customerDefaultSchemeId = ref('')
+const savedCustomerDefaultSchemeId = ref('')
+const customerDefaultEditing = ref(false)
+const customerDefaultSaving = ref(false)
 const offlineLeadDays = ref(0)
 const offlineLeadEditing = ref(false)
 const offlineLeadSaving = ref(false)
@@ -240,6 +244,7 @@ const colorCodeRuleRow = computed(() => parameterRows.value.find(row => row.conf
 const materialCodeRuleRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.material.codeRule'))
 const materialDefaultRow = computed(() => parameterRows.value.find(row => row.configKey === 'inventory.material.defaultCategoryScheme'))
 const styleDefaultRow = computed(() => parameterRows.value.find(row => row.configKey === 'rd.style.defaultCategoryScheme'))
+const customerDefaultRow = computed(() => parameterRows.value.find(row => row.configKey === 'sales.customer.defaultCategoryScheme'))
 const ossPreviewRow = computed(() => parameterRows.value.find(row => row.configKey === 'sys.oss.previewListResource'))
 function readCodeRule(row: Record<string, any> | undefined, fallback: { enabled: boolean; prefix: string; digits: number }) {
   if (!row?.configValue) return { ...fallback }
@@ -297,6 +302,10 @@ function syncCodeRules(configs: Record<string, any>[]) {
   if (!styleDefaultEditing.value) {
     styleDefaultSchemeId.value = String(configs.find(row => row.configKey === 'rd.style.defaultCategoryScheme')?.configValue || '')
     savedStyleDefaultSchemeId.value = styleDefaultSchemeId.value
+  }
+  if (!customerDefaultEditing.value) {
+    customerDefaultSchemeId.value = String(configs.find(row => row.configKey === 'sales.customer.defaultCategoryScheme')?.configValue || '')
+    savedCustomerDefaultSchemeId.value = customerDefaultSchemeId.value
   }
   if (!materialDefaultEditing.value) {
     materialDefaultSchemeId.value = String(configs.find(row => row.configKey === 'inventory.material.defaultCategoryScheme')?.configValue || '')
@@ -505,6 +514,33 @@ async function saveStyleDefaultCategory() {
     message.success('款式默认分类参数已保存')
   } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存款式默认分类参数失败') }
   finally { styleDefaultSaving.value = false }
+}
+async function openCustomerDefaultCategory() {
+  try {
+    const response: any = await api.get('/inventory/material/category-options')
+    if (response.code !== 200) throw new Error(response.msg || '读取分类类型失败')
+    const unique = new Map<string, {value: string; label: string}>()
+    for (const row of response.data?.rows || []) if (row.selectable) unique.set(String(row.schemeId), { value: String(row.schemeId), label: String(row.schemeName) })
+    materialDefaultSchemes.value = [...unique.values()]
+    customerDefaultSchemeId.value = savedCustomerDefaultSchemeId.value
+    customerDefaultEditing.value = true
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '读取分类类型失败') }
+}
+function cancelCustomerDefaultCategory() { customerDefaultSchemeId.value = savedCustomerDefaultSchemeId.value; customerDefaultEditing.value = false }
+async function saveCustomerDefaultCategory() {
+  const value = String(customerDefaultSchemeId.value || '')
+  if (value && !materialDefaultSchemes.value.some(option => option.value === value)) return message.warning('所选分类类型当前不可用，请刷新后重试')
+  customerDefaultSaving.value = true
+  try {
+    const response: any = await api.post('/system/config/customer-default-category', { schemeId: value })
+    if (response.code !== 200) throw new Error(response.msg || '保存失败')
+    savedCustomerDefaultSchemeId.value = value; customerDefaultSchemeId.value = value; customerDefaultEditing.value = false
+    rows.value = customerDefaultRow.value
+      ? rows.value.map(row => row.configKey === 'sales.customer.defaultCategoryScheme' ? { ...row, configValue: value } : row)
+      : [...rows.value, { configName: '客户默认分类类型', configKey: 'sales.customer.defaultCategoryScheme', configValue: value, configType: 'Y' }]
+    message.success('客户默认分类参数已保存')
+  } catch (error: any) { message.error(error?.response?.data?.msg || error.message || '保存客户默认分类参数失败') }
+  finally { customerDefaultSaving.value = false }
 }
 
 function editConfig(row: Record<string, unknown>) {
@@ -1095,6 +1131,12 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
         <div class="setting-heading"><div><h3>款式默认分类类型</h3><p>配置后，款式档案的分类树、列表和表单只显示所设类型。留空时可从全部授权类型中选择。</p></div><a-tag color="blue">业务参数</a-tag></div>
         <div class="setting-controls"><a-form-item label="默认分类类型"><a-select v-model:value="styleDefaultSchemeId" :disabled="!styleDefaultEditing" allow-clear placeholder="全部授权分类" :options="materialDefaultSchemes" /></a-form-item></div>
         <div class="setting-footer"><span>{{ styleDefaultSchemeId ? '当前仅显示所选类型及其授权分类。' : '未配置时展示当前人员有权查看的全部分类。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="styleDefaultEditing" @click="cancelStyleDefaultCategory">取消</a-button><a-button v-if="styleDefaultEditing" type="primary" :loading="styleDefaultSaving" @click="saveStyleDefaultCategory">保存参数</a-button><a-button v-else type="primary" @click="openStyleDefaultCategory">修改参数</a-button></a-space></div>
+      </a-card>
+
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>客户默认分类类型</h3><p>打开客户档案时优先定位到所设类型。</p></div><a-tag color="blue">业务参数</a-tag></div>
+        <div class="setting-controls"><a-form-item label="默认分类类型"><a-select v-model:value="customerDefaultSchemeId" :disabled="!customerDefaultEditing" allow-clear placeholder="全部授权分类" :options="materialDefaultSchemes" /></a-form-item></div>
+        <div class="setting-footer"><span>{{ customerDefaultSchemeId ? '打开客户档案时默认筛选此类型。' : '未配置时打开全部客户。' }}</span><a-space v-if="can('system:config:edit')"><a-button v-if="customerDefaultEditing" @click="cancelCustomerDefaultCategory">取消</a-button><a-button v-if="customerDefaultEditing" type="primary" :loading="customerDefaultSaving" @click="saveCustomerDefaultCategory">保存参数</a-button><a-button v-else type="primary" @click="openCustomerDefaultCategory">修改参数</a-button></a-space></div>
       </a-card>
 
       <a-card class="setting-card" :bordered="false">

@@ -50,6 +50,12 @@
             <artifactId>ruoyi-common-doc</artifactId>
         </dependency>
 
+        <!-- 提供 SpringDoc Swagger UI 页面；common-doc 仅负责 OpenAPI 文档生成。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+        </dependency>
+
         <!-- 授权认证 -->
         <dependency>
             <groupId>org.dromara</groupId>

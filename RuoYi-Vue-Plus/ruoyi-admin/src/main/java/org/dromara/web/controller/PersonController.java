@@ -61,6 +61,7 @@ public class PersonController {
     public record CategoryGrant(Long schemeId, Long categoryId, boolean includeChildren) {}
 
     /** 返回人员当前授权及分类目录。 / Load the current employee scope and taxonomy. */
+    @SaCheckPermission("system:person:categoryScope")
     @GetMapping("/{userId}/category-scope")
     public R<Map<String, Object>> categoryScope(@PathVariable Long userId) {
         String name = checkCategoryScopeTarget(userId, false);
@@ -78,6 +79,7 @@ public class PersonController {
     }
 
     /** 在同一事务替换授权并记录真实前后值。 / Replace grants and audit the persisted change atomically. */
+    @SaCheckPermission("system:person:categoryScope")
     @PutMapping("/{userId}/category-scope")
     @Transactional
     @Log(title = "人员分类权限", businessType = BusinessType.UPDATE)
@@ -119,15 +121,19 @@ public class PersonController {
         return R.ok();
     }
 
-    /** 首期仅超管维护普通人员授权，锁定人员以串行化保存。 / Restrict administration and serialize writes per employee. */
+    /** 在人员数据范围内维护分类授权，并禁止非超管修改本人的授权。 / Enforce employee data scope and prevent self-granting by non-admin users. */
     private String checkCategoryScopeTarget(Long userId, boolean lock) {
         Long actor = LoginHelper.getUserId();
-        if (actor == null || !LoginHelper.isSuperAdmin(actor)) {
-            throw new ServiceException("仅超级管理员可以维护人员分类权限");
-        }
+        if (actor == null) throw new ServiceException("请先登录");
+        if (lock && actor.equals(userId) && !LoginHelper.isSuperAdmin(actor))
+            throw new ServiceException("不能修改本人的分类权限，请由其他授权人员维护");
+        StringBuilder where = new StringBuilder(" WHERE u.user_id=? AND u.del_flag='0'");
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        args.add(userId);
+        applyDataScope(where, args);
         var names = jdbcTemplate.queryForList(
-            "SELECT nick_name FROM sys_user WHERE user_id=? AND del_flag='0'" + (lock ? " FOR UPDATE" : ""),
-            String.class, userId);
+            "SELECT u.nick_name FROM sys_user u" + where + (lock ? " FOR UPDATE OF u" : ""),
+            String.class, args.toArray());
         if (names.isEmpty() || LoginHelper.isSuperAdmin(userId)) {
             throw new ServiceException("人员不存在或不适用分类授权");
         }

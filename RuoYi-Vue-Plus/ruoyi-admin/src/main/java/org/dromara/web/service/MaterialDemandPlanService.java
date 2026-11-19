@@ -59,6 +59,7 @@ public class MaterialDemandPlanService {
     public Long ensureDraftForApprovedOrder(Long orderId) {
         var order = order(orderId, true);
         if (!"approved".equals(order.get("status"))) throw new ServiceException("只有已审核订单可以生成物料需求计划");
+        assertOrderNotReversing(orderId);
         var existing = jdbc.queryForList("SELECT id FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE", Long.class, orderId);
         if (!existing.isEmpty()) return existing.getFirst();
         return create(order);
@@ -69,6 +70,7 @@ public class MaterialDemandPlanService {
     public Long synchronizeApprovedOrder(Long orderId) {
         var order = order(orderId, true);
         if (!"approved".equals(order.get("status"))) throw new ServiceException("只有已审核订单可以同步物料需求计划");
+        assertOrderNotReversing(orderId);
         var active = jdbc.queryForList("SELECT id,status FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE", orderId);
         if (active.isEmpty()) return create(order);
         var plan = active.getFirst();
@@ -199,6 +201,18 @@ public class MaterialDemandPlanService {
         }
         plan.put("items",items);
         plan.put("summary",summarize(items));
+        var reversalHistory=jdbc.queryForList("""
+            SELECT r.instance_id::text AS "instanceId",r.reason,r.state,r.result_message AS "resultMessage",
+                   r.requested_by::text AS "requestedBy",COALESCE(u.nick_name,u.user_name) AS "requestedByName",
+                   r.created_at AS "requestedAt",r.updated_at AS "updatedAt"
+            FROM biz_document_reversal_request r LEFT JOIN sys_user u ON u.user_id=r.requested_by
+            WHERE r.business_type='material_demand_plan_unapprove' AND r.business_id=?
+            ORDER BY r.created_at DESC,r.id DESC
+            """,planId);
+        plan.put("reversalHistory",reversalHistory);
+        var activeReversal=reversalHistory.stream().filter(row->"pending".equals(row.get("state"))).findFirst().orElse(null);
+        plan.put("reverseApprovalPending",activeReversal!=null);
+        plan.put("reverseApproval",activeReversal);
         plan.put("adjustments",jdbc.queryForList("""
             SELECT a.adjustment_id::text AS "adjustmentId",a.item_id::text AS "itemId",i.material_code AS "materialCode",
                    i.material_name AS "materialName",i.material_spec AS "materialSpec",i.po_number AS "poNumber",
@@ -223,6 +237,8 @@ public class MaterialDemandPlanService {
             WHERE o.status='approved'
               AND (?='' OR o.order_no ILIKE ? OR o.document::text ILIKE ?)
               AND NOT EXISTS(SELECT 1 FROM biz_material_demand_plan p WHERE p.order_id=o.id AND p.status<>'cancelled')
+              AND NOT EXISTS(SELECT 1 FROM biz_document_reversal_request r WHERE r.business_type='customer_order_unapprove'
+                  AND r.business_id=o.id AND r.state='pending')
             ORDER BY o.updated_at DESC,o.id DESC LIMIT 200
             """,query,"%"+query+"%","%"+query+"%");
     }
@@ -276,6 +292,15 @@ public class MaterialDemandPlanService {
         row.put("document",JsonUtils.parseMap(Objects.toString(row.get("document"),"{}")));
         row.put("demand",demands(row.get("demand")));
         return row;
+    }
+
+    /** 反审核审批期间禁止补建或重新同步需求计划，避免上游撤销请求与下游计划并发。 / Block plan creation or synchronization while its source order reversal is pending. */
+    private void assertOrderNotReversing(Long orderId) {
+        Boolean pending=jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM biz_document_reversal_request
+             WHERE business_type='customer_order_unapprove' AND business_id=? AND state='pending')
+            """,Boolean.class,orderId);
+        if(Boolean.TRUE.equals(pending))throw new ServiceException("来源订单正在反审核审批，暂不能生成或同步物料需求计划");
     }
 
     /** 将订单抬头信息保留为只读快照，供列表、审批和历史计划回查。 / Preserve order header and PO data as a read-only snapshot for list, approval and historical review. */

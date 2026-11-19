@@ -3,6 +3,7 @@
 
 # ===== 环境配置（敏感信息）=====
 .env
+.env.spring-ai-alibaba
 *.env.local
 *.env.*.local
 
@@ -49,6 +50,7 @@ Thumbs.db
 /vendor/
 /upload/
 /bin/ (本地工具，调用 Windows 浏览器)
+.runtime/spring-ai-alibaba/
 
 # ===== Python 通用 =====
 __pycache__/

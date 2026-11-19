@@ -43,7 +43,7 @@ public class MasterDataMcpTools {
         @McpToolParam(description = "可选页码；省略或小于1时按1处理", required = false) Integer pageNum,
         @McpToolParam(description = "可选每页条数；省略或小于1时按20处理，最大100", required = false) Integer pageSize) {
         StpUtil.checkPermission("system:customer:list");
-        return customerController.list(filterText(keyword), filterText(status), parseLong(salesId), parseLong(tagId),
+        return customerController.list(filterText(keyword), filterText(status), parseLong(salesId), parseLong(tagId), null, null,
             pageNum == null ? 1 : pageNum, pageSize == null ? 20 : pageSize);
     }
 

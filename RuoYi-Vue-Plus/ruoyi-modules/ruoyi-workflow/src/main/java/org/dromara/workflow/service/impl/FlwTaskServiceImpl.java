@@ -318,6 +318,9 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
         FlowParams flowParams = FlowParams.build()
             .nodeCode(bo.getNodeCode())
             .variable(variable)
+            // 超管退回他人待办时同样允许介入，审批意见和操作者由流程留痕。
+            // Permit administrator intervention while the engine records the operator and opinion.
+            .ignore(LoginHelper.isSuperAdmin())
             .message(message)
             .skipType(SkipType.REJECT.getKey())
             .flowStatus(applyNodeCode.equals(bo.getNodeCode()) ? TaskStatusEnum.BACK.getStatus() : TaskStatusEnum.WAITING.getStatus())

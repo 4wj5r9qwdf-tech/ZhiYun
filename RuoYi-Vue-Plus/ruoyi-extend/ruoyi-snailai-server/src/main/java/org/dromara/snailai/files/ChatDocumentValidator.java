@@ -12,6 +12,13 @@ import java.util.zip.ZipInputStream;
 /** 仅接收允许的原始文档，并限制 Office 容器解压规模。 */
 public final class ChatDocumentValidator {
     public static final int MAX_BYTES = 10 * 1024 * 1024;
+    public static final int MAX_PDF_BYTES = 50 * 1024 * 1024;
+
+    static int maxBytes(String nameOrType) {
+        return nameOrType != null && nameOrType.toLowerCase(Locale.ROOT).endsWith(".pdf")
+            ? MAX_PDF_BYTES : MAX_BYTES;
+    }
+
     private static final long MAX_EXPANDED_BYTES = 64L * 1024 * 1024;
     private static final Set<String> TEXT = Set.of("txt", "md", "csv");
     private static final Set<String> OFFICE = Set.of("docx", "xlsx", "pptx");
@@ -20,8 +27,8 @@ public final class ChatDocumentValidator {
 
     public static String validate(String name, byte[] bytes) {
         if (name == null || name.isBlank() || name.length() > 200 || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0
-            || name.chars().anyMatch(Character::isISOControl) || bytes == null || bytes.length == 0 || bytes.length > MAX_BYTES) {
-            throw new IllegalArgumentException("文件名无效或文件大小超过 10 MB");
+            || name.chars().anyMatch(Character::isISOControl) || bytes == null || bytes.length == 0 || bytes.length > maxBytes(name)) {
+            throw new IllegalArgumentException("文件名无效或文件大小超限（PDF 50 MB，其他文档 10 MB）");
         }
         int dot = name.lastIndexOf('.');
         String ext = dot < 1 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);

@@ -72,7 +72,7 @@ bash scripts/start.sh`;
 - 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（独立“研发”模块）
 - 开发顺序：[Docs/开发路线图.md](Docs/开发路线图.md)（按阶段和依赖，不排日期）
 - 打样功能：[Docs/打样功能规划.md](Docs/打样功能规划.md)（独立“研发”模块）
-- 开发规范：[Docs/开发规范.md](Docs/开发规范.md) · [Docs/前端规范.md](Docs/前端规范.md)（Ant Design Vue + 列表页标准模板）· [Docs/API文档规范.md](Docs/API文档规范.md) · [Docs/内嵌智能体规范.md](Docs/内嵌智能体规范.md)
+- 开发规范：[Docs/开发规范.md](Docs/开发规范.md) · [Docs/前端规范.md](Docs/前端规范.md)（Ant Design Vue + 列表页标准模板）· [Docs/API文档规范.md](Docs/API文档规范.md) · [Docs/织云AI集成总体规划.md](Docs/织云AI集成总体规划.md)
 - 开发环境：[Docs/开发环境与同步流程.md](Docs/开发环境与同步流程.md) · [Docs/部署与迁移.md](Docs/部署与迁移.md)
 - WSL 智能体迁移交接：[Docs/WSL智能体环境迁移交接.md](Docs/WSL智能体环境迁移交接.md)
 - 测试与现状：[Docs/功能实现状态.md](Docs/功能实现状态.md) · [Docs/测试与验收清单.md](Docs/测试与验收清单.md)

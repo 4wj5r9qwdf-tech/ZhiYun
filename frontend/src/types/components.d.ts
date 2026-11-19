@@ -45,6 +45,7 @@ declare module 'vue' {
     APagination: typeof import('ant-design-vue/lib')['Pagination']
     APopconfirm: typeof import('ant-design-vue/lib')['Popconfirm']
     APopover: typeof import('ant-design-vue/lib')['Popover']
+    ApprovalTimeline: typeof import('./../components/ApprovalTimeline.vue')['default']
     ARadio: typeof import('ant-design-vue/lib')['Radio']
     ARadioButton: typeof import('ant-design-vue/lib')['RadioButton']
     ARadioGroup: typeof import('ant-design-vue/lib')['RadioGroup']

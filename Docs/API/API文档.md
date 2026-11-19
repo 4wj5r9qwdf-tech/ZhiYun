@@ -68,7 +68,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；CSV 导入没有独立批量 API | 2026-11-05 |
 | 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；MCP 批量新增按行提交并返回部分成功结果 | 2026-11-05 |
 | 框架原生能力接入 | `framework_native` | [框架原生能力接入API.md](框架原生能力接入API.md) | 系统管理、审批监控、代码生成、独立控制台和 Swagger 已接入；角色权限记录已核对；MCP 不开放高权限系统维护操作 | 2026-11-17 |
-| SnailAI 员工侧入口 | snail_ai_employee | [SnailAI员工侧入口API.md](SnailAI员工侧入口API.md) | ERP 右上角入口、员工 OpenAPI 身份、短时会话关联、MCP 权限过滤、写操作确认与本地 Skill 读取代码已完成；实时工具发现与员工验收待验证 | — |
+| SnailAI 员工侧入口 | snail_ai_employee | [../织云AI集成总体规划.md](../织云AI集成总体规划.md) | ERP 右上角入口、员工 OpenAPI 身份、短时会话关联、MCP 权限过滤、写操作确认与本地 Skill 读取代码已完成；实时工具发现与员工验收待验证 | — |
 
 ---
 
@@ -213,7 +213,7 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 客户订单 PO 支持 `offlineDate` 默认下线日期；`GET /order/customer-orders/options` 返回 `offlineLeadDays`，由系统参数 `order.customer.offlineLeadDays` 设置，未设置时为 0 个自然日。前端按 PO 默认交期计算建议日期，允许手动修改，保存后作为订单快照。`POST /system/config/order-offline-lead-days` 接收整数 `days`（0–3650），需要系统参数编辑权限。款式规格行支持 `unitPrice` 加工单价（可空、非负、最多两位小数），服务端以精确十进制计算 `processingAmount`；空单价代表待填写，不等同零。单款单价按件，套装单价按套。订单总额按各规格金额汇总，缺失单价时标记金额未完整。
 
-客户订单 `POST /order/customer-orders/{id}/transition` 支持 `action=unsubmit`（待审核转草稿，需要制单权限，清除需求快照）和 `action=unapprove`（已审核转待审核，需要审核权限，保留需求快照），均要求提交当前 `revision`、符合订单访问范围，并记录业务审计。反审核时会在同一事务检查是否存在未取消的物料需求计划；存在时必须先处理计划，不允许直接反审核。其他下游单据接入后还需补齐对应引用检查。
+客户订单 `POST /order/customer-orders/{id}/transition` 的 `action=unsubmit` 可将待审核订单退回草稿，需要制单权限，清除需求快照，并检查当前修订号。已审核订单的反审核改走 `POST /order/customer-orders/{id}/reverse-approval`，请求体为 `{"revision":4,"reason":"反审核原因"}`，需要订单编辑权限和已绑定的 `customer_order_unapprove` 审批流程；流程未绑定时拒绝申请，不回退为直接审核权限。发起后原订单仍保持已审核，审批退回/终止时也不改变原单；审批通过后订单退回草稿并清除需求快照，再次提交时重新启动客户订单普通审批。申请时和审批通过回调时均锁定订单并检查版本及未取消的物料需求计划；关联计划必须先反审核并取消。其他下游单据接入后仍须补充引用检查。
 
 客户订单提交和审核不以 BOM 完成作为前置条件；草稿中的用料试算是临时预览。已审核订单可调用 `POST /order/customer-orders/{id}/demand/calculate`，提交当前 `revision`；已有快照时还须明确传入 `recalculate=true`。接口要求订单列表及制单权限和订单数据访问范围。关联的需求计划若仍是未调整草稿，会在同一事务内同步新的完整算料快照；计划存在人工调整、已提交或已审核状态时，重新算料会被拒绝，避免覆盖计划工作。BOM 缺失或用料不完整时返回 `saved=false` 和带缺失原因的 `plans`，不写入正式快照；全部完整时返回 `saved=true`、`plans` 和最新 `order`，事务内归档旧用料快照、保存新快照并记录业务审计。订单列表 `demandState` 区分未算料、已算料、BOM 更新、BOM 不可用和待核对。历史表增量见 `sql/订单算料快照历史_20261114.sql`。独立物料需求计划接口、字段、审批、权限和迁移状态见[物料需求计划 API 契约](物料需求计划API.md)；前后端构建与 WSL 开发库迁移已通过，待用户验收；MCP/Skill 尚未接入。
 
@@ -281,3 +281,5 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 - [款式档案 API](款式档案API.md)：单款、套装、规格、附件及 MCP 契约。
 - [款式 BOM API](款式BOMAPI.md)：BOM 版本、用料规则、覆盖核对、试算及 MCP。
+
+人员分类权限配置：`GET /system/person/{userId}/category-scope` 获取配置与分类目录，`PUT /system/person/{userId}/category-scope` 保存 `mode`（`ALL`、`NONE`、`SELECTED`）和 `grants`。两个接口均需要 `system:person:categoryScope`，目标人员必须在操作人的人员数据范围内；超级管理员账号不适用此配置，非超管不能修改本人的分类权限。变更记录人员、授权模式与分类范围的前后值。

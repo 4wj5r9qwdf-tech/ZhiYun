@@ -43,10 +43,14 @@ public class ChatDocumentController {
     public Result<Map<String, Object>> upload(@RequestParam Long agentId, @RequestParam String conversationId,
                                                @RequestParam MultipartFile file) throws IOException {
         Long owner = currentUser();
-        validateContext(owner, agentId, conversationId);
-        if (file.isEmpty() || file.getSize() > ChatDocumentValidator.MAX_BYTES) throw new IllegalArgumentException("文件大小须在 10 MB 以内");
+        if (file.isEmpty() || file.getSize() > ChatDocumentValidator.maxBytes(file.getOriginalFilename())) throw new IllegalArgumentException("文件大小超限（PDF 50 MB，其他文档 10 MB）");
         byte[] bytes = file.getBytes();
         String name = file.getOriginalFilename();
+        return Result.ok(store(owner, agentId, conversationId, name, bytes));
+    }
+
+    Map<String, Object> store(Long owner, Long agentId, String conversationId, String name, byte[] bytes) {
+        validateContext(owner, agentId, conversationId);
         String type = ChatDocumentValidator.validate(name, bytes);
         // 保留原件，不在上传入口抽取文本。 / Preserve the original without eager text extraction.
         ResourcePO resource = resources.upload(new ByteArrayInputStream(bytes), name, bytes.length,
@@ -60,7 +64,7 @@ public class ChatDocumentController {
             try { resources.delete(resource.getId()); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
             throw exception;
         }
-        return Result.ok(Map.of("id", id, "name", name, "size", bytes.length, "type", type));
+        return Map.of("id", id, "name", name, "size", bytes.length, "type", type);
     }
 
     @LoginRequired
@@ -83,9 +87,10 @@ public class ChatDocumentController {
         Map<String, Object> row = ownedFile(id, owner, agentId, conversationId);
         Long resourceId = ((Number) row.get("resource_id")).longValue();
         try (InputStream input = resources.load(resourceId)) {
-            byte[] bytes = input.readNBytes(ChatDocumentValidator.MAX_BYTES + 1);
-            if (bytes.length > ChatDocumentValidator.MAX_BYTES) throw new IllegalArgumentException("文件超过大小限制");
             String name = Objects.toString(row.get("original_name"), "document");
+            int limit = ChatDocumentValidator.maxBytes(name);
+            byte[] bytes = input.readNBytes(limit + 1);
+            if (bytes.length > limit) throw new IllegalArgumentException("文件超过大小限制");
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .cacheControl(CacheControl.noStore()).header("X-Content-Type-Options", "nosniff")
                 .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(name, StandardCharsets.UTF_8).build().toString())

@@ -102,7 +102,8 @@ public class FlwTaskController extends BaseController {
     @SaCheckPermission("approval:waiting:list")
     @GetMapping("/pageByTaskWait")
     public R<PageResult<FlowTaskVo>> pageByTaskWait(FlowTaskBo flowTaskBo, PageQuery pageQuery) {
-        return R.ok(flwTaskService.pageByTaskWait(flowTaskBo, pageQuery));
+        return R.ok(org.dromara.common.satoken.utils.LoginHelper.isSuperAdmin()
+            ? flwTaskService.pageByAllTaskWait(flowTaskBo, pageQuery) : flwTaskService.pageByTaskWait(flowTaskBo, pageQuery));
     }
 
     /**
@@ -115,7 +116,8 @@ public class FlwTaskController extends BaseController {
     @SaCheckPermission("approval:finished:list")
     @GetMapping("/pageByTaskFinish")
     public R<PageResult<FlowHisTaskVo>> pageByTaskFinish(FlowTaskBo flowTaskBo, PageQuery pageQuery) {
-        return R.ok(flwTaskService.pageByTaskFinish(flowTaskBo, pageQuery));
+        return R.ok(org.dromara.common.satoken.utils.LoginHelper.isSuperAdmin()
+            ? flwTaskService.pageByAllTaskFinish(flowTaskBo, pageQuery) : flwTaskService.pageByTaskFinish(flowTaskBo, pageQuery));
     }
 
     /**

@@ -26,6 +26,7 @@ import java.util.*;
 public class CustomerOrderController {
     private final JdbcTemplate jdbc;
     private final org.dromara.web.service.CustomerOrderApprovalService approval;
+    private final org.dromara.web.service.BusinessApprovalWorkflowService workflows;
     private final org.dromara.web.service.MaterialDemandPlanService demandPlans;
     private final StyleController styles;
     private final StyleBomController boms;
@@ -39,6 +40,7 @@ public class CustomerOrderController {
     public record Input(Long id, Integer revision, String orderNo, String suggestedCode, Long customerId, Long companyId,
                         Long salesId, Long followerId, LocalDate date, String reference, String destination, String remark, String supply, List<Po> pos, Map<String,String> sources) {}
     public record Action(int revision, String action, String reason) {}
+    public record ReverseApprovalRequest(Integer revision, String reason) {}
     public record DemandRequest(Integer revision, Boolean recalculate) {}
 
     /** 订单角色可检索基础资料，款式选择继续执行人员分类限制。 / Provide order-entry reference data while keeping style choices within the employee category scope. */
@@ -94,7 +96,15 @@ public class CustomerOrderController {
             sales_id::text AS "salesId",follower_id::text AS "followerId",status,revision,created_at AS "createdAt",
             updated_at AS "updatedAt",document::text AS document,demand::text AS demand,
             EXISTS (SELECT 1 FROM sys_approval_business_instance a WHERE a.business_type='customer_order'
-                AND a.business_id=biz_customer_order.id AND a.state IN ('pending','approved')) AS "workflowManaged"
+                AND a.business_id=biz_customer_order.id AND a.business_revision=biz_customer_order.revision
+                AND a.state IN ('starting','pending')) AS "workflowManaged",
+            EXISTS (SELECT 1 FROM sys_approval_business_instance a WHERE a.business_type='customer_order'
+                AND a.business_id=biz_customer_order.id AND a.business_revision=biz_customer_order.revision
+                AND a.state='pending') AS "workflowPending",
+            EXISTS (SELECT 1 FROM biz_document_reversal_request r WHERE r.business_type='customer_order_unapprove'
+                AND r.business_id=biz_customer_order.id AND r.state='pending') AS "reverseApprovalPending",
+            (SELECT r.instance_id::text FROM biz_document_reversal_request r WHERE r.business_type='customer_order_unapprove'
+                AND r.business_id=biz_customer_order.id AND r.state='pending' ORDER BY r.id DESC LIMIT 1) AS "reverseApprovalInstanceId"
         FROM biz_customer_order
         """;
 
@@ -108,6 +118,7 @@ public class CustomerOrderController {
             AND (?='' OR status=?) AND (order_no ILIKE ? OR document::text ILIKE ?) ORDER BY updated_at DESC,id DESC
             """,user,user,user,reviewer(),status,status,"%"+keyword+"%","%"+keyword+"%")
             .stream().map(this::decode).toList();
+        enrichListDisplayNames(rows);
         var newest=new HashMap<String,String>();
         for (var bom : jdbc.queryForList("SELECT DISTINCT ON (style_id) style_id::text AS style, id::text AS id FROM rd_style_bom WHERE status='released' ORDER BY style_id, version DESC")) newest.put(bom.get("style").toString(),bom.get("id").toString());
         for (var row : rows) row.put("demandState",demandState(row,newest));
@@ -156,6 +167,121 @@ public class CustomerOrderController {
         row.put("document",JsonUtils.parseMap(row.get("document").toString()));
         row.put("demand",JsonUtils.parseObject(row.get("demand").toString(),List.class));
         return row;
+    }
+
+    /** 批量补齐列表悬浮详情使用的档案名称，兼容早期订单 JSON 未保存名称快照。 / Batch-hydrate labels for list popovers, including legacy orders without saved name snapshots. */
+    private void enrichListDisplayNames(List<Map<String,Object>> rows) {
+        var colorIds=new LinkedHashSet<Long>();
+        var sizeIds=new LinkedHashSet<Long>();
+        var setSpecIds=new LinkedHashSet<Long>();
+        var childStyleIds=new LinkedHashSet<Long>();
+        for (var row : rows) collectDisplayIds(row.get("document"),colorIds,sizeIds,setSpecIds,childStyleIds);
+
+        var colorNames=displayLabels("SELECT color_id::text AS id,color_name AS label FROM base_color WHERE color_id IN (%s)",colorIds);
+        var sizeNames=displayLabels("SELECT id::text AS id,name AS label FROM sys_size WHERE id IN (%s)",sizeIds);
+        var childStyles=displayLabels("SELECT style_id::text AS id,internal_code || ' · ' || style_name AS label FROM rd_style WHERE style_id IN (%s)",childStyleIds);
+        var setSpecs=new HashMap<String,Map<String,Object>>();
+        for (var setSpec : displayRows("SELECT id::text AS id,color_name AS colorName,size_name AS sizeName FROM rd_style_set_spec WHERE id IN (%s)",setSpecIds))
+            setSpecs.put(Objects.toString(setSpec.get("id"),""),setSpec);
+
+        for (var row : rows) {
+            var document=mutableMap(row.get("document"));
+            if (document==null || !(document.get("pos") instanceof List<?> posList)) continue;
+            for (Object poValue : posList) {
+                var po=mutableMap(poValue);
+                if (po==null || !(po.get("lines") instanceof List<?> lines)) continue;
+                for (Object lineValue : lines) {
+                    var line=mutableMap(lineValue);
+                    if (line==null) continue;
+                    fillDisplayLabel(line,"colorName",colorNames,line.get("colorId"));
+                    fillDisplayLabel(line,"sizeName",sizeNames,line.get("sizeId"));
+                    var setSpec=setSpecs.get(textId(line.get("setSpecId")));
+                    if (setSpec!=null) {
+                        fillDisplayValue(line,"setSpecColorName",setSpec.get("colorName"));
+                        fillDisplayValue(line,"setSpecSizeName",setSpec.get("sizeName"));
+                    }
+                    if (line.get("configuration") instanceof List<?> configuration) for (Object childValue : configuration) {
+                        var child=mutableMap(childValue);
+                        if (child==null) continue;
+                        fillDisplayLabel(child,"childLabel",childStyles,child.get("childId"));
+                        fillDisplayLabel(child,"colorName",colorNames,child.get("colorId"));
+                        fillDisplayLabel(child,"sizeName",sizeNames,child.get("sizeId"));
+                    }
+                }
+            }
+        }
+    }
+
+    /** 收集一个订单 JSON 中要解析的颜色、尺码、套装规格和子款主键。 / Collect reference IDs from a saved order snapshot for batched label lookup. */
+    private void collectDisplayIds(Object documentValue,Set<Long> colorIds,Set<Long> sizeIds,Set<Long> setSpecIds,Set<Long> childStyleIds) {
+        var document=mutableMap(documentValue);
+        if (document==null || !(document.get("pos") instanceof List<?> posList)) return;
+        for (Object poValue : posList) {
+            var po=mutableMap(poValue);
+            if (po==null || !(po.get("lines") instanceof List<?> lines)) continue;
+            for (Object lineValue : lines) {
+                var line=mutableMap(lineValue);
+                if (line==null) continue;
+                addDisplayId(colorIds,line.get("colorId"));
+                addDisplayId(sizeIds,line.get("sizeId"));
+                addDisplayId(setSpecIds,line.get("setSpecId"));
+                if (line.get("configuration") instanceof List<?> configuration) for (Object childValue : configuration) {
+                    var child=mutableMap(childValue);
+                    if (child==null) continue;
+                    addDisplayId(childStyleIds,child.get("childId"));
+                    addDisplayId(colorIds,child.get("colorId"));
+                    addDisplayId(sizeIds,child.get("sizeId"));
+                }
+            }
+        }
+    }
+
+    /** 以一次 IN 查询读取一类档案的名称，避免列表悬浮展示产生逐行查询。 / Resolve one label family with a single IN query instead of per-row lookups. */
+    private Map<String,String> displayLabels(String sqlTemplate,Set<Long> ids) {
+        var result=new HashMap<String,String>();
+        for (var row : displayRows(sqlTemplate,ids)) result.put(Objects.toString(row.get("id"),""),Objects.toString(row.get("label"),""));
+        return result;
+    }
+
+    /** 用参数化 IN 条件批量查询订单悬浮卡片引用的档案行。 / Load referenced display rows with a parameterized IN clause. */
+    private List<Map<String,Object>> displayRows(String sqlTemplate,Set<Long> ids) {
+        if (ids.isEmpty()) return List.of();
+        var result=new ArrayList<Map<String,Object>>();
+        var values=new ArrayList<>(ids);
+        for (int offset=0;offset<values.size();offset+=500) {
+            var chunk=values.subList(offset,Math.min(offset+500,values.size()));
+            String placeholders=String.join(",",Collections.nCopies(chunk.size(),"?"));
+            result.addAll(jdbc.queryForList(sqlTemplate.formatted(placeholders),chunk.toArray()));
+        }
+        return result;
+    }
+
+    /** 仅在订单快照缺少可读名称时补入当前档案标签，不覆盖已有历史快照。 / Fill missing display labels without replacing historical labels already stored in the snapshot. */
+    private void fillDisplayLabel(Map<String,Object> target,String field,Map<String,String> labels,Object id) {
+        if (target.get(field)!=null && !target.get(field).toString().isBlank()) return;
+        String label=labels.get(textId(id));
+        if (label!=null && !label.isBlank()) target.put(field,label);
+    }
+
+    /** 补入已批量查询到的套装规格文本。 / Fill set-specification text from the batched lookup result. */
+    private void fillDisplayValue(Map<String,Object> target,String field,Object value) {
+        if ((target.get(field)==null || target.get(field).toString().isBlank()) && value!=null && !value.toString().isBlank()) target.put(field,value.toString());
+    }
+
+    /** 将数值主键安全规范化为查询映射键。 / Normalize numeric identifiers for label-map lookup. */
+    private String textId(Object value) { return value==null ? "" : value.toString(); }
+
+    /** 收集有效的数值主键，忽略历史异常值而不影响订单列表。 / Collect valid numeric IDs while tolerating malformed legacy references. */
+    private void addDisplayId(Set<Long> ids,Object value) {
+        if (value==null) return;
+        try { ids.add(Long.valueOf(value.toString())); }
+        catch (NumberFormatException ignored) { /* 历史脏值仅无法显示名称，不阻断订单列表。 / Ignore malformed legacy IDs for display only. */ }
+    }
+
+    /** 将解析后的 JSON 对象转换为可补充展示字段的映射。 / Cast decoded JSON objects to mutable display maps. */
+    @SuppressWarnings("unchecked")
+    private Map<String,Object> mutableMap(Object value) {
+        return value instanceof Map<?,?> ? (Map<String,Object>)value : null;
     }
 
     /** 保存草稿及客户、款式名称快照；并发修改必须重新加载。 / Save the draft with customer and style labels as snapshots; reject stale concurrent edits. */
@@ -396,6 +522,7 @@ public class CustomerOrderController {
     public R<Map<String,Object>> calculateApprovedDemand(@PathVariable Long id,@RequestBody DemandRequest request) {
         var before=load(id,true).getData();
         if (!"approved".equals(before.get("status"))) throw new ServiceException("仅已审核订单可在审核后算料");
+        if (Boolean.TRUE.equals(before.get("reverseApprovalPending"))) throw new ServiceException("订单反审核审批中，暂不能重新算料");
         if (!Objects.equals(request.revision(),before.get("revision"))) throw new ServiceException("订单版本已变化，请重新加载");
         boolean hasExisting=before.get("demand") instanceof Collection<?> existing && !existing.isEmpty();
         if (hasExisting && !Boolean.TRUE.equals(request.recalculate())) throw new ServiceException("该订单已有用料快照，请明确选择重新算料");
@@ -418,6 +545,40 @@ public class CustomerOrderController {
         return R.ok(Map.of("saved",true,"plans",result,"order",after));
     }
 
+    /** 发起客户订单反审核流程；原订单保持已审核，流程通过后才退回草稿。 / Start a reversal workflow and keep the order approved until the workflow passes. */
+    @PostMapping("/{id}/reverse-approval")
+    @Transactional(rollbackFor=Exception.class)
+    @SaCheckPermission("order:customer-order:edit")
+    @org.dromara.common.log.annotation.Log(title="发起客户订单反审核审批",businessType=org.dromara.common.log.enums.BusinessType.UPDATE,isSaveRequestData=false,isSaveResponseData=false)
+    public R<Map<String,Object>> requestReverseApproval(@PathVariable Long id,@RequestBody ReverseApprovalRequest request) {
+        var before=load(id,true).getData();
+        if(request.revision()==null || !Objects.equals(request.revision(),before.get("revision")))
+            throw new ServiceException("订单版本已变化，请重新加载");
+        if(!"approved".equals(before.get("status")))throw new ServiceException("只有已审核订单可以申请反审核");
+        String reason=clean(request.reason());
+        if(reason.isEmpty()||reason.length()>500)throw new ServiceException("请填写反审核原因（最多500字）");
+        if(Boolean.TRUE.equals(before.get("reverseApprovalPending")))throw new ServiceException("该订单已有反审核申请正在审批");
+
+        var linkedPlans=jdbc.queryForList("""
+            SELECT plan_no AS "planNo",status FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE
+            """,id);
+        if(!linkedPlans.isEmpty()){
+            String plans=linkedPlans.stream().map(plan->Objects.toString(plan.get("planNo"),"")+"（"+Objects.toString(plan.get("status"),"")+")").reduce((left,right)->left+"、"+right).orElse("");
+            throw new ServiceException("请先处理关联的物料需求计划后再申请订单反审核："+plans+"。已审核计划需先申请反审核，草稿计划可取消");
+        }
+
+        Long instance=workflows.submitRequired("customer_order_unapprove",id,((Number)before.get("revision")).intValue(),Objects.toString(before.get("orderNo"),""));
+        var sourceSnapshot=Map.of("orderNo",Objects.toString(before.get("orderNo"),""),"status",Objects.toString(before.get("status"),""),"demand",before.get("demand"));
+        jdbc.update("""
+            INSERT INTO biz_document_reversal_request(business_type,business_id,business_revision,instance_id,requested_by,reason,source_snapshot)
+            VALUES('customer_order_unapprove',?,?,?,?,?,?::jsonb)
+            """,id,before.get("revision"),instance,LoginHelper.getUserId(),reason,JsonUtils.toJsonString(sourceSnapshot));
+        BusinessAudit.record("发起客户订单反审核审批",id,"订单编号",
+            Map.of("订单号",before.get("orderNo"),"状态",before.get("status")),
+            Map.of("订单号",before.get("orderNo"),"反审核原因",reason,"审批实例",instance));
+        return load(id,false);
+    }
+
     /** 流转在行锁内检查权限与版本，退回和取消保留执行原因。 / Check permission and revision under a row lock; retain the reason for returns and cancellations. */
     @PostMapping("/{id}/transition")
     @Transactional
@@ -429,8 +590,8 @@ public class CustomerOrderController {
         if (!"submit".equals(input.action()) && !"draft".equals(state)) {
             Boolean managed = jdbc.queryForObject("""
                 SELECT EXISTS(SELECT 1 FROM sys_approval_business_instance
-                WHERE business_type='customer_order' AND business_id=? AND state IN ('starting','pending','approved'))
-                """, Boolean.class, id);
+                WHERE business_type='customer_order' AND business_id=? AND business_revision=? AND state IN ('starting','pending'))
+                """, Boolean.class, id,before.get("revision"));
             if (Boolean.TRUE.equals(managed)) throw new ServiceException("该订单由审批流程管理，请在审批模块处理");
         }
 
@@ -463,13 +624,6 @@ public class CustomerOrderController {
                 target="draft";
                 demand=List.of();
             }
-            case "unapprove" -> {
-                StpUtil.checkPermission("order:customer-order:review");
-                if (!state.equals("approved")) throw new ServiceException("仅已审核订单可以反审核");
-                Boolean hasPlan=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled')",Boolean.class,id);
-                if(Boolean.TRUE.equals(hasPlan))throw new ServiceException("订单已生成物料需求计划，请先取消未处理的计划后再反审核");
-                target="submitted";
-            }
             case "cancel" -> {
                 StpUtil.checkPermission("order:customer-order:cancel");
                 if (!state.equals("draft") && !state.equals("submitted")) throw new ServiceException("已审核订单需通过订单变更处理");
@@ -491,7 +645,6 @@ public class CustomerOrderController {
             case "approve" -> "审核通过客户订单";
             case "return" -> "退回客户订单";
             case "unsubmit" -> "反提交客户订单";
-            case "unapprove" -> "反审核客户订单";
             default -> "取消客户订单";
         },id,"orderNo",before,after);
         return R.ok(after);

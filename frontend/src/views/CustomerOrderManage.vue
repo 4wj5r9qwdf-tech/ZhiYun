@@ -29,6 +29,8 @@ const columns = [
 const rows = ref<any[]>([])
 const options = ref<any>({})
 const form = ref<any>()
+const reverseApprovalOpen = ref(false)
+const reverseApprovalReason = ref('')
 const plans = ref<any[]>([])
 const demandSaved = ref(false)
 const demandView = ref<'summary'|'detail'>('summary')
@@ -96,6 +98,87 @@ function defaultOfflineDate(due:string) {
   date.setUTCDate(date.getUTCDate() - (Number(options.value.offlineLeadDays) || 0))
   return date.toISOString().slice(0,10)
 }
+/** 将颜色或尺码主键解析为展示名称，并区分未设置与档案失效。 / Resolve a color or size ID and distinguish an unset value from a stale reference. */
+function referenceName(source:any[] | undefined, id:any, emptyLabel:string, missingLabel:string) {
+  if (id == null || id === '') return emptyLabel
+  return source?.find(item=>String(item.value)===String(id))?.label || missingLabel
+}
+/** 将订单规格转换为可读摘要；单款明确展示色码，套装明确展示套装配色配码。 / Format order specifications with explicit single-style color-size or set color-size labels. */
+function orderLineSpecification(line:any) {
+  if (line.setSpecId) {
+    const setName=[line.setSpecColorName,line.setSpecSizeName].filter(Boolean).join(' / ')
+    return setName ? `套装配色/配码：${setName}` : '套装规格名称待补充'
+  }
+  const colors=options.value.specs?.colors
+  const sizes=options.value.specs?.sizes
+  const color=line.colorName || referenceName(colors,line.colorId,'无颜色','颜色资料已失效')
+  const size=line.sizeName || referenceName(sizes,line.sizeId,'无尺码','尺码资料已失效')
+  return `颜色：${color}　尺码：${size}`
+}
+/** 按款式及 PO 分组订单行，款式卡片内不再逐行重复 PO 标识。 / Group order lines by style and PO so the style popover does not repeat PO labels on every row. */
+function orderStyleDetails(pos:any[]) {
+  const groups = new Map<string, any>()
+  for (const po of pos) for (const line of po.lines || []) {
+    const key = String(line.styleId || line.styleCode || line.styleName || 'unknown')
+    let group=groups.get(key)
+    if (!group) {
+      group={key,name:line.styleName || line.styleCode || '未命名款式',productionMode:line.productionMode,poGroups:[],poMap:new Map<string,any>()}
+      groups.set(key,group)
+    }
+    const poKey=String(po.number || '未命名 PO')
+    let poGroup=group.poMap.get(poKey)
+    if (!poGroup) {
+      poGroup={number:po.number,lines:[]}
+      group.poMap.set(poKey,poGroup)
+      group.poGroups.push(poGroup)
+    }
+    poGroup.lines.push({...line,specification:orderLineSpecification(line)})
+  }
+  return [...groups.values()].map(({poMap,...group})=>({...group,poGroups:group.poGroups.map((po:any)=>({...po,
+    quantity:po.lines.reduce((sum:number,line:any)=>sum+Number(line.quantity||0),0),
+    unit:po.lines[0]?.productionMode==='single'?'件':'套',
+    amount:orderLinesAmount(po.lines),
+  }))}))
+}
+/** 将 PO 明细压缩为款式级汇总，PO 卡片只展示 PO 视角的总量，不重复展开颜色尺码。 / Summarize PO lines by style so the PO popover shows totals without duplicating color-size details. */
+function orderPoStyleSummaries(po:any) {
+  const styles=new Map<string,any>()
+  for (const line of po.lines || []) {
+    const key=String(line.styleId || line.styleCode || line.styleName || 'unknown')
+    let group=styles.get(key)
+    if (!group) {
+      group={key,name:line.styleName || line.styleCode || '未命名款式',productionMode:line.productionMode,lines:[]}
+      styles.set(key,group)
+    }
+    group.lines.push(line)
+  }
+  return [...styles.values()].map(group=>({
+    key:group.key,
+    name:group.name,
+    productionMode:group.productionMode,
+    specCount:group.lines.length,
+    quantity:group.lines.reduce((sum:number,line:any)=>sum+Number(line.quantity||0),0),
+    unit:group.productionMode==='single'?'件':'套',
+    amount:orderLinesAmount(group.lines),
+  }))
+}
+/** 计算一组订单规格的加工金额；存在未填写单价时不显示不完整的合计。 / Sum processing amounts only when every line has a valid unit price. */
+function orderLinesAmount(lines:any[]) {
+  const values=lines.map(amountCents)
+  return values.length && values.every((value:bigint|null)=>value!==null)
+    ? formatCents(values.reduce((sum:bigint,value:bigint|null)=>sum+(value ?? 0n),0n)) : undefined
+}
+/** 为 PO 悬浮卡片标明供料来源，区分 PO 单独设置与继承订单默认。 / Label whether a PO sourcing mode is overridden or inherited. */
+function poSupplySource(po:any) { return po.supply ? 'PO 单独设置' : '继承订单默认' }
+function orderUnit(line:any) { return line.productionMode==='single'?'件':'套' }
+/** 区分单款、合并生产套装与分开生产套装。 / Distinguish single styles and the two set production modes. */
+function productionModeLabel(mode:string) {
+  return mode==='single'?'单款':mode==='combined'?'合并生产套装':mode==='separate'?'分开生产套装':'套装'
+}
+function orderLinePriceSummary(line:any) {
+  const amount=amountCents(line)
+  return line.unitPrice == null ? '' : `单价 ${line.unitPrice}/${orderUnit(line)}${amount===null?'':` · 金额 ${formatCents(amount)}`}`
+}
 /** 更新指定 PO 交期，并按参数重算默认下线日期。 / Update one PO due date and recalculate its suggested offline date. */
 function changeDue(p:any, value:string) {
   if (!p.offlineDate || p.offlineDate === p._autoOfflineDate) { p.offlineDate=defaultOfflineDate(value); p._autoOfflineDate=p.offlineDate }
@@ -114,7 +197,7 @@ const orderSections = [
   { key:'po', title:'客户 PO', hint:'PO 信息与默认交期' },
   { key:'styles', title:'款式与规格', hint:'选择款式并填写数量' },
   { key:'delivery', title:'交付批次', hint:'交期与分批数量' },
-  { key:'plan', title:'物料计划', hint:'试算用料与供料安排' },
+  { key:'plan', title:'用料试算', hint:'按 BOM 计算订单物料需求' },
 ]
 // 在订单编辑区内定位分组，保留同一 PO 的输入和滚动状态。
 function goToOrderSection(key: string) {
@@ -246,8 +329,10 @@ async function load() {
     const labels:Record<string,string>={customer:'客供',purchase:'自采',mixed:'客供＋自采'}
     const supplySummary=labels[doc.supply] || '未设置'
     const supplyDetail=['订单默认：'+supplySummary,...pos.map((p:any)=>`PO ${p.number || '未命名'}：${labels[p.supply || doc.supply] || '未设置'}${p.supply ? '（单独设置）' : '（跟随订单）'}`)].join('\n')
-    return {...row,...doc,supplySummary,supplyDetail,poNames:pos.map((p:any)=>p.number).join('、'),
-      styles:[...new Set(lines.map((l:any)=>l.styleName))].join('、'),
+    const styleDetails=orderStyleDetails(pos)
+    const poDetails=pos.map((item:any)=>({...item,styleSummaries:orderPoStyleSummaries(item)}))
+    return {...row,...doc,supplySummary,supplyDetail,poDetails,poNames:pos.map((p:any)=>p.number).join('、'),poSummary:pos.length ? `${pos.length} 个 PO` : '暂无 PO',
+      styles:[...new Set(lines.map((l:any)=>l.styleName))].join('、'),styleDetails,styleSummary:styleDetails.length ? `${styleDetails.length} 款式 · ${lines.length} 个规格` : '暂无款式',
       quantity:[['single','件'],['set','套']].map(([mode,unit])=>{
         const n=lines.filter((l:any)=>(l.productionMode==='single'?'single':'set')===mode).reduce((sum:number,l:any)=>sum+l.quantity,0)
         return n ? n+unit : ''
@@ -261,6 +346,7 @@ onMounted(()=>run(async()=>{ await load(); const id=String(route.query.orderId |
 // 从服务端回填版本，保存后仍留在录单页。
 function hydrate(row:any) {
   form.value={...row.document,id:row.id,status:row.status,revision:row.revision,orderNo:row.orderNo,workflowManaged:row.workflowManaged,
+    reverseApprovalPending:row.reverseApprovalPending,reverseApprovalInstanceId:row.reverseApprovalInstanceId,
     customerId:row.customerId,companyId:row.companyId,salesId:row.salesId,followerId:row.followerId}
   // 空目的地代表跟随订单；明确填写的 PO 目的地作为独立值保留。
   for (const item of form.value.pos || []) if (!item.destination) item.destination=undefined
@@ -507,14 +593,29 @@ function transition(action:string) {
   })
 }
 /** 按状态执行反审核或反提交，并保护已派生的后续单据。 / Reverse approval or submission only when downstream documents permit it. */
-function reverseOrder(action:'unsubmit'|'unapprove') {
-  const unsubmit = action === 'unsubmit'
+function reverseOrder() {
   Modal.confirm({
-    title: unsubmit ? '确认反提交？' : '确认反审核？',
-    content: unsubmit ? '订单将返回草稿，提交时生成的物料计划快照将清除，再次提交时重新计算。' : '订单将返回待审核状态，保留当前物料计划快照。需要修改时可继续反提交。',
-    okText: unsubmit ? '确认反提交' : '确认反审核', cancelText:'取消',
-    onOk: () => transition(action),
+    title: '确认反提交？',
+    content: '订单将返回草稿，提交时生成的物料计划快照将清除，再次提交时重新计算。',
+    okText: '确认反提交', cancelText:'取消',
+    onOk: () => transition('unsubmit'),
   })
+}
+/** 提交客户订单反审核申请；审批通过前订单仍保持已审核。 / Submit an order-reversal request and keep the order approved until approval completes. */
+async function requestReverseApproval() {
+  if(!form.value?.id || busy.value)return
+  const reason=reverseApprovalReason.value.trim()
+  if(!reason){message.warning('请填写反审核原因');return}
+  busy.value=true
+  try {
+    const result:any=await api.post(`${base}/${form.value.id}/reverse-approval`,{revision:form.value.revision,reason})
+    if(result.code!==200)throw new Error(result.msg||'发起反审核审批失败')
+    hydrate(result.data)
+    reverseApprovalOpen.value=false
+    reverseApprovalReason.value=''
+    message.success('反审核申请已提交；审批通过前订单仍保持已审核')
+  } catch(error:any) { message.error(error?.response?.data?.msg||error.message||'发起反审核审批失败') }
+  finally { busy.value=false }
 }
 /** 关闭订单编辑器前确认是否丢弃未保存变更。 / Confirm before discarding unsaved changes when closing the order editor. */
 function close() {
@@ -539,7 +640,57 @@ function close() {
       <template #cell="{column,row}">
         <a-tag v-if="column.key==='status'" :color="row.status==='approved'?'green':row.status==='submitted'?'gold':'default'">{{ statuses[row.status] }}</a-tag>
         <a-tag v-else-if="column.key==='demandState'" :color="row.demandState==='ready'?'green':row.demandState==='outdated'?'orange':row.demandState==='unavailable'?'red':'default'">{{ ({unplanned:'未算料',ready:'已算料',outdated:'BOM 已更新',unavailable:'BOM 不可用',unknown:'待核对'} as Record<string,string>)[row.demandState] || '待核对' }}</a-tag>
-        <a-tooltip v-else-if="column.key==='supplySummary'"><template #title><div style="white-space:pre-line">{{ row.supplyDetail }}</div></template><span>{{ row.supplySummary }}</span></a-tooltip>
+        <a-popover v-else-if="column.key==='poNames'" title="客户 PO 明细" :trigger="['hover', 'focus', 'click']">
+          <template #content>
+            <div class="order-associated-detail order-po-detail">
+              <section v-for="(po,index) in row.poDetails || []" :key="po.number || index">
+                <div class="order-associated-section-title"><strong>PO {{ po.number || Number(index)+1 }}</strong><span>{{ po.lines?.length || 0 }} 个下单规格</span></div>
+                <div class="order-associated-po-facts">
+                  <div><span>PO 日期</span><strong>{{ po.date || '未填写' }}</strong></div>
+                  <div><span>默认交期</span><strong>{{ po.due || '未填写' }}</strong></div>
+                  <div><span>计划下线</span><strong>{{ po.offlineDate || '未填写' }}</strong></div>
+                  <div><span>供料安排</span><strong>{{ ({customer:'客供',purchase:'自采',mixed:'客供＋自采'} as Record<string,string>)[po.supply || row.supply] || '未设置' }}<small>{{ poSupplySource(po) }}</small></strong></div>
+                  <div v-if="po.destination"><span>交货地点</span><strong>{{ po.destination }}</strong></div>
+                </div>
+                <div v-if="po.styleSummaries?.length" class="order-associated-po-summary">
+                  <div class="order-associated-po-summary-heading">款式汇总</div>
+                  <div v-for="style in po.styleSummaries" :key="style.key" class="order-associated-po-summary-row">
+                    <div><strong>{{ style.name }}</strong><small>{{ productionModeLabel(style.productionMode) }} · {{ style.specCount }} 个规格</small></div>
+                    <div><strong>{{ style.quantity }} {{ style.unit }}</strong><small v-if="style.amount != null">加工金额 {{ style.amount }}</small></div>
+                  </div>
+                </div>
+                <span v-else class="order-associated-meta">尚未添加款式规格</span>
+                <div v-if="po.remark" class="order-associated-meta">PO 备注：{{ po.remark }}</div>
+              </section>
+              <a-empty v-if="!row.poDetails?.length" description="暂无客户 PO" />
+            </div>
+          </template>
+          <button type="button" class="order-associated-trigger">{{ row.poSummary }}</button>
+        </a-popover>
+        <a-popover v-else-if="column.key==='styles'" title="订单款式与规格" :trigger="['hover', 'focus', 'click']">
+          <template #content>
+            <div class="order-associated-detail order-style-detail">
+              <section v-for="style in row.styleDetails || []" :key="style.key">
+                <div class="order-associated-style-title"><strong>{{ style.name }}</strong><a-tag>{{ productionModeLabel(style.productionMode) }}</a-tag></div>
+                <div v-for="(po,index) in style.poGroups" :key="po.number || index" class="order-associated-style-po">
+                  <div class="order-associated-style-po-title"><strong>PO {{ po.number || Number(index)+1 }}</strong><span>本 PO {{ po.quantity }} {{ po.unit }}<template v-if="po.amount != null"> · 加工金额 {{ po.amount }}</template></span></div>
+                  <div v-for="(line,lineIndex) in po.lines" :key="line.key || lineIndex" class="order-associated-lines order-style-lines">
+                    <div class="order-associated-line-main">
+                      <div class="order-associated-line-title"><strong>{{ line.specification }}</strong><small v-if="line.setSpecId">套装规格</small></div>
+                      <div class="order-associated-line-quantity"><strong>{{ line.quantity }} {{ orderUnit(line) }}</strong><small v-if="line.unitPrice != null">{{ orderLinePriceSummary(line) }}</small></div>
+                    </div>
+                    <div v-if="line.setSpecId && line.configuration?.length" class="order-associated-children">
+                      <span v-for="(child,childIndex) in line.configuration" :key="child.childId || childIndex">{{ childSpecLabel(child) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              <a-empty v-if="!row.styleDetails?.length" description="暂无款式规格" />
+            </div>
+          </template>
+          <button type="button" class="order-associated-trigger">{{ row.styleSummary }}</button>
+        </a-popover>
+        <a-popover v-else-if="column.key==='supplySummary'" title="供料安排" :trigger="['hover', 'focus', 'click']"><template #content><div class="order-associated-detail"><div class="order-associated-supply"><strong>订单默认</strong><span>{{ row.supplySummary }}</span></div><div v-for="(po,index) in row.pos || []" :key="po.number || index" class="order-associated-supply"><strong>PO {{ po.number || Number(index)+1 }}</strong><span>{{ ({customer:'客供',purchase:'自采',mixed:'客供＋自采'} as Record<string,string>)[po.supply || row.supply] || '未设置' }}<small>{{ po.supply ? '单独设置' : '跟随订单默认' }}</small></span></div></div></template><button type="button" class="order-associated-trigger">{{ row.supplySummary }}</button></a-popover>
         <span v-else :title="String(row[column.key] ?? '')">{{ row[column.key] ?? '—' }}</span>
       </template>
       <template #action="{row}"><a-space :size="4"><a-button type="link" size="small" @click="open(row)">{{ row.status==='draft' && permissions('edit') ? '编辑' : '查看' }}</a-button><a-button v-if="row.status==='approved' && permissions('edit')" type="link" size="small" @click="calculateFromList(row)">{{ row.demandState==='unplanned' ? '算料' : '重新算料' }}</a-button></a-space></template>
@@ -547,14 +698,14 @@ function close() {
   </StandardListLayout>
   <section v-else class="order-editor">
     <header class="order-bar">
-      <a-space><a-button @click="close">返回列表</a-button><strong>{{ form.id ? form.orderNo : '新增客户订单' }}</strong><a-tag>{{ statuses[form.status] }}</a-tag></a-space>
+      <a-space><a-button @click="close">返回列表</a-button><strong>{{ form.id ? form.orderNo : '新增客户订单' }}</strong><a-tag>{{ statuses[form.status] }}</a-tag><a-tag v-if="form.reverseApprovalPending" color="processing">反审核审批中</a-tag><router-link v-if="form.reverseApprovalPending && form.reverseApprovalInstanceId" :to="{name:'ApprovalInitiated',query:{instanceId:form.reverseApprovalInstanceId}}">查看反审核进度</router-link></a-space>
       <a-space>
         <a-button v-if="!readonly" :loading="busy" @click="run(save)">保存草稿</a-button>
         <router-link v-if="form.workflowManaged && form.status==='submitted'" :to="{name:'ApprovalWaiting'}">查看审批待办</router-link>
         <a-button v-if="!readonly" type="primary" :loading="busy" @click="transition('submit')">提交审核</a-button>
         <a-button v-if="!form.workflowManaged && form.status==='submitted' && permissions('review')" type="primary" :loading="busy" @click="transition('approve')">审核通过</a-button>
-        <a-button v-if="!form.workflowManaged && form.status==='submitted' && permissions('edit')" :loading="busy" @click="reverseOrder('unsubmit')">反提交</a-button>
-        <a-button v-if="!form.workflowManaged && form.status==='approved' && permissions('review')" :loading="busy" @click="reverseOrder('unapprove')">反审核</a-button>
+        <a-button v-if="!form.workflowManaged && form.status==='submitted' && permissions('edit')" :loading="busy" @click="reverseOrder()">反提交</a-button>
+        <a-button v-if="form.status==='approved' && permissions('edit') && !form.reverseApprovalPending" :loading="busy" @click="reverseApprovalReason='';reverseApprovalOpen=true">申请反审核</a-button>
       </a-space>
     </header>
     <div class="order-editor-layout">
@@ -625,7 +776,8 @@ function close() {
         </template>
       </a-form>
       <div class="order-amount">整单加工金额：<strong>{{ orderAmount.count ? orderAmount.value : '—' }}</strong><span v-if="orderAmount.missing">（{{ orderAmount.missing }} 项未填写单价，金额暂不完整）</span></div>
-      <div id="order-section-plan" class="order-section"><strong>订单物料计划</strong><a-space wrap><label v-if="plans.length" class="demand-po-filter"><span>客户 PO</span><a-select v-model:value="demandPoFilter" allow-clear show-search option-filter-prop="label" placeholder="全部 PO" :options="demandPoOptions" /></label><a-radio-group v-if="plans.length" v-model:value="demandView" button-style="solid" size="small"><a-radio-button value="summary">按物料汇总</a-radio-button><a-radio-button value="detail">按款式规格明细</a-radio-button></a-radio-group><a-button v-if="!readonly" :loading="busy" @click="preview">保存并试算用料</a-button><a-button v-if="form.status==='approved' && permissions('edit')" type="primary" :loading="busy" @click="requestDemandCalculation(demandSaved)">{{ demandSaved ? '重新算料' : '审核后算料' }}</a-button></a-space></div>
+      <div id="order-section-plan" class="order-section"><strong>订单用料试算</strong><a-space wrap><label v-if="plans.length" class="demand-po-filter"><span>客户 PO</span><a-select v-model:value="demandPoFilter" allow-clear show-search option-filter-prop="label" placeholder="全部 PO" :options="demandPoOptions" /></label><a-radio-group v-if="plans.length" v-model:value="demandView" button-style="solid" size="small"><a-radio-button value="summary">按物料汇总</a-radio-button><a-radio-button value="detail">按款式规格明细</a-radio-button></a-radio-group><a-button v-if="!readonly" :loading="busy" @click="preview">保存并试算用料</a-button><a-button v-if="form.status==='approved' && permissions('edit')" type="primary" :loading="busy" @click="requestDemandCalculation(demandSaved)">{{ demandSaved ? '重新算料' : '算料并保存快照' }}</a-button></a-space></div>
+      <a-alert type="info" show-icon message="本区用于按 BOM 试算订单用料，不在这里提交物料需求计划。订单审核后系统会生成需求计划草稿；计划数量调整和提交流程请到“物料需求计划”中办理。" />
       <a-alert v-if="['submitted','approved'].includes(form.status) && !demandSaved" type="info" show-icon message="订单可以先审核；BOM 完成后，在已审核订单中进行算料。用料完整后才会保存快照。" />
       <a-alert v-if="dirty && plans.length && !readonly" type="warning" show-icon message="订单有未保存的修改，当前用料结果可能不是最新数据，请重新保存并试算。" />
       <a-alert v-if="!readonly && form.pos.some((p:any)=>(p.supply || form.supply)==='mixed')"
@@ -700,8 +852,50 @@ function close() {
         </div>
       </div>
     </a-modal>
+    <a-modal v-model:open="reverseApprovalOpen" title="申请客户订单反审核" ok-text="提交审批" cancel-text="取消" :confirm-loading="busy" :mask-closable="false" @ok="requestReverseApproval">
+      <a-alert type="info" show-icon message="反审核需经过独立审批流程" description="提交后订单仍保持已审核；审批通过后订单退回草稿，重新提交时会重新走客户订单审批。请先处理所有关联的物料需求计划。" />
+      <a-form-item label="反审核原因" required style="margin-top:16px"><a-textarea v-model:value="reverseApprovalReason" :maxlength="500" :rows="4" show-count placeholder="请说明申请反审核的原因" /></a-form-item>
+    </a-modal>
   </section>
 </template>
+
+<style scoped>
+.order-associated-trigger { max-width:100%; padding:0; border:0; background:transparent; color:#1e5eff; cursor:pointer; font:inherit; text-align:left; white-space:nowrap; }
+.order-associated-trigger:hover,.order-associated-trigger:focus-visible { color:#1648c5; text-decoration:underline; outline:none; }
+:global(.ant-popover .order-associated-detail) { max-width:440px; max-height:360px; overflow:auto; }
+:global(.ant-popover .order-associated-detail.order-po-detail),:global(.ant-popover .order-associated-detail.order-style-detail) { width:min(560px, calc(100vw - 48px)); max-width:560px; max-height:440px; padding-right:4px; }
+:global(.ant-popover .order-associated-detail section) { min-width:320px; padding:8px 0; border-bottom:1px solid #eef1f5; }
+:global(.ant-popover .order-associated-detail section:first-child) { padding-top:0; }
+:global(.ant-popover .order-associated-detail section:last-child) { border-bottom:0; padding-bottom:0; }
+:global(.ant-popover .order-associated-meta) { margin-top:4px; color:#738198; font-size:12px; }
+:global(.ant-popover .order-associated-section-title),:global(.ant-popover .order-associated-style-title),:global(.ant-popover .order-associated-style-po-title) { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+:global(.ant-popover .order-associated-section-title > span),:global(.ant-popover .order-associated-style-po-title > span) { color:#738198; font-size:12px; }
+:global(.ant-popover .order-associated-po-facts) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px 16px; margin-top:8px; padding:9px 10px; background:#f7f9fc; border-radius:6px; }
+:global(.ant-popover .order-associated-po-facts > div) { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; min-width:0; font-size:12px; }
+:global(.ant-popover .order-associated-po-facts > div > span) { color:#738198; white-space:nowrap; }
+:global(.ant-popover .order-associated-po-facts > div > strong) { text-align:right; overflow-wrap:anywhere; }
+:global(.ant-popover .order-associated-po-facts small) { display:block; color:#8290a5; font-weight:400; }
+:global(.ant-popover .order-associated-po-summary) { margin-top:10px; }
+:global(.ant-popover .order-associated-po-summary-heading) { margin-bottom:4px; color:#738198; font-size:12px; }
+:global(.ant-popover .order-associated-po-summary-row) { display:flex; justify-content:space-between; gap:16px; padding:6px 2px; border-bottom:1px dashed #e9edf3; }
+:global(.ant-popover .order-associated-po-summary-row:last-child) { border-bottom:0; }
+:global(.ant-popover .order-associated-po-summary-row > div) { display:flex; flex-direction:column; gap:2px; min-width:0; }
+:global(.ant-popover .order-associated-po-summary-row > div:last-child) { align-items:flex-end; text-align:right; flex:none; }
+:global(.ant-popover .order-associated-po-summary-row small) { color:#8290a5; font-size:12px; }
+:global(.ant-popover .order-associated-lines) { margin-top:8px; padding-left:10px; border-left:2px solid #dbe7ff; }
+:global(.ant-popover .order-associated-line) { padding:6px 0; border-bottom:1px dashed #e9edf3; }
+:global(.ant-popover .order-associated-line:last-child) { border-bottom:0; }
+:global(.ant-popover .order-associated-line-main) { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; }
+:global(.ant-popover .order-associated-line-title) { display:flex; flex-direction:column; gap:2px; min-width:0; }
+:global(.ant-popover .order-associated-line-title > span) { color:#596579; }
+:global(.ant-popover .order-associated-line-title small),:global(.ant-popover .order-associated-line-quantity small),:global(.ant-popover .order-associated-children) { color:#8290a5; font-size:12px; }
+:global(.ant-popover .order-associated-line-quantity) { display:flex; flex-direction:column; align-items:flex-end; flex:none; text-align:right; }
+:global(.ant-popover .order-associated-children) { display:grid; gap:2px; margin:5px 0 0 8px; padding-left:8px; border-left:1px solid #e6eaf0; }
+:global(.ant-popover .order-associated-style-po) { margin-top:8px; }
+:global(.ant-popover .order-associated-style-po-title) { padding:5px 8px; background:#f7f9fc; border-radius:4px; }
+:global(.ant-popover .order-associated-style-lines) { margin-top:0; }
+:global(.ant-popover .order-associated-style-title .ant-tag) { margin:0; }
+</style>
 
 <style scoped>
 .order-editor { display:flex; flex-direction:column; height:100%; min-height:0; gap:0; background:#fff; }

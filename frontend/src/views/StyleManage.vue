@@ -187,10 +187,13 @@ function categoryPath(categoryId?: string) {
 function specText(ids: string[], options: Reference[]) {
   return chosenLabels(ids || [], options).join('、') || '—'
 }
+/** 将款式多选资料转换为当前可见档案名称，列表只显示数量以避免长文本撑宽表格。 */
+function specLabels(ids: string[], options: Reference[]) {
+  return chosenLabels(ids || [], options)
+}
 /** 汇总被该款式作为子款使用的套装信息。 / Find sets that reference this style as a component. */
-function parentSets(row: Row) {
+function parentSetRows(row: Row) {
   return rows.value.filter(item => item.productionMode !== 'single' && item.members?.some(member => member.childId === row.id))
-    .map(item => item.styleCode + ' · ' + item.name).join('、') || '—'
 }
 /** 主图通过授权接口读取，并在替换或离开页面时释放地址。 / Load private covers through the authorized endpoint. */
 async function loadListCovers(catalog: Row[]) {
@@ -809,15 +812,17 @@ onBeforeUnmount(() => {
         <template v-else-if="column.key==='productionMode'">{{ row.productionMode === 'single' ? '单款' : '套装' }}</template>
         <template v-else-if="column.key==='setProduction'">{{ row.productionMode === 'single' ? '—' : row.productionMode === 'combined' ? '合并生产' : '分开生产' }}</template>
         <a-tooltip v-else-if="column.key==='categoryName'" :title="categoryPath(row.categoryId)"><span>{{ row.categoryName || '—' }}</span></a-tooltip>
-        <a-popover v-else-if="column.key==='tags' && row.tags?.length" trigger="click">
-          <template #content><div v-for="tag in row.tags" :key="tag.value">{{ tag.groupName }}：{{ tag.label }}</div></template>
-          <a>{{ row.tags.slice(0, 2).map((tag: TagOption) => tag.label).join('、') }}{{ row.tags.length > 2 ? ' 等' + row.tags.length + '项' : '' }}</a>
+        <a-popover v-else-if="column.key==='tags' && row.tags?.length" title="款式标签" :trigger="['hover', 'focus', 'click']">
+          <template #content><div class="style-associated-detail"><a-tag v-for="tag in row.tags" :key="tag.value">{{ tag.groupName }}：{{ tag.label }}</a-tag></div></template>
+          <button type="button" class="style-associated-trigger">{{ row.tags.length }} 个标签</button>
         </a-popover>
         <template v-else-if="column.key==='tags'">—</template>
-        <a-tooltip v-else-if="column.key==='colors' || column.key==='sizes'" :title="row.productionMode === 'single' ? specText(column.key === 'colors' ? row.colorIds : row.sizeIds, column.key === 'colors' ? specOptions.colors : specOptions.sizes) : ''">
-          <span class="list-ellipsis">{{ row.productionMode === 'single' ? specText(column.key === 'colors' ? row.colorIds : row.sizeIds, column.key === 'colors' ? specOptions.colors : specOptions.sizes) : '见子款' }}</span>
-        </a-tooltip>
-        <a-popover v-else-if="column.key==='composition' && row.productionMode !== 'single'" trigger="click">
+        <a-popover v-else-if="(column.key==='colors' || column.key==='sizes') && row.productionMode === 'single'" :title="column.key==='colors' ? '款式颜色' : '款式尺码'" :trigger="['hover', 'focus', 'click']">
+          <template #content><div class="style-associated-detail"><a-tag v-for="label in specLabels(column.key === 'colors' ? row.colorIds : row.sizeIds, column.key === 'colors' ? specOptions.colors : specOptions.sizes)" :key="label">{{ label }}</a-tag></div></template>
+          <button type="button" class="style-associated-trigger">{{ (column.key === 'colors' ? row.colorIds : row.sizeIds)?.length || 0 }} {{ column.key==='colors' ? '个颜色' : '个尺码' }}</button>
+        </a-popover>
+        <span v-else-if="column.key==='colors' || column.key==='sizes'">{{ row.productionMode === 'single' ? '—' : '见子款' }}</span>
+        <a-popover v-else-if="column.key==='composition' && row.productionMode !== 'single'" title="套装组成" :trigger="['hover', 'focus', 'click']">
           <template #content>
             <div v-for="member in row.members" :key="member.childId" class="composition-detail">
               <strong>{{ member.roleName }} ×{{ member.quantity }}</strong>
@@ -831,11 +836,15 @@ onBeforeUnmount(() => {
             <div v-if="!row.members">列表数据需要刷新，请点击查询。</div>
             <div v-else-if="!row.members.length && !row.membersRestricted">尚无子款</div>
           </template>
-          <a>{{ !row.members ? '请刷新列表' : row.members.map((member: Member) => member.roleName + ' ×' + member.quantity).join('、') || (row.membersRestricted ? '部分不可见' : '暂无子款') }}{{ row.membersRestricted && row.members?.length ? '（部分不可见）' : '' }}</a>
+          <button type="button" class="style-associated-trigger">{{ !row.members ? '请刷新列表' : row.members.length + ' 个子款' }}{{ row.membersRestricted && row.members?.length ? '（部分不可见）' : '' }}</button>
         </a-popover>
         <template v-else-if="column.key==='composition'">—</template>
         <template v-else-if="column.key==='sameHanger'">{{ row.productionMode === 'combined' ? (row.sameHanger ? '是' : '否') : '—' }}</template>
-        <a-tooltip v-else-if="column.key==='parentSets'" :title="parentSets(row)"><span class="list-ellipsis">{{ parentSets(row) }}</span></a-tooltip>
+        <a-popover v-else-if="column.key==='parentSets' && parentSetRows(row).length" title="所属套装" :trigger="['hover', 'focus', 'click']">
+          <template #content><div class="style-associated-detail"><div v-for="parent in parentSetRows(row)" :key="parent.id"><strong>{{ parent.styleCode }}</strong> · {{ parent.name }}</div></div></template>
+          <button type="button" class="style-associated-trigger">{{ parentSetRows(row).length }} 个套装</button>
+        </a-popover>
+        <span v-else-if="column.key==='parentSets'">—</span>
         <template v-else>{{ row[String(column.key)] || '—' }}</template>
       </template>
       <template #action="{ row }">
@@ -1094,6 +1103,12 @@ onBeforeUnmount(() => {
 .list-cover-empty { color: #98a5b5; font-size: 12px; }
 .list-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composition-detail { padding: 5px 0; border-bottom: 1px solid #eef1f5; }
+.style-associated-trigger { max-width:100%; padding:0; border:0; background:transparent; color:#1e5eff; cursor:pointer; font:inherit; text-align:left; white-space:nowrap; }
+.style-associated-trigger:hover,.style-associated-trigger:focus-visible { color:#1648c5; text-decoration:underline; outline:none; }
+.style-associated-detail { display:flex; max-width:360px; max-height:300px; overflow:auto; flex-wrap:wrap; gap:6px; }
+.style-associated-detail :deep(.ant-tag) { margin-inline-end:0; }
+:deep(.ant-popover .composition-detail) { min-width:250px; }
+:deep(.ant-popover .composition-detail:last-of-type) { border-bottom:0; }
 :deep(.std-sidebar .ant-tree) { overflow:auto; padding:0 8px 12px; }
 
 .style-editor-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); height: min(720px, calc(100dvh - 150px)); min-height: 0; background: #f6f8fb; }

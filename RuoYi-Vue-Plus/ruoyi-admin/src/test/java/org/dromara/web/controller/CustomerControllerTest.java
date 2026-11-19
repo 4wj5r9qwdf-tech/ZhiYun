@@ -20,13 +20,13 @@ class CustomerControllerTest {
     @BeforeEach
     void setUp() {
         jdbc = new RecordingJdbcTemplate();
-        controller = new CustomerController(jdbc);
+        controller = new CustomerController(jdbc, org.mockito.Mockito.mock(org.dromara.web.service.CategoryAccessService.class));
     }
 
     /** 所有可选筛选均为空时查询全部客户，并继续正确分页。 / Empty optional filters return all customers with pagination. */
     @Test
     void listWithNullFiltersReturnsAllCustomers() {
-        controller.list(null, null, null, null, 1, 20);
+        controller.list(null, null, null, null, null, null, 1, 20);
 
         assertEquals("SELECT count(*) FROM customer_master c WHERE 1=1", jdbc.calls.get(0).sql());
         assertEquals(List.of(), jdbc.calls.get(0).args());
@@ -38,7 +38,7 @@ class CustomerControllerTest {
     void listWithOnlyTagFilterDoesNotRequireKeyword() {
         long tagId = 1793602859336L;
 
-        controller.list(null, null, null, tagId, 1, 20);
+        controller.list(null, null, null, tagId, null, null, 1, 20);
 
         SqlCall count = jdbc.calls.get(0);
         assertEquals(true, count.sql().contains("r.tag_id=?"));
@@ -50,7 +50,7 @@ class CustomerControllerTest {
     /** 非空关键词仍按编码、名称、简称匹配，首尾空格会被去除。 / Non-empty keywords still search code, name and short name after trimming. */
     @Test
     void listWithKeywordTrimsAndSearchesAllNameFields() {
-        controller.list("  Acme  ", null, null, null, 1, 20);
+        controller.list("  Acme  ", null, null, null, null, null, 1, 20);
 
         SqlCall count = jdbc.calls.get(0);
         assertEquals(true, count.sql().contains("c.customer_code ILIKE ? OR c.customer_name ILIKE ? OR c.customer_short_name ILIKE ?"));
@@ -60,7 +60,7 @@ class CustomerControllerTest {
     /** 仅接受已知状态值；空值和未知值均不拼接状态条件。 / Ignore absent or unknown statuses and filter only recognized values. */
     @Test
     void listWithUnknownStatusDoesNotAddStatusFilter() {
-        controller.list(" ", "invalid", null, null, 1, 20);
+        controller.list(" ", "invalid", null, null, null, null, 1, 20);
 
         SqlCall count = jdbc.calls.get(0);
         assertEquals("SELECT count(*) FROM customer_master c WHERE 1=1", count.sql());

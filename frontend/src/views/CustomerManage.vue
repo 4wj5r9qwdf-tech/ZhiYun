@@ -19,28 +19,71 @@ const rows = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
 const treeCollapsed = ref(false)
-const categoryTotal = ref(0)
-const categoryCounts = ref<Record<string, number>>({})
+type CustomerCategory = { id: string; name: string; schemeId: string; schemeName: string; parentId?: string; selectable: boolean }
+type CategoryNode = { title: string; key: string; value: string; disabled?: boolean; children?: CategoryNode[] }
+const categoryRows = ref<CustomerCategory[]>([])
+const categoryFilter = ref<string>()
+const schemeFilter = ref<string>()
+const defaultScheme = ref<string>()
+const categoryConfigUnavailable = ref(false)
 const pageNum = ref(1)
 const pageSize = ref(20)
 const keyword = ref('')
-const selectedRowKeys = ref<number[]>([])   // 批量选中（无批量诉求可整段删）
-
-// 分类数量由服务端统计全部客户，不受分页和筛选影响。
-async function loadCategoryCounts() {
+const selectedRowKeys = ref<number[]>([])
+type CustomerDetail = { contacts?: any[]; addresses?: any[] }
+const customerDetailCache = ref<Record<string, CustomerDetail>>({})
+const customerDetailLoading = ref<Record<string, boolean>>({})
+const customerDetailErrors = ref<Record<string, string>>({})
+const categorySchemes = computed(() => Array.from(new Map(categoryRows.value.filter(row => row.selectable)
+  .map(row => [row.schemeId, { value: row.schemeId, label: row.schemeName }])).values())
+  .filter(scheme => !defaultScheme.value || scheme.value === defaultScheme.value))
+function categoryNodes(rows: CustomerCategory[], forForm = false): CategoryNode[] {
+  const index = new Map(rows.map(row => [row.id, {
+    key: row.id, value: row.id, title: row.name, disabled: forForm && !row.selectable, children: []
+  } as CategoryNode]))
+  const roots: CategoryNode[] = []
+  for (const row of rows) {
+    const node = index.get(row.id)!
+    const parent = row.parentId ? index.get(row.parentId) : undefined
+    if (parent) parent.children!.push(node)
+    else roots.push(node)
+  }
+  return roots
+}
+const categoryTree = computed(() => [
+  { title: '全部客户', key: 'all' }, { title: '未分类', key: '0' },
+  ...categoryNodes(categoryRows.value.filter(row => {
+    const activeScheme = defaultScheme.value || schemeFilter.value
+    return !activeScheme || row.schemeId === activeScheme
+  }))
+])
+const categoryFormTree = computed(() => {
+  const nodes = categorySchemes.value.filter(scheme => !defaultScheme.value || scheme.value === defaultScheme.value).map(scheme => ({
+  key: 'scheme-' + scheme.value, value: 'scheme-' + scheme.value, title: scheme.label, disabled: true,
+  children: categoryNodes(categoryRows.value.filter(row => row.schemeId === scheme.value), true)
+  }))
+  const selected = form.value.categoryId
+  if (selected && !categoryRows.value.some(row => row.id === selected && (!defaultScheme.value || row.schemeId === defaultScheme.value))) {
+    nodes.push({ key: selected, value: selected, title: form.value.categoryName || '原分类', disabled: true, children: [] })
+  }
+  return nodes
+})
+async function loadCustomerCategories(initial = false) {
   try {
-    const res: any = await api.get('/system/customer/category-counts')
-    if (res.code !== 200) throw new Error()
-    categoryTotal.value = Number(res.data.total || 0)
-    categoryCounts.value = Object.fromEntries((res.data.tags || []).map((x: any) => [String(x.tag_id), Number(x.customer_count)]))
-  } catch { message.error('客户分类数量加载失败') }
+    const response: any = await api.get('/system/customer/category-options')
+    if (response.code !== 200) throw new Error(response.msg)
+    categoryRows.value = response.data.rows || []
+    const configured = String(response.data.defaultSchemeId || '')
+    defaultScheme.value = configured || undefined
+    categoryConfigUnavailable.value = !!configured && !categorySchemes.value.some(item => item.value === configured)
+    if (initial) schemeFilter.value = defaultScheme.value
+  } catch { categoryRows.value = []; categoryConfigUnavailable.value = true; message.error('客户分类加载失败') }
 }
 async function loadList() {
-  void loadCategoryCounts()
   loading.value = true
   try {
     const res: any = await api.get('/system/customer/list', {
-      params: { pageNum: pageNum.value, pageSize: pageSize.value, keyword: keyword.value, status: statusFilter.value, salesId: salesFilter.value, tagId: tagFilter.value },
+      params: { pageNum: pageNum.value, pageSize: pageSize.value, keyword: keyword.value, status: statusFilter.value, salesId: salesFilter.value, tagId: tagFilter.value, categoryId: categoryFilter.value, schemeId: schemeFilter.value },
     })
     if (res.code === 200) {
       rows.value = res.data.rows || []
@@ -59,7 +102,36 @@ function onPageChange(p: number, ps: number) {
 }
 function showTotalText(t: number) { return `共 ${t} 条` }
 function onSearch() { pageNum.value = 1; selectedRowKeys.value = []; loadList() }
-function resetFilters() { keyword.value = ''; statusFilter.value = undefined; salesFilter.value = undefined; tagFilter.value = undefined; onSearch() }
+function resetFilters() { keyword.value = ''; statusFilter.value = undefined; salesFilter.value = undefined; tagFilter.value = undefined; categoryFilter.value = undefined; schemeFilter.value = defaultScheme.value; onSearch() }
+function resetCategoryTree() { categoryFilter.value = undefined; schemeFilter.value = defaultScheme.value; onSearch() }
+function selectCustomerCategory(keys: (string | number)[]) {
+  if (!keys.length) return
+  categoryFilter.value = keys[0] === 'all' ? undefined : String(keys[0])
+  if (keys[0] === 'all' && !defaultScheme.value) schemeFilter.value = undefined
+  onSearch()
+}
+/** 联系人和地址按需读取客户详情，复用后端联系方式脱敏和权限判断。 / Load child records on demand through the permission-aware customer detail endpoint. */
+async function loadCustomerDetail(record: any) {
+  const id = String(record.id)
+  if (customerDetailCache.value[id] || customerDetailLoading.value[id]) return
+  customerDetailLoading.value[id] = true
+  delete customerDetailErrors.value[id]
+  try {
+    const response: any = await api.get('/system/customer/' + id)
+    if (response.code !== 200) throw new Error(response.msg || '客户详情加载失败')
+    customerDetailCache.value[id] = response.data || {}
+  } catch (error: any) {
+    customerDetailErrors.value[id] = error?.response?.data?.msg || error?.message || '客户详情加载失败'
+  } finally {
+    customerDetailLoading.value[id] = false
+  }
+}
+function openCustomerDetail(open: boolean, record: any) { if (open) void loadCustomerDetail(record) }
+function customerDetail(record: any) { return customerDetailCache.value[String(record.id)] }
+function customerContacts(record: any) { return customerDetail(record)?.contacts || [] }
+function customerAddresses(record: any) { return customerDetail(record)?.addresses || [] }
+function customerContactSummary(record: any) { const detail = customerDetail(record); return detail ? `${detail.contacts?.length || 0} 位联系人` : '查看联系人' }
+function customerAddressSummary(record: any) { const detail = customerDetail(record); return detail ? `${detail.addresses?.length || 0} 个地址` : '查看地址' }
 const batchStatusOpen = ref(false)
 const batchStatusTarget = ref<string>()
 const batchStatusLoading = ref(false)
@@ -112,6 +184,8 @@ const ALL_COLUMNS = [
   { title: '客户简称', dataIndex: 'customer_short_name', key: 'customer_short_name' },
   { title: '统一社会信用代码', dataIndex: 'unified_social_credit_code', key: 'unified_social_credit_code' },
   { title: '国家/地区', dataIndex: 'country_display', key: 'country_region' },
+  { title: '联系人', key: 'contacts', width: 132 },
+  { title: '地址', key: 'addresses', width: 132 },
   { title: '业务员', dataIndex: 'sales_name', key: 'sales_name' },
   { title: '状态', dataIndex: 'status', key: 'status' },
 ]
@@ -170,7 +244,8 @@ async function autoFitCols(resetManual = true) {
   let required = 48 + 64 + operation
   for (const col of colState.value) {
     const title = ALL_COLUMNS.find(item => item.key === col.key)?.title || col.key
-    const min = Math.max(90, Array.from(String(title)).length * 16 + 48)
+    const preferred = ALL_COLUMNS.find(item => item.key === col.key)?.width || 0
+    const min = Math.max(90, preferred, Array.from(String(title)).length * 16 + 48)
     widths.set(col.key, min)
     if (col.visible) required += min
   }
@@ -192,7 +267,7 @@ function moveCol(index: number, dir: -1 | 1) {
 
 // 按 colState 顺序+显隐生成列（操作列固定最后；customHeaderCell 绑拖拽）
 const columns = computed(() => {
-  // 序号列表头禁画拖拽手柄线（全局 th::after 会无差别画线，叠加 fixed 列分界会花）
+  // 序号列不参与列宽拖拽，避免与固定列分界和阴影重叠。
   const idx = { title: '序号', key: 'index', width: 64, align: 'center' as const, fixed: 'left' as const,
     customHeaderCell: () => ({ class: 'zy-th-noresize' }) }  // 序号列：固定最左、不可隐藏、不进 colState
   const ops = { title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
@@ -280,7 +355,6 @@ const tagOptions = ref<any[]>([])
 const countryOptions = ref<{ country_code: string; name_zh: string; name_en: string; status: string }[]>([])
 /** 有标准编码时展示基础资料的当前名称，未匹配的历史值继续原样显示。 */
 function countryDisplay(code: unknown, legacy: unknown) { return countryOptions.value.find(item => item.country_code === code)?.name_zh || String(legacy || '') }
-const tagTree = computed(() => [{ title: '全部客户', key: 'all' }, ...tagOptions.value.map(t => ({ title: t.label, key: t.value }))])
 const postFilter = ref<string>()
 const groupFilter = ref<string>()
 const posts = computed(() => [...new Set(salesOptions.value.flatMap(p => String(p.posts || '').split('、')).filter(Boolean))].map(v => ({ label: v, value: v })))
@@ -319,14 +393,14 @@ function salesItemFilter(item: { id: string }) {
 function openSalesPicker() { postFilter.value = undefined; groupFilter.value = undefined; salesSelection.value = form.value.sales_representative_id ? [form.value.sales_representative_id] : []; salesPickerOpen.value = true }
 /** 选择器确认后保存人员 ID，而不是姓名，并即时清除必填项的旧错误提示。 */
 function selectSales(ids: string[]) { form.value.sales_representative_id = ids[0]; formRef.value?.validateFields(['sales_representative_id']).catch(() => {}) }
-const emptyForm = () => ({ id: null as number | null, customer_code: '', customer_name: '', customer_short_name: '', unified_social_credit_code: '', country_region: '', country_region_code: undefined as string | undefined, sales_representative_id: undefined as string | undefined, remark: '', status: '0', contacts: [] as any[], addresses: [] as any[], tagOptions: [] as { label: string; value: string; disabled?: boolean }[], tagIds: [] as string[] })
+const emptyForm = () => ({ id: null as number | null, categoryId: undefined as string | undefined, categoryName: '', customer_code: '', customer_name: '', customer_short_name: '', unified_social_credit_code: '', country_region: '', country_region_code: undefined as string | undefined, sales_representative_id: undefined as string | undefined, remark: '', status: '0', contacts: [] as any[], addresses: [] as any[], tagOptions: [] as { label: string; value: string; disabled?: boolean }[], tagIds: [] as string[] })
 const form = ref(emptyForm())
 // 记录打开时的完整主档与子项快照，仅用于判断取消时是否需要提醒；不会发送到后端。
 const initialForm = ref('')
 const rules: any = { customer_name: [{ required: true, message: '请输入客户名称' }], sales_representative_id: [{ required: true, message: '请选择业务员' }] }
-function openAdd() { isEdit.value = false; form.value = emptyForm(); initialForm.value = JSON.stringify(form.value); showDlg.value = true }
+async function openAdd() { await loadCustomerCategories(); isEdit.value = false; form.value = emptyForm(); initialForm.value = JSON.stringify(form.value); showDlg.value = true }
 async function openEdit(row: any) {
-  try { const res: any = await api.get('/system/customer/' + row.id); if (res.code !== 200) return message.error(res.msg); isEdit.value = true; form.value = { ...emptyForm(), ...res.data, sales_representative_id: String(res.data.sales_representative_id) }; initialForm.value = JSON.stringify(form.value); showDlg.value = true }
+  try { await loadCustomerCategories(); const res: any = await api.get('/system/customer/' + row.id); if (res.code !== 200) return message.error(res.msg); customerDetailCache.value[String(row.id)] = res.data || {}; isEdit.value = true; form.value = { ...emptyForm(), ...res.data, categoryId: res.data.categoryId || undefined, sales_representative_id: String(res.data.sales_representative_id) }; initialForm.value = JSON.stringify(form.value); showDlg.value = true }
   catch (e: any) { message.error(e?.response?.data?.msg || '详情加载失败') }
 }
 /** 客户弹窗只在用户确认后丢弃尚未提交的主档与子项。 */
@@ -413,7 +487,7 @@ async function persist() {
   saving.value = true
   try {
     const res: any = isEdit.value ? await api.put('/system/customer/' + form.value.id, form.value) : await api.post('/system/customer', form.value)
-    if (res.code === 200) { message.success('保存成功'); showDlg.value = false; await loadList(); await loadOptions() } else { message.error(res.msg || '保存失败'); throw new Error(res.msg) }
+    if (res.code === 200) { if (form.value.id) delete customerDetailCache.value[String(form.value.id)]; message.success('保存成功'); showDlg.value = false; await loadList(); await loadOptions() } else { message.error(res.msg || '保存失败'); throw new Error(res.msg) }
   } catch (e: any) { message.error(e?.response?.data?.msg || e.message || '保存失败'); throw e } finally { saving.value = false }
 }
 /** 停用只改变档案可选状态，不删除记录，不改变历史订单和样衣。 */
@@ -453,7 +527,8 @@ async function loadOptions() {
 // 前端过滤示例（若后端已支持 keyword 过滤，可直接用 rows）
 const filteredRows = computed(() => rows.value)
 
-onMounted(() => {
+onMounted(async () => {
+  await loadCustomerCategories(true)
   loadColState()
   loadList(); loadOptions()
   void scheduleAutoFit()
@@ -515,14 +590,12 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
     <template #sidebar>
       <div class="tree-head">
         <span class="tree-title">客户分类</span>
-        <a v-if="tagFilter" class="tree-clear" @click="resetFilters">重置</a>
+        <a v-if="categoryFilter || schemeFilter" class="tree-clear" @click="resetCategoryTree">重置</a>
       </div>
       <div class="tree-body">
-        <a-tree :tree-data="tagTree" :selected-keys="[tagFilter || 'all']" block-node @select="keys => { if (!keys.length) return; tagFilter = keys[0] === 'all' ? undefined : String(keys[0]); onSearch() }">
-          <template #title="{ title, key }">
-            <span class="tree-node">{{ title }}<span class="tree-count">{{ key === 'all' ? categoryTotal : (categoryCounts[String(key)] || 0) }}</span></span>
-          </template>
-        </a-tree>
+        <a-alert v-if="categoryConfigUnavailable" type="warning" show-icon message="客户默认分类类型不可用或无权查看，请检查系统参数和分类权限。" />
+        <a-select v-model:value="schemeFilter" :options="categorySchemes" :allow-clear="!defaultScheme" placeholder="全部分类类型" style="width:100%;margin-bottom:8px" @change="categoryFilter = undefined; onSearch()" />
+        <a-tree :tree-data="categoryTree" :selected-keys="[categoryFilter || 'all']" block-node @select="selectCustomerCategory" />
       </div>
     </template>
     <div class="customer-list">
@@ -544,7 +617,47 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
           {{ (pageNum - 1) * pageSize + index + 1 }}
         </template>
 
-        <template v-if="column.key === 'status'">
+        <template v-else-if="column.key === 'contacts'">
+          <a-popover title="客户联系人" :trigger="['hover', 'focus', 'click']" @openChange="open => openCustomerDetail(open, record)">
+            <template #content>
+              <a-spin v-if="customerDetailLoading[String(record.id)]" size="small" />
+              <div v-else-if="customerDetailErrors[String(record.id)]" class="customer-detail-error">
+                {{ customerDetailErrors[String(record.id)] }}
+                <a-button type="link" size="small" @click="loadCustomerDetail(record)">重试</a-button>
+              </div>
+              <a-empty v-else-if="!customerContacts(record).length" description="未维护联系人" />
+              <div v-else class="customer-detail-list">
+                <div v-for="(contact, contactIndex) in customerContacts(record)" :key="contact.contact_id || contactIndex" class="customer-detail-item">
+                  <div class="customer-detail-heading"><strong>{{ contact.contact_name || '未命名联系人' }}</strong><a-tag v-if="contact.is_primary" color="blue">默认</a-tag></div>
+                  <div v-if="contact.contact_title || contact.contact_role" class="customer-detail-meta">{{ [contact.contact_title, contact.contact_role].filter(Boolean).join(' · ') }}</div>
+                  <div class="customer-detail-meta">电话：{{ contact.phone_number || '—' }}　邮箱：{{ contact.email || '—' }}</div>
+                </div>
+              </div>
+            </template>
+            <button type="button" class="customer-detail-trigger">{{ customerContactSummary(record) }}</button>
+          </a-popover>
+        </template>
+        <template v-else-if="column.key === 'addresses'">
+          <a-popover title="客户地址" :trigger="['hover', 'focus', 'click']" @openChange="open => openCustomerDetail(open, record)">
+            <template #content>
+              <a-spin v-if="customerDetailLoading[String(record.id)]" size="small" />
+              <div v-else-if="customerDetailErrors[String(record.id)]" class="customer-detail-error">
+                {{ customerDetailErrors[String(record.id)] }}
+                <a-button type="link" size="small" @click="loadCustomerDetail(record)">重试</a-button>
+              </div>
+              <a-empty v-else-if="!customerAddresses(record).length" description="未维护地址" />
+              <div v-else class="customer-detail-list">
+                <div v-for="(address, addressIndex) in customerAddresses(record)" :key="address.address_id || addressIndex" class="customer-detail-item">
+                  <div class="customer-detail-heading"><strong>{{ address.address_type || '未命名地址' }}</strong><a-tag v-if="address.is_default" color="blue">默认</a-tag></div>
+                  <div class="customer-detail-meta">{{ [address.recipient_name, address.recipient_phone].filter(Boolean).join(' · ') || '未填写收件人' }}</div>
+                  <div class="customer-detail-meta">{{ [countryDisplay(address.country_region_code, address.country_region), address.province, address.city, address.district, address.address_line, address.postal_code].filter(Boolean).join(' ') || '未填写地址' }}</div>
+                </div>
+              </div>
+            </template>
+            <button type="button" class="customer-detail-trigger">{{ customerAddressSummary(record) }}</button>
+          </a-popover>
+        </template>
+        <template v-else-if="column.key === 'status'">
           <a-switch :checked="record.status === '0'" :disabled="!can('system:customer:edit')" checked-children="启用" un-checked-children="停用" @change="changeCustomerStatus(record)" />
         </template>
         <template v-else-if="column.key === 'ops'">
@@ -578,6 +691,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
             <a-col :xs="24" :sm="12"><a-form-item label="客户编号"><a-input :value="form.customer_code" disabled placeholder="保存时自动生成" /></a-form-item></a-col>
             <a-col :xs="24" :sm="12"><a-form-item label="统一社会信用代码"><a-input v-model:value="form.unified_social_credit_code" :maxlength="18" placeholder="境外客户可不填" /></a-form-item></a-col>
             <a-col :xs="24" :sm="12"><a-form-item label="客户所在国家/地区"><CountryRegionSelect v-model="form.country_region_code" :options="countryOptions" :legacy-name="form.country_region" @change="value => form.country_region = value?.name_zh || ''" /></a-form-item></a-col>
+            <a-col :xs="24" :sm="12"><a-form-item label="客户分类"><a-tree-select v-model:value="form.categoryId" :tree-data="categoryFormTree" :disabled="categoryConfigUnavailable" allow-clear show-search tree-node-filter-prop="title" :placeholder="form.categoryName || '选择客户分类'" /><div v-if="categoryConfigUnavailable" style="color:#d46b08">默认客户分类类型不可用或无权访问，请检查参数和分类权限。</div></a-form-item></a-col>
             <a-col :xs="24" :sm="12"><a-form-item label="客户标签"><TagSelect v-model="form.tagIds" :selected-options="form.tagOptions" module-key="customer_master" module-name="客户档案" /></a-form-item></a-col>
             <a-col :xs="24" :sm="12"><a-form-item label="业务员" name="sales_representative_id"><a-input :value="selectedSalesName" readonly placeholder="从人员信息中选择" @click="openSalesPicker"><template #suffix><a @click.stop="openSalesPicker">选择人员</a></template></a-input></a-form-item></a-col>
             <a-col :xs="24"><a-form-item label="备注"><a-textarea v-model:value="form.remark" :maxlength="2000" :rows="2" placeholder="可不填" /></a-form-item></a-col>
@@ -687,6 +801,14 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 .customer-table :deep(.ant-table-thead > tr > th:last-child),
 .customer-table :deep(.ant-table-tbody > tr > td:last-child) { border-right: none; }
 .customer-table :deep(.ant-table-tbody > tr:hover > td) { background: #F5F8FF; }
+.customer-detail-trigger { display: inline-flex; align-items: center; padding: 2px 6px; border: 0; border-radius: 4px; color: #245ab0; background: #eef4ff; cursor: pointer; white-space: nowrap; }
+.customer-detail-list { min-width: 220px; max-width: min(380px, 80vw); max-height: 320px; overflow: auto; overflow-wrap: anywhere; }
+.customer-detail-item { padding: 7px 0; border-bottom: 1px solid #edf0f5; }
+.customer-detail-item:last-child { border-bottom: 0; }
+.customer-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #1d2129; }
+.customer-detail-heading :deep(.ant-tag) { margin-inline-end: 0; }
+.customer-detail-meta { margin-top: 4px; color: #566477; font-size: 12px; line-height: 1.55; }
+.customer-detail-error { max-width: 320px; color: #d4380d; }
 
 .ops-btns .ant-btn-sm { padding-inline: 5px; }
 .ops-btns { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -697,9 +819,8 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 
 <!-- 非 scoped：列宽拖拽手柄（标准件勿改；scoped 匹配不到 h() 渲染元素） -->
 <style>
-.ant-table-thead > tr > th { position: relative; }
-.ant-table-thead > tr > th.zy-th-noresize::after { display: none; }
-.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
-.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
-.ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
+.customer-table .ant-table-thead > tr > th { position: relative; }
+.customer-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; transition: background .12s; }
+.customer-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):hover { border-right-color: #C9CDD4; }
+.customer-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):active::after { background: rgba(30,94,255,.15); }
 </style>

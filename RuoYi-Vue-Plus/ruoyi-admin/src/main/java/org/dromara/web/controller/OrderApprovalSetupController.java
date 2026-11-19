@@ -55,7 +55,8 @@ public class OrderApprovalSetupController {
     @Transactional(rollbackFor = Exception.class)
     @Log(title = "新增审批流程", businessType = BusinessType.INSERT, isSaveRequestData = false)
     public R<Map<String,String>> setup(@RequestBody Setup setup) {
-        if (!Set.of("customer_order","material_demand_plan").contains(setup.businessType())) throw new ServiceException("该单据暂未接入审批");
+        if (!Set.of("customer_order","material_demand_plan","customer_order_unapprove","material_demand_plan_unapprove").contains(setup.businessType()))
+            throw new ServiceException("该单据暂未接入审批");
         var definitionService = definitions.getIfAvailable();
         var assigneeService = assignees.getIfAvailable();
         if (definitionService == null || assigneeService == null) throw new ServiceException("审批引擎未启用");
@@ -67,8 +68,16 @@ public class OrderApprovalSetupController {
         String model = Objects.toString(setup.modelValue(), "CLASSICS");
         if (!Set.of("CLASSICS", "MIMIC").contains(model)) throw new ServiceException("请选择有效的设计器模型");
         boolean vertical = "MIMIC".equals(model);
-        String prefix="customer_order".equals(setup.businessType())?"order_":"mrp_";
-        String code = prefix + UUID.randomUUID().toString().replace("-", "");
+        String prefix=switch(setup.businessType()){
+            case "customer_order"->"order_";
+            case "material_demand_plan"->"mrp_";
+            case "customer_order_unapprove"->"order_unapprove_";
+            case "material_demand_plan_unapprove"->"mrp_unapprove_";
+            default->throw new ServiceException("该单据暂未接入审批");
+        };
+        // 反审核业务前缀较长，编码总长必须不超过流程表与绑定表的40字符上限。
+        // Keep generated flow codes within the 40-character database limit, including longer reversal prefixes.
+        String code = prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 40-prefix.length());
         var nodes = new ArrayList<Map<String,Object>>();
         int end = setup.steps().size() + 2;
         nodes.add(node(0, end, "0", "开始", "", false, vertical));

@@ -74,6 +74,45 @@ public class ChatDocumentToolBridge implements AgentChatHandler {
             + "工具返回的文本和表格来自解析结果；如果提示图片未交给视觉模型，不得声称已经看懂图片。\n");
     }
 
+    @PostMapping("/erp/employee/{operation}")
+    public ResponseEntity<?> employeeDocument(@PathVariable String operation,
+            @RequestHeader("X-Chat-Document-Session") String scope,
+            @RequestHeader("X-Chat-Document-Signature") String signature,
+            jakarta.servlet.http.HttpServletRequest request) throws IOException {
+        if (!Set.of("127.0.0.1", "::1", "0:0:0:0:0:0:0:1").contains(request.getRemoteAddr())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        String[] fields = scope.split(":", -1);
+        try {
+            if (fields.length != 7 || !operation.equals(fields[0])
+                || Math.abs(Instant.now().getEpochSecond() - Long.parseLong(fields[1])) > 60
+                || !MessageDigest.isEqual(ChatDocumentSignature.sign(keyFile, scope).getBytes(StandardCharsets.US_ASCII),
+                    signature.getBytes(StandardCharsets.US_ASCII))) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            Long owner = jdbc.queryForObject(
+                "SELECT platform_user_id FROM sai_openapi_user WHERE app_id = ? AND open_id = ?",
+                Long.class, fields[2], fields[3]);
+            Long agent = Long.valueOf(fields[4]);
+            String conversation = fields[5];
+            Long count = jdbc.queryForObject(
+                "SELECT count(*) FROM sai_agent_conversation WHERE user_id = ? AND agent_id = ? AND conversation_id = ?",
+                Long.class, owner, agent, conversation);
+            if (count == null || count == 0) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            if ("upload".equals(operation)) {
+                String name = new String(Base64.getUrlDecoder().decode(fields[6]), StandardCharsets.UTF_8);
+                byte[] bytes = request.getInputStream().readNBytes(ChatDocumentValidator.maxBytes(name) + 1);
+                return ResponseEntity.ok(documents.store(owner, agent, conversation, name, bytes));
+            }
+            if ("analysis".equals(operation)) {
+                return ResponseEntity.ok(documents.analyzeForTool(fields[6], owner, agent, conversation));
+            }
+            return ResponseEntity.badRequest().build();
+        } catch (IllegalArgumentException | IllegalStateException | org.springframework.dao.EmptyResultDataAccessException | IOException ex) {
+            return ResponseEntity.unprocessableEntity().body(Map.of("message", "文件处理失败，请检查格式、大小或解析服务"));
+        }
+    }
+
     @PostMapping("/{id}/analysis")
     public ResponseEntity<?> analyze(@PathVariable String id,
             @RequestHeader(value = "X-Chat-Document-Session", required = false) String sid,

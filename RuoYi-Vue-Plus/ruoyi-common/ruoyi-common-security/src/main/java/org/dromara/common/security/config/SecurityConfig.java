@@ -122,9 +122,18 @@ public class SecurityConfig implements WebMvcConfigurer {
         return new SaServletFilter()
             .addInclude("/mcp", "/mcp/**")
             .setAuth(obj -> {
-                StpUtil.checkLogin();
                 HttpServletRequest request = ServletUtils.getRequest();
+                String authorization = request.getHeader("Authorization");
+                if ((authorization != null && authorization.regionMatches(true, 0, "Basic ", 0, 6))
+                    || (authorization == null && (request.getHeader("X-MCP-Username") != null
+                    || request.getHeader("X-MCP-Password") != null))) {
+                    SpringUtils.getBean(McpPasswordAuthenticator.class).authenticate(request);
+                }
+                StpUtil.checkLogin();
                 String headerCid = request.getHeader(LoginHelper.CLIENT_KEY);
+                if (request.getAttribute(McpPasswordAuthenticator.class.getName()) instanceof String id) {
+                    headerCid = id;
+                }
                 String paramCid = ServletUtils.getParameter(LoginHelper.CLIENT_KEY);
                 String tokenCid = getTokenExtra(LoginHelper.CLIENT_KEY);
                 if (StringUtils.isBlank(tokenCid) || !StringUtils.equalsAny(tokenCid, headerCid, paramCid)) {

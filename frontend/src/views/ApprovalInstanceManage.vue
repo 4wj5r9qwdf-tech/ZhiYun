@@ -7,6 +7,7 @@ import api from '../api'
 import { can } from '../utils/perms'
 import StandardListLayout from '../components/StandardListLayout.vue'
 import FoundationTable from '../components/FoundationTable.vue'
+import ApprovalTimeline from '../components/ApprovalTimeline.vue'
 
 const mode = ref<'running' | 'finished'>('running')
 const flowName = ref(''), businessId = ref(''), startUserId = ref(''), nodeName = ref('')
@@ -92,7 +93,7 @@ onMounted(load)
   </StandardListLayout>
   <a-drawer :open="detailOpen" :title="selected?.businessTitle || selected?.flowName || '流程实例详情'" width="720" @close="detailOpen=false">
     <a-descriptions v-if="selected" bordered size="small" :column="2"><a-descriptions-item label="流程名称">{{ selected.flowName || '—' }}</a-descriptions-item><a-descriptions-item label="流程编码">{{ selected.flowCode || '—' }}</a-descriptions-item><a-descriptions-item label="单据编号">{{ selected.businessCode || selected.businessId || '—' }}</a-descriptions-item><a-descriptions-item label="发起人">{{ selected.createByName || '—' }}</a-descriptions-item><a-descriptions-item label="流程状态">{{ selected.flowStatusName || '—' }}</a-descriptions-item><a-descriptions-item label="当前节点">{{ selected.nodeName || '—' }}</a-descriptions-item><a-descriptions-item label="创建时间">{{ selected.createTime || '—' }}</a-descriptions-item><a-descriptions-item label="流程版本">{{ selected.version || '—' }}</a-descriptions-item></a-descriptions>
-    <a-divider orientation="left">流程轨迹</a-divider><pre class="json-view">{{ history ? JSON.stringify(history, null, 2) : '加载中…' }}</pre>
+    <a-divider orientation="left">流程轨迹</a-divider><a-spin v-if="!history" /><ApprovalTimeline v-else :items="history.list || []" />
     <template v-if="can('workflow:instance:variableQuery')"><a-divider orientation="left">流程变量</a-divider><pre class="json-view">{{ JSON.stringify(variables, null, 2) }}</pre></template>
   </a-drawer>
 </template>

@@ -17,6 +17,12 @@
 
     <dependencies>
 
+        <!-- 本模块持久化 ERP 智能体诊断记录。 / JDBC access for ERP agent diagnostics. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <!-- 核心模块 -->
         <dependency>
             <groupId>org.dromara</groupId>

@@ -24,7 +24,9 @@ import java.util.Set;
 public class ApprovalBindingController {
     private final JdbcTemplate jdbc;
     private static final Map<String,String> TYPES=Map.of(
-        "customer_order","客户订单", "material_demand_plan","物料需求计划", "production_task","生产任务单");
+        "customer_order","客户订单", "material_demand_plan","物料需求计划",
+        "customer_order_unapprove","客户订单反审核", "material_demand_plan_unapprove","物料需求计划反审核",
+        "production_task","生产任务单");
 
     public record BindingRequest(String flowCode) {}
 
@@ -34,7 +36,10 @@ public class ApprovalBindingController {
     @Transactional
     @Log(title="解除审批对象流程绑定",businessType=BusinessType.UPDATE,isSaveRequestData=false)
     public R<Void> remove(@PathVariable String businessType) {
-        if (!Set.of("customer_order","material_demand_plan").contains(businessType)) throw new ServiceException("该单据暂未接入审批");
+        if (Set.of("customer_order_unapprove","material_demand_plan_unapprove").contains(businessType))
+            throw new ServiceException("反审核审批流程必须保持绑定；请更换已发布流程，不要解除绑定");
+        if (!Set.of("customer_order","material_demand_plan").contains(businessType))
+            throw new ServiceException("该审批对象不支持解除绑定");
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtext(?))",Object.class,"approval-binding:"+businessType);
         List<String> old=jdbc.queryForList("SELECT flow_code FROM sys_approval_binding WHERE business_type=? FOR UPDATE",String.class,businessType);
         if (!old.isEmpty()) {
@@ -52,7 +57,12 @@ public class ApprovalBindingController {
         // 按业务前缀隔离流程候选，避免将客户订单流程误绑定到需求计划。
         var flows=jdbc.queryForList("""
             SELECT flow_code AS "flowCode",flow_name AS "flowName",version,
-                   CASE WHEN flow_code LIKE 'order\\_%' ESCAPE '\\' THEN 'customer_order' ELSE 'material_demand_plan' END AS "businessType"
+                   CASE
+                     WHEN flow_code LIKE 'order\\_unapprove\\_%' ESCAPE '\\' THEN 'customer_order_unapprove'
+                     WHEN flow_code LIKE 'mrp\\_unapprove\\_%' ESCAPE '\\' THEN 'material_demand_plan_unapprove'
+                     WHEN flow_code LIKE 'order\\_%' ESCAPE '\\' THEN 'customer_order'
+                     WHEN flow_code LIKE 'mrp\\_%' ESCAPE '\\' THEN 'material_demand_plan'
+                   END AS "businessType"
             FROM flow_definition
             WHERE is_publish=1 AND activity_status=1 AND del_flag='0'
               AND (flow_code LIKE 'order\\_%' ESCAPE '\\' OR flow_code LIKE 'mrp\\_%' ESCAPE '\\')
@@ -70,7 +80,13 @@ public class ApprovalBindingController {
         if (!TYPES.containsKey(businessType)) throw new ServiceException("不支持的审批业务类型");
         String code=Objects.toString(request.flowCode(),"").trim();
         if (code.isEmpty() || code.length()>40) throw new ServiceException("请选择已发布的审批流程");
-        String prefix=switch(businessType){case "customer_order"->"order_";case "material_demand_plan"->"mrp_";default->throw new ServiceException("该单据暂未接入审批，不能配置流程");};
+        String prefix=switch(businessType){
+            case "customer_order"->"order_";
+            case "material_demand_plan"->"mrp_";
+            case "customer_order_unapprove"->"order_unapprove_";
+            case "material_demand_plan_unapprove"->"mrp_unapprove_";
+            default->throw new ServiceException("该单据暂未接入审批，不能配置流程");
+        };
         if (!code.startsWith(prefix)) throw new ServiceException("请选择与该业务单据匹配的审批流程");
         var flows=jdbc.queryForList("SELECT flow_name FROM flow_definition WHERE flow_code=? AND is_publish=1 AND activity_status=1 AND del_flag='0' FOR SHARE",String.class,code);
         if (flows.size()!=1) throw new ServiceException("流程未发布、已停用或存在重复，请检查流程定义");

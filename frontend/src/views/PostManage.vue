@@ -525,9 +525,8 @@ onMounted(() => { loadList(); loadRootOrg(); loadColState() })
 
 <!-- 非 scoped：列宽拖拽手柄（原生表头 th::after 画右缘线） -->
 <style>
-.ant-table-thead > tr > th { position: relative; }
-.ant-table-thead > tr > th.zy-th-noresize::after { display: none; }
-.ant-table-thead > tr > th::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; transition: border-color .12s, background .12s; }
-.ant-table-thead > tr > th:hover::after { border-right-color: #C9CDD4; }
-.ant-table-thead > tr > th:active::after { background: rgba(30,94,255,.15); border-right-color: #1E5EFF; }
+.post-table .ant-table-thead > tr > th { position: relative; }
+.post-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; transition: background .12s; }
+.post-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):hover { border-right-color: #C9CDD4; }
+.post-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):active::after { background: rgba(30,94,255,.15); }
 </style>

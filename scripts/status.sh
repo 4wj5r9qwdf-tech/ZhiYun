@@ -61,4 +61,6 @@ for PORT_INFO in "5432:PostgreSQL" "6379:Redis" "9000:MinIO"; do
 done
 
 echo ""
+bash "$(cd "$(dirname "$0")" && pwd)/status-spring-ai-alibaba.sh"
+
 echo "启动: bash scripts/start.sh   停止: bash scripts/stop.sh   重启: bash scripts/stop.sh && bash scripts/start.sh"

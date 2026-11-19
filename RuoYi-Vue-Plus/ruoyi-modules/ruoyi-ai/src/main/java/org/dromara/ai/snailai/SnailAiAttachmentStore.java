@@ -15,7 +15,7 @@ public class SnailAiAttachmentStore {
     private final Map<String, UploadedAttachment> tickets = new ConcurrentHashMap<>();
 
     public String put(Long userId, String name, String mimeType, long size,
-                      Long resourceId, String extractedText) {
+                      Long resourceId, Document document) {
         Instant now = Instant.now();
         tickets.entrySet().removeIf(entry -> entry.getValue().expiresAt().isBefore(now));
         if (tickets.size() >= MAX_TICKETS) {
@@ -23,7 +23,7 @@ public class SnailAiAttachmentStore {
         }
         String ticket = UUID.randomUUID().toString();
         tickets.put(ticket, new UploadedAttachment(userId, name, mimeType, size, resourceId,
-            extractedText, now.plusSeconds(3600)));
+            document, now.plusSeconds(3600)));
         return ticket;
     }
 
@@ -36,8 +36,10 @@ public class SnailAiAttachmentStore {
         return attachment;
     }
 
+    public record Document(String id, Long agentId, String conversationId) {}
+
     public record UploadedAttachment(Long userId, String name, String mimeType, long size,
-                                     Long resourceId, String extractedText, Instant expiresAt) {
+                                     Long resourceId, Document document, Instant expiresAt) {
         public boolean isImage() {
             return resourceId != null;
         }

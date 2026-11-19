@@ -5,6 +5,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
+import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.common.log.annotation.Log;
 import org.dromara.common.log.enums.BusinessType;
 import org.dromara.common.redis.annotation.RepeatSubmit;
@@ -122,6 +123,7 @@ public class MaterialDemandPlanController {
         String reason=request.reason()==null?"":request.reason().trim();
         if(Set.of("return","cancel").contains(action)&&reason.isEmpty())throw new ServiceException("请填写操作原因");
         if(reason.length()>500)throw new ServiceException("操作原因最多500字");
+        if("request_unapprove".equals(action))return requestReverseApproval(id,before,reason);
 
         String target;
         switch(action){
@@ -174,6 +176,30 @@ public class MaterialDemandPlanController {
         BusinessAudit.record(switch(action){case "submit"->"提交物料需求计划";case "unsubmit"->"撤回物料需求计划";case "approve"->"审核通过物料需求计划";case "return"->"退回物料需求计划";default->"取消物料需求计划";},
             id,"计划单号",Map.of("状态",state,"修订号",request.revision()),Map.of("状态",target,"修订号",nextRevision,"原因",reason));
         return R.ok(after);
+    }
+
+    /** 已审核计划的反审核必须另起 Warm-Flow 流程；流程通过后计划转为已取消并保留明细。 / Route approved-plan reversals through a separate workflow and retain the cancelled plan history. */
+    private R<Map<String,Object>> requestReverseApproval(Long id,Map<String,Object> before,String reason) {
+        StpUtil.checkPermission("order:material-demand-plan:edit");
+        if(!"approved".equals(before.get("status")))throw new ServiceException("只有已审核计划可以申请反审核");
+        if(reason.isEmpty())throw new ServiceException("请填写反审核原因");
+        if(reason.length()>500)throw new ServiceException("反审核原因最多500字");
+        Boolean pending=jdbc.queryForObject("""
+            SELECT EXISTS(SELECT 1 FROM biz_document_reversal_request
+             WHERE business_type='material_demand_plan_unapprove' AND business_id=? AND state='pending')
+            """,Boolean.class,id);
+        if(Boolean.TRUE.equals(pending))throw new ServiceException("该计划已有反审核申请正在审批");
+        Long instance=workflows.submitRequired("material_demand_plan_unapprove",id,
+            ((Number)before.get("revision")).intValue(),Objects.toString(before.get("planNo"),""));
+        var sourceSnapshot=Map.of("planNo",Objects.toString(before.get("planNo"),""),"status",Objects.toString(before.get("status"),""),"revision",before.get("revision"));
+        jdbc.update("""
+            INSERT INTO biz_document_reversal_request(business_type,business_id,business_revision,instance_id,requested_by,reason,source_snapshot)
+            VALUES('material_demand_plan_unapprove',?,?,?,?,?,?::jsonb)
+            """,id,before.get("revision"),instance,LoginHelper.getUserId(),reason,JsonUtils.toJsonString(sourceSnapshot));
+        BusinessAudit.record("发起物料需求计划反审核审批",id,"计划单号",
+            Map.of("计划单号",before.get("planNo"),"状态",before.get("status")),
+            Map.of("计划单号",before.get("planNo"),"反审核原因",reason,"审批实例",instance));
+        return R.ok(visibleDetail(id,false));
     }
 
     /** 检查此需求计划是否仍由一个审批实例办理。 / Check whether an active workflow instance currently owns the review decision. */

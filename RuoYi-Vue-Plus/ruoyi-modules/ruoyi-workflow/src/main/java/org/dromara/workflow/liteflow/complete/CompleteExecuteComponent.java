@@ -37,7 +37,9 @@ public class CompleteExecuteComponent extends NodeComponent {
         FlowParams flowParams = FlowParams.build()
             .handler(completeTaskBo.getHandler())
             .variable(variables)
-            .ignore(Convert.toBool(variables.getOrDefault(VAR_IGNORE, false)))
+            // 超管可介入他人的待办，办理人仍由当前登录账号记录。
+            // Allow a super administrator to intervene while retaining the real operator.
+            .ignore(org.dromara.common.satoken.utils.LoginHelper.isSuperAdmin() || Convert.toBool(variables.getOrDefault(VAR_IGNORE, false)))
             .ignoreDepute(Convert.toBool(variables.getOrDefault(VAR_IGNORE_DEPUTE, false)))
             .ignoreCooperate(Convert.toBool(variables.getOrDefault(VAR_IGNORE_COOPERATE, false)))
             .skipType(SkipType.PASS.getKey())

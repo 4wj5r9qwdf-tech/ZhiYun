@@ -6,7 +6,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { RobotOutlined, SendOutlined, PlusOutlined, CheckOutlined, CloseOutlined, PaperClipOutlined } from '@ant-design/icons-vue'
 
-type UploadedImage = { uid: string; id?: string; name: string; previewUrl: string; status: 'uploading' | 'done' | 'error'; error?: string }
+type UploadedImage = { uid: string; id?: string; name: string; previewUrl: string; kind?: "document"; status: 'uploading' | 'done' | 'error'; error?: string }
 
 type Agent = {
   id: number
@@ -19,7 +19,7 @@ type Agent = {
 type ChatMessage = {
   role: 'user' | 'assistant'
   content: string
-  attachments?: Array<{ name: string; previewUrl: string; id?: string; error?: string }>
+  attachments?: Array<{ name: string; previewUrl: string; id?: string; error?: string; kind?: "document" }>
   approval?: {
     approvalId: string
     toolName: string
@@ -170,7 +170,7 @@ function showHistory() {
 async function openConversation(id: string) {
   if (sending.value || uploadingImages.value || creatingConversation.value || selectedAgentId.value == null) return
   if (id === conversationId.value) { historyOpen.value = false; return }
-  if (input.value.trim() || attachments.value.length) { errorText.value = '请先发送或清空当前输入和图片，再切换对话。'; return }
+  if (input.value.trim() || attachments.value.length) { errorText.value = '请先发送或清空当前输入和附件，再切换对话。'; return }
   const agentId = selectedAgentId.value
   creatingConversation.value = true
   errorText.value = ''
@@ -212,7 +212,7 @@ async function restoreHistoryImages(id: string, agentId: number) {
 
 async function startNewConversation() {
   if (selectedAgentId.value == null) return
-  if (input.value.trim() || attachments.value.length) { errorText.value = '请先发送或清空当前输入和图片，再新建对话。'; return }
+  if (input.value.trim() || attachments.value.length) { errorText.value = '请先发送或清空当前输入和附件，再新建对话。'; return }
   creatingConversation.value = true
   errorText.value = ''
   try {
@@ -263,10 +263,10 @@ async function sendMessage(text = input.value) {
     }
   }
   input.value = ''
-  const sentAttachments = attachments.value.map(item => ({ name: item.name, previewUrl: item.previewUrl }))
+  const sentAttachments = attachments.value.map(item => ({ name: item.name, previewUrl: item.previewUrl, kind: item.kind }))
   const attachmentIds = attachments.value.flatMap(item => item.id ? [item.id] : [])
   if (screenshot) {
-    sentAttachments.push({ name: screenshot.name, previewUrl: screenshot.previewUrl })
+    sentAttachments.push({ name: screenshot.name, previewUrl: screenshot.previewUrl, kind: undefined })
     attachmentIds.push(screenshot.id)
   }
   messages.value.push({ role: 'user', content, attachments: sentAttachments })
@@ -379,31 +379,36 @@ function handlePaste(event: ClipboardEvent) {
 
 async function uploadImages(files: File[]) {
   const remaining = Math.max(0, 4 - attachments.value.length)
-  if (files.length > remaining) errorText.value = '每条消息最多添加 4 张图片。'
+  if (files.length > remaining) errorText.value = '每条消息最多添加 4 个附件。'
   const selected = files.slice(0, remaining)
   if (!selected.length) return
   uploadingImages.value = true
   for (const file of selected) {
+    const isImage = /\.(png|jpe?g)$/i.test(file.name)
+    const sizeLimitMb = isImage ? 5 : /\.pdf$/i.test(file.name) ? 50 : 10
     const image: UploadedImage = {
       uid: crypto.randomUUID(), name: file.name,
-      previewUrl: createPreviewUrl(file), status: 'uploading'
+      previewUrl: isImage ? createPreviewUrl(file) : "", kind: isImage ? undefined : "document", status: 'uploading'
     }
     attachments.value.push(image)
-    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 5 * 1024 * 1024) {
-      image.status = 'error'
-      image.error = file.size > 5 * 1024 * 1024 ? '超过 5 MB' : '仅支持 PNG、JPG、JPEG'
+    const pending = attachments.value[attachments.value.length - 1]!
+    if (file.size > sizeLimitMb * 1024 * 1024 || (!isImage && !/\.(pdf|docx|xlsx|pptx|md|txt|csv)$/i.test(file.name))) {
+      pending.status = 'error'
+      pending.error = file.size > sizeLimitMb * 1024 * 1024 ? `超过 ${sizeLimitMb} MB` : '不支持该文件格式'
       continue
     }
     const form = new FormData()
     form.append('file', file)
+    form.append('agentId', String(selectedAgentId.value))
+    form.append('conversationId', conversationId.value)
     try {
       const result: any = await api.post('/snail-ai/attachments', form)
       if (result.code !== 200 || !result.data?.id) throw new Error(result.msg || '上传失败')
-      image.id = result.data.id
-      image.status = 'done'
+      pending.id = result.data.id
+      pending.status = 'done'
     } catch (error: any) {
-      image.status = 'error'
-      image.error = error?.response?.data?.msg || error?.message || '上传失败'
+      pending.status = 'error'
+      pending.error = error?.response?.data?.msg || error?.message || '上传失败'
     }
   }
   uploadingImages.value = false
@@ -570,6 +575,7 @@ async function scrollToBottom() {
             <div v-if="item.attachments?.length" class="sent-images">
               <template v-for="(image, imageIndex) in item.attachments" :key="image.id || image.previewUrl || imageIndex">
                 <button v-if="image.previewUrl" type="button" class="image-preview-button" :aria-label="`放大查看 ${image.name}`" @click="previewImage = {name:image.name,url:image.previewUrl}"><img :src="image.previewUrl" :alt="image.name" /></button>
+                <span v-else-if="image.kind === 'document'" class="history-image-state"><paper-clip-outlined /> {{ image.name }}</span>
                 <span v-else class="history-image-state">{{ image.error || '图片加载中…' }}</span>
               </template>
             </div>
@@ -606,9 +612,10 @@ async function scrollToBottom() {
         </div>
         <div v-if="attachments.length" class="attachment-list">
           <div v-for="image in attachments" :key="image.uid" class="attachment-item">
-            <img :src="image.previewUrl" :alt="image.name" />
+            <img v-if="image.previewUrl" :src="image.previewUrl" :alt="image.name" />
+            <paper-clip-outlined v-else />
             <div class="attachment-info"><span :title="image.name">{{ image.name }}</span><small>{{ image.status === 'uploading' ? '正在上传…' : image.status === 'done' ? '已就绪' : image.error }}</small></div>
-            <button type="button" class="attachment-remove" aria-label="移除图片" @click="removeAttachment(image.uid)">×</button>
+            <button type="button" class="attachment-remove" aria-label="移除附件" @click="removeAttachment(image.uid)">×</button>
           </div>
         </div>
         <div class="compose-box">
@@ -621,10 +628,10 @@ async function scrollToBottom() {
         />
         <div class="compose-footer">
           <div class="compose-actions">
-            <input ref="fileInput" class="file-input" type="file" accept="image/png,image/jpeg" multiple @change="handleImageSelection" />
-            <a-button size="small" :disabled="sending || uploadingImages || attachments.length >= 4 || !conversationId" @click="fileInput?.click()"><paper-clip-outlined /> 添加图片</a-button>
+            <input ref="fileInput" class="file-input" type="file" accept=".png,.jpg,.jpeg,.pdf,.docx,.xlsx,.pptx,.md,.txt,.csv" multiple @change="handleImageSelection" />
+            <a-button size="small" :disabled="sending || uploadingImages || attachments.length >= 4 || !conversationId" @click="fileInput?.click()"><paper-clip-outlined /> 添加附件</a-button>
             <a-checkbox v-model:checked="screenshotQuestion" :disabled="sending || uploadingImages">截图提问</a-checkbox>
-            <span>最多 4 张，截图占 1 张</span>
+            <span>最多 4 个附件，截图占 1 个</span>
           </div>
           <a-button type="primary" :disabled="(!input.trim() && !attachments.length) || !conversationId || uploadingImages || attachments.some(item => item.status !== 'done')" :loading="sending" @click="sendMessage()">
             <send-outlined /> 发送

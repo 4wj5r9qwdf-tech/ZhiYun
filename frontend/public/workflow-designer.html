@@ -25,6 +25,11 @@ try {
   const base = document.createElement('base')
   base.href = entry.href
   document.head.prepend(base)
+  // 保留框架入口的页面高度和滚动规则，避免设计器内容被弹窗底部裁切。
+  // Preserve the upstream viewport and scrolling rules inside the embedded designer.
+  for (const style of template.querySelectorAll('head style')) {
+    document.head.append(style.cloneNode(true))
+  }
   for (const link of template.querySelectorAll('link[rel="stylesheet"]')) {
     document.head.append(link.cloneNode())
   }

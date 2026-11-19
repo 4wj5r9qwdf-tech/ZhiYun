@@ -30,7 +30,7 @@ import { createSavedFormDefaults } from '../utils/savedFormDefaults'
 
 // ===== 演示数据（内存生成，不入库） =====
 type DemoNode = { orgId: string; orgName: string; orgCategory: string; children?: DemoNode[] }
-type DemoRow = { id: string; code: string; name: string; orgId: string; type: string; status: string; amount: number; owner: string; remark: string; reviewStatus?: 'pending' | 'approved' }
+type DemoRow = { id: string; code: string; name: string; orgId: string; type: string; status: string; amount: number; owner: string; remark: string; reviewStatus?: 'pending' | 'approved'; detailGroups?: { title: string; items: string[] }[] }
 
 const demoTree: DemoNode[] = [
   { orgId: 'd1', orgName: '总部', orgCategory: '部门', children: [
@@ -60,6 +60,10 @@ const demoRows = ref<DemoRow[]>(Array.from({ length: 23 }, (_, i) => ({
   owner: ['张三', '李四', '王五'][i % 3],
   remark: i % 3 === 0 ? '' : '备注' + i,
   reviewStatus: 'pending',
+  detailGroups: [
+    { title: '联系人', items: [`业务对接：${['张三', '李四', '王五'][i % 3]} · 138****0000`, ...(i % 2 ? ['采购对接：赵六 · 139****0000'] : [])] },
+    { title: '地址', items: ['办公联系 · 北京市朝阳区', ...(i % 3 ? ['样衣收件 · 北京市大兴区'] : [])] },
+  ],
 })))
 
 // ===== 左树面板：点节点筛该节点及下级；再点取消 =====
@@ -107,7 +111,7 @@ const filteredRows = computed(() => {
   const ids = selected ? walkIds([selected]) : null
   return demoRows.value.filter(r =>
     (!ids || ids.includes(r.orgId))
-    && (!keyword.value.trim() || (r.name + r.code + r.owner).includes(keyword.value.trim()))
+    && (!keyword.value.trim() || (r.name + r.code + r.owner + (r.detailGroups || []).flatMap(group => group.items).join(' ')).includes(keyword.value.trim()))
     && (!fType.value || r.type === fType.value)
     && (!fStatus.value || r.status === fStatus.value))
 })
@@ -150,6 +154,7 @@ function removeBatch() {
 }
 
 // ===== 列表列（序号列/操作列在 columns computed 内拼接；sortable→orderBy 白名单） =====
+// 关联详情列示范“单元格摘要 + 悬停/聚焦/点击展开多组子记录”的公共交互。 / Demonstrate the shared summary-plus-popover pattern for grouped child records.
 const ALL_COLUMNS = [
   { title: '编码', key: 'code', width: 110, sorter: true },
   { title: '名称', key: 'name', width: 180, sorter: true },
@@ -162,6 +167,7 @@ const ALL_COLUMNS = [
   // 本演示为前端全量内存数据直接过滤；后端分页项目请把 filters 值作为查询参数上送接口，
   // 合计接口带同样参数（保证跨页筛选正确 + 合计=最终结果集）
   { title: '负责人', key: 'owner', width: 110, filters: [] as { text: string; value: string }[], filterMultiple: true },
+  { title: '关联详情', key: 'detailGroups', width: 132 },
   { title: '备注', key: 'remark', width: 160 },
 ]
 type ColState = { key: string; visible: boolean; width?: number }
@@ -259,7 +265,7 @@ function onTableChange(_pagination: any, filters: any, sorter: any) {
   })
 }
 
-// ===== 列宽拖拽（B.5.1.1：th 右缘 14px 起拖；操作列左/右缘 16px 均可） =====
+// ===== 列宽拖拽：普通列从右缘调整，固定操作列从左右边缘调整 =====
 function onColResize(key: string, w: number) {
   manualWidths.value = true
   try { localStorage.setItem(`${colStoreKey.value}:manual_widths`, '1') } catch { /* ignore */ }
@@ -268,16 +274,22 @@ function onColResize(key: string, w: number) {
   if (s) { s.width = Math.max(60, Math.round(w)); saveColState() }
 }
 let suppressHeaderClickUntil = 0
+/** 表头边缘提示可拖动，保持固定列阴影和表头分隔线不受影响。 / Show a resize cursor at header edges without replacing fixed-column shadows. */
+function onHeaderMouseMove(key: string, e: MouseEvent) {
+  const cell = e.currentTarget as HTMLElement
+  const rect = cell.getBoundingClientRect()
+  const edge = e.clientX >= rect.right - 14 || (key === 'ops' && e.clientX <= rect.left + 16)
+  cell.style.cursor = edge ? 'col-resize' : ''
+}
+function onHeaderMouseLeave(e: MouseEvent) { (e.currentTarget as HTMLElement).style.cursor = '' }
 function onHeaderMouseDown(key: string, e: MouseEvent) {
   if (key === 'index' || key === 'selection') return
   const th = e.currentTarget as HTMLTableCellElement
   const rect = th.getBoundingClientRect()
-  const nextIsOps = !!th.nextElementSibling?.classList.contains('ops-th')
   const atOpsLeft = key === 'ops' && e.clientX <= rect.left + 16
   const atOpsRight = key === 'ops' && e.clientX >= rect.right - 16
-  const atPrevRightOfOps = nextIsOps && e.clientX >= rect.right - 16
-  if (atOpsLeft || atOpsRight || atPrevRightOfOps) {
-    const fromLeft = atOpsLeft || atPrevRightOfOps
+  if (atOpsLeft || atOpsRight) {
+    const fromLeft = atOpsLeft
     const startX = e.clientX
     const startW = opsWidth.value
     const onMove = (ev: MouseEvent) => onColResize('ops', fromLeft ? startW - (ev.clientX - startX) : startW + (ev.clientX - startX))
@@ -318,7 +330,7 @@ const columns = computed(() => {
   }
   const ops = {
     title: '操作', key: 'ops', width: opsWidth.value, fixed: 'right' as const,
-    customHeaderCell: () => ({ class: 'ops-th', onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onClick: onHeaderClick }),
+    customHeaderCell: () => ({ class: 'ops-th', onMousedown: (e: MouseEvent) => onHeaderMouseDown('ops', e), onMousemove: (e: MouseEvent) => onHeaderMouseMove('ops', e), onMouseleave: onHeaderMouseLeave, onClick: onHeaderClick }),
   }
   const list = colState.value
     .filter(c => c.visible)
@@ -328,7 +340,7 @@ const columns = computed(() => {
       width: c.width ?? ALL_COLUMNS.find(a => a.key === c.key)!.width,
       ...(ALL_COLUMNS.find(a => a.key === c.key)!.sorter ? { sorter: true } : {}),
       ...(colFilters.value[c.key] ? { filteredValue: colFilters.value[c.key] } : {}),
-      customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onClick: onHeaderClick }),
+      customHeaderCell: () => ({ onMousedown: (e: MouseEvent) => onHeaderMouseDown(c.key, e), onMousemove: (e: MouseEvent) => onHeaderMouseMove(c.key, e), onMouseleave: onHeaderMouseLeave, onClick: onHeaderClick }),
     }))
   return [idx, ...list, ops]
 })
@@ -525,11 +537,11 @@ function applyImport() {
 
 // ===== 导出 CSV（前端 blob，导当前筛选行；后端分页项目见 Person.vue 的 /system/person/export） =====
 function exportCsv(selectedOnly = false) {
-  const head = '编码,名称,所属组织,类型,状态,金额,负责人,备注'
+  const head = '编码,名称,所属组织,类型,状态,金额,负责人,关联详情,备注'
   const orgName = (id: string) => flatOrgs.find(o => o.orgId === id)?.orgName || ''
   const data = selectedOnly ? demoRows.value.filter(r => selectedRowKeys.value.includes(r.id)) : colFilteredRows.value
   if (!data.length) { message.warning(selectedOnly ? '请先选择记录' : '没有可导出的记录'); return }
-  const lines = data.map(r => [r.code, r.name, orgName(r.orgId), r.type, r.status === '0' ? '启用' : '停用', r.amount, r.owner, r.remark].map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(','))
+  const lines = data.map(r => [r.code, r.name, orgName(r.orgId), r.type, r.status === '0' ? '启用' : '停用', r.amount, r.owner, (r.detailGroups || []).map(group => `${group.title}：${group.items.join('；')}`).join('；'), r.remark].map(v => `"${String(v ?? '').replaceAll('"', '""')}"`).join(','))
   const blob = new Blob(['\ufeff' + [head, ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -594,6 +606,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
         <a-button>⚙ 列设置</a-button>
         <template #overlay>
           <a-card class="col-set-panel" :body-style="{ padding: '8px 4px' }">
+            <div class="col-set-hint">拖动表头边缘可调整列宽，恢复默认可重新自适应。</div>
             <div v-for="(c, i) in colState" :key="c.key" class="col-set-item">
               <a-checkbox :checked="c.visible" @change="toggleCol(c.key)">{{ colTitle(c.key) }}</a-checkbox>
               <span class="col-move">
@@ -666,6 +679,21 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
             </template>
             <template v-else-if="column.key === 'reviewStatus'">
               <a-tag :color="record.reviewStatus === 'approved' ? 'green' : 'orange'">{{ record.reviewStatus === 'approved' ? '已审核' : '待审核' }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'detailGroups'">
+              <a-popover title="关联详情" :trigger="['hover', 'focus', 'click']">
+                <template #content>
+                  <div v-if="record.detailGroups?.length" class="tpl-detail-list">
+                    <section v-for="group in record.detailGroups" :key="group.title" class="tpl-detail-group">
+                      <div class="tpl-detail-heading"><strong>{{ group.title }}</strong><span>{{ group.items.length }} 项</span></div>
+                      <div v-for="(item, itemIndex) in group.items" :key="itemIndex" class="tpl-detail-item">{{ item }}</div>
+                    </section>
+                  </div>
+                  <a-empty v-else description="暂无关联详情" />
+                </template>
+                <button v-if="record.detailGroups?.length" type="button" class="tpl-detail-trigger">{{ record.detailGroups.reduce((count: number, group: { items: string[] }) => count + group.items.length, 0) }} 项详情</button>
+                <span v-else>暂无详情</span>
+              </a-popover>
             </template>
             <template v-else-if="column.key === 'amount'">
               {{ record.amount?.toLocaleString() }}
@@ -823,6 +851,11 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 .tree-node { display: inline-flex; align-items: center; gap: 6px; }
 .type-tag { font-size: 11px; line-height: 1; padding: 1px 5px; border-radius: 3px; margin: 0; }
 .tree-count { font-size: 11px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #E8F3FF; color: #1E5EFF; display: inline-flex; align-items: center; justify-content: center; }
+.tpl-detail-trigger { display: inline-flex; align-items: center; padding: 2px 6px; border: 0; border-radius: 4px; color: #245ab0; background: #eef4ff; cursor: pointer; white-space: nowrap; }
+.tpl-detail-list { min-width: 220px; max-width: min(380px, 80vw); max-height: 320px; overflow: auto; overflow-wrap: anywhere; }
+.tpl-detail-group + .tpl-detail-group { margin-top: 8px; padding-top: 8px; border-top: 1px solid #edf0f5; }
+.tpl-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; color: #1d2129; }
+.tpl-detail-heading span,.tpl-detail-item { color: #566477; font-size: 12px; line-height: 1.55; }
 
 /* 折叠手柄：8px 窄竖条 + CSS 三角（展开贴面板内右缘，收起贴页面左缘） */
 .tree-toggle { position: absolute; top: 50%; transform: translateY(-50%); left: 244px; z-index: 6; width: 16px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; border: 1px solid #E5E8EF; border-radius: 4px; transition: left .2s, border-color .15s; }
@@ -846,6 +879,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
 
 /* 列设置面板 */
 .col-set-panel { width: 220px; border-radius: 8px; box-shadow: 0 6px 20px rgba(29,33,41,.12); }
+.col-set-hint { padding: 4px 8px 8px; color: #86909c; font-size: 12px; line-height: 1.5; }
 .col-set-item { display: flex; align-items: center; justify-content: space-between; padding: 2px 8px; }
 .col-move { display: inline-flex; }
 .col-move .ant-btn { padding: 0 4px; height: 20px; line-height: 1; color: #86909C; }

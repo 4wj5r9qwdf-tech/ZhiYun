@@ -19,7 +19,7 @@ const title = props.kind === 'size' ? '尺码' : '尺码组'
 const moduleKey = props.kind === 'size' ? 'size' : 'size_group'
 const endpoint = '/system/size-data/' + props.kind
 const permission = (action: string) => can('system:' + props.kind + ':' + action)
-type Country = { id: number; code: string; name: string; name_en: string; sort_order: number; remark: string; status: string; tagIds: string[]; tagOptions?: {label: string; value: string; disabled?: boolean}[]; tagNames?: string[]; items?: { id: number; name: string; status: string }[] }
+type Country = { id: number; code: string; name: string; name_en: string; sort_order: number; remark: string; status: string; tagIds: string[]; tagOptions?: {label: string; value: string; groupName?: string; disabled?: boolean}[]; tagNames?: string[]; items?: { id: number; code?: string; name: string; name_en?: string; status: string }[] }
 const sizeOptions = ref<Country[]>([])
 const sizePickerOpen = ref(false)
 const sizePickerKeyword = ref('')
@@ -251,7 +251,10 @@ onBeforeUnmount(() => widthObserver?.disconnect())
     <a-table :columns="columns" :data-source="filteredRows" :loading="loading" :row-selection="rowSelection" row-key="id" size="middle" class="country-table zy-fill-table" table-layout="fixed" :scroll="{ x: scrollWidth, y: 'calc(100vh - 390px)' }" :pagination="{ current: pageNum, pageSize, total: filteredRows.length, showSizeChanger: true, showQuickJumper: true, showTotal: (n: number) => `共 ${n} 条`, onChange: (p: number, ps: number) => { pageNum=p; pageSize=ps } }">
       <template #bodyCell="{column,record,index}">
         <template v-if="column.key === 'index'">{{ (pageNum-1)*pageSize+index+1 }}</template>
-        <template v-else-if="column.key === 'tagNames'"><a-space v-if="record.tagNames?.length" size="small" wrap><a-tag v-for="tag in record.tagNames" :key="tag">{{ tag }}</a-tag></a-space><span v-else>—</span></template>
+        <a-popover v-else-if="column.key === 'tagNames' && record.tagOptions?.length" title="尺码类型标签" :trigger="['hover', 'focus', 'click']"><template #content><div class="size-associated-detail"><a-tag v-for="tag in record.tagOptions" :key="tag.value">{{ tag.groupName ? `${tag.groupName}：` : '' }}{{ tag.label }}</a-tag></div></template><button type="button" class="size-associated-trigger">{{ record.tagOptions.length }} 个标签</button></a-popover>
+        <span v-else-if="column.key === 'tagNames'">—</span>
+        <a-popover v-else-if="column.key === 'size_names' && record.items?.length" title="尺码组成员" :trigger="['hover', 'focus', 'click']"><template #content><div class="size-group-detail"><div v-for="(item,itemIndex) in record.items" :key="item.id" class="size-group-detail-row"><span class="size-group-order">{{ Number(itemIndex) + 1 }}</span><strong>{{ item.code || '—' }} · {{ item.name }}</strong><small v-if="item.name_en">{{ item.name_en }}</small><a-tag :color="item.status === '0' ? 'green' : 'default'">{{ item.status === '0' ? '启用' : '停用' }}</a-tag></div></div></template><button type="button" class="size-associated-trigger">{{ record.items.length }} 个尺码</button></a-popover>
+        <span v-else-if="column.key === 'size_names'">—</span>
         <template v-else-if="column.key === 'status'"><a-switch :checked="record.status === '0'" :disabled="!permission('edit')" checked-children="启用" un-checked-children="停用" @change="v => changeStatus(record as Country, v)" /></template>
         <template v-else-if="column.key === 'action'"><a-space><a-button v-if="permission('edit')" type="primary" size="small" @click="openEdit(record as Country)">编辑</a-button><a-button v-if="permission('delete')" danger size="small" @click="removeRow(record as Country)">删除</a-button></a-space></template>
       </template>
@@ -302,6 +305,16 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 </template>
 
 <style scoped>
+.size-associated-trigger { max-width:100%; padding:0; border:0; background:transparent; color:#1e5eff; cursor:pointer; font:inherit; text-align:left; white-space:nowrap; }
+.size-associated-trigger:hover,.size-associated-trigger:focus-visible { color:#1648c5; text-decoration:underline; outline:none; }
+:global(.ant-popover .size-associated-detail) { display:flex; max-width:340px; max-height:280px; overflow:auto; flex-wrap:wrap; gap:6px; }
+:global(.ant-popover .size-associated-detail .ant-tag) { margin-inline-end:0; }
+:global(.ant-popover .size-group-detail) { min-width:280px; max-height:320px; overflow:auto; }
+:global(.ant-popover .size-group-detail-row) { display:grid; grid-template-columns:22px minmax(120px,1fr) auto auto; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #eef1f5; }
+:global(.ant-popover .size-group-detail-row:last-child) { border-bottom:0; }
+:global(.ant-popover .size-group-order) { color:#86909c; text-align:center; }
+:global(.ant-popover .size-group-detail-row strong) { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+:global(.ant-popover .size-group-detail-row small) { color:#86909c; }
 .head-filters,.filter-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .size-selection-panel { border:1px solid #E5E8EF; border-radius:8px; padding:12px 16px; }
 .size-selection-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:10px; border-bottom:1px solid #F0F0F0; }
@@ -320,6 +333,6 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 <style>
 /* 和功能模板一致，表头右缘用于调整列宽；仅限定本页面，避免影响其他表格。 */
 .country-table .ant-table-thead > tr > th { position: relative; }
-.country-table .ant-table-thead > tr > th:not(.zy-th-noresize)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; }
-.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):hover::after { border-right-color: #C9CDD4; }
+.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; transition: background .12s; }
+.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):hover { border-right-color: #C9CDD4; }
 </style>

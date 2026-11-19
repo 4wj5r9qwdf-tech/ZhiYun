@@ -1,7 +1,7 @@
 # 物料需求计划 API
 
 > 功能分组：物料需求计划 `material_demand_plan`
-> 当前状态：REST 与审批联动代码已实现，前后端构建通过，WSL `zhizhun_erp` 开发库迁移已应用；待用户验收。MCP 工具未注册，智能体 Skill 按验收后流程补充。
+> 当前状态：需求计划普通审批已接入；本轮补充反审核审批代码和增量迁移，构建与开发库应用状态待本轮完成后更新；待用户验收。MCP 工具未注册，智能体 Skill 按验收后流程补充。
 > 业务边界：承接已审核客户订单的算料快照，不创建采购单、不收发库存；需求数量始终以库存单位保存。
 
 ## 一、字段和状态
@@ -50,7 +50,7 @@
 | 方法 + 路径 | `GET /order/material-demand-plans/{id}` |
 | 读/写类型 | 只读 |
 | 参数 | 路径 `id` string，物料需求计划主键。 |
-| 返回 | 主单、来源订单/PO 快照、`items` 明细、`summary` 按物料/规格/颜色/供料方式/单位汇总、`adjustments` 数量调整历史。 |
+| 返回 | 主单、来源订单/PO 快照、`items` 明细、`summary` 按物料/规格/颜色/供料方式/单位汇总、`adjustments` 数量调整历史、`reversalHistory` 反审核申请记录和当前 `reverseApprovalPending` 状态。 |
 | 权限 | `order:material-demand-plan:list`；任一明细分类不可见则整个详情拒绝，并提示调整人员分类范围。历史明细缺分类时仅超管可见以便修复。 |
 | 幂等/副作用/前置/审批 | 幂等只读；无副作用；无业务前置；不触发审批。 |
 
@@ -94,27 +94,30 @@
 | 前置条件 | 计划必须为 `draft` 且算料状态为 `ready`；空请求或数值未变化不写调整历史。 |
 | 是否需审批 | 调整不触发审批；计划提交后审批由共享审批绑定控制。 |
 
-### 提交、撤回、审核、退回或取消
+### 提交、撤回、审核、退回、取消或申请反审核
 
 | 项目 | 契约 |
 |---|---|
 | 方法 + 路径 | `POST /order/material-demand-plans/{id}/transition` |
 | 读/写类型 | 写 |
-| 请求体 | `revision` integer 必填；`action` enum 必填；`reason` string，可选但 `return`、`cancel` 必填，最多 500 字。 |
-| 动作 | `submit` 草稿提交；`unsubmit` 无审批实例时撤回；`approve` 无绑定流程时直接审核；`return` 无绑定流程时退回草稿；`cancel` 取消草稿。 |
-| 示例请求体 | `{"revision":2,"action":"submit","reason":"计划已核对"}` |
+| 请求体 | `revision` integer 必填；`action` enum 必填；`reason` string，`return`、`cancel`、`request_unapprove` 必填，最多 500 字。 |
+| 动作 | `submit` 草稿提交；`unsubmit` 无当前审批实例时撤回；`approve` 无绑定普通流程时直接审核；`return` 无绑定普通流程时退回草稿；`cancel` 取消草稿；`request_unapprove` 对已审核计划发起独立反审核审批。 |
+| 示例请求体 | `{"revision":3,"action":"request_unapprove","reason":"客户确认物料需求版本有误，需重新核算"}` |
 | 返回 | 操作后的计划详情。 |
-| 权限 | `submit/unsubmit` 需要 `order:material-demand-plan:edit`；`approve/return` 需要 `order:material-demand-plan:review`；`cancel` 需要 `order:material-demand-plan:cancel`。 |
+| 权限 | `submit/unsubmit/request_unapprove` 需要 `order:material-demand-plan:edit`；`approve/return` 需要 `order:material-demand-plan:review`；`cancel` 需要 `order:material-demand-plan:cancel`。 |
 | 幂等性 | 不提供幂等键；`revision` 与状态前置检查拒绝重复流转。超时后先查询当前单据状态。 |
 | 副作用 | 修改单据状态、修订号和审核信息并写业务审计；提交时若绑定有效审批流程，启动 Warm-Flow 并建立业务单据关联。 |
 | 前置条件 | 提交要求完整算料快照且至少一行明细；审批中的有流程单据必须在我的待办办理；无绑定流程时按直接审核权限处理。 |
-| 是否需审批 | 取决于 `material_demand_plan` 当前审批对象绑定：有已发布流程时由流程处理；未绑定时由有审核权限的人员处理。 |
+| 是否需审批 | 普通审核取决于 `material_demand_plan` 绑定；反审核必须使用独立的 `material_demand_plan_unapprove` 已发布流程，未绑定时拒绝申请，不能回退到直接审核。 |
+
+反审核审批通过后，计划从 `approved` 回到可编辑 `draft`，清除原审核人/审核时间并递增修订号；明细、数量调整历史和反审核申请记录保留。退回或终止时计划保持已审核。若后续需要撤销计划，仍需在草稿状态执行“取消计划”。反审核流程绑定不能解除，只能更换为另一条已发布流程。
 
 ## 三、订单与审批联动
 
 - 客户订单审核通过时，同一事务幂等生成物料需求计划草稿；没有已保存算料快照仍生成“待算料”主单。
 - 已审核订单调用 `POST /order/customer-orders/{id}/demand/calculate` 保存完整算料快照后，同一事务同步未调整的计划草稿；有人工调整或已提交/审核的计划不会被静默覆盖。
 - 审批中心 `businessType` 使用 `material_demand_plan`。待办、已办、抄送、我发起的详情和铃铛通知继续使用共享审批服务；业务详情必须同时校验对应计划权限与物料分类范围。
+- 反审核使用独立 `businessType=material_demand_plan_unapprove` 和独立流程绑定。发起后来源计划仍为已审核；审批人可在详情中查看申请原因，审批通过后才返回草稿。审批记录与普通审核实例分开保留。
 - 当前没有物料需求计划 MCP 工具；本 REST 文档不表示智能体已可发现或调用该功能。用户验收后再补 Skill/MCP 收尾。
 
 ## 四、增量 SQL

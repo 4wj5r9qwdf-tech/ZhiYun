@@ -79,7 +79,7 @@ function resizeAction(event: MouseEvent) {
   stopResize=onUp;document.addEventListener('mousemove',onMove);document.addEventListener('mouseup',onUp);event.preventDefault();event.stopPropagation()
 }
 const columns = computed(() => [
-  { key: 'index', title: '序号', width: 64, fixed: 'left' as const },
+  { key: 'index', title: '序号', width: 64, fixed: 'left' as const, customHeaderCell: () => ({ class: 'zy-th-noresize' }) },
   ...state.value.filter(c => c.visible).map(c => {
     const definition = props.columns.find(d => d.key === c.key)!
     return { key: c.key, dataIndex: c.key, title: definition.title, width: c.width, ellipsis: true,
@@ -88,7 +88,7 @@ const columns = computed(() => [
         onDragstart: () => { dragged.value = c.key }, onDragover: (event: DragEvent) => event.preventDefault(),
         onDrop: () => { move(state.value.findIndex(s => s.key === dragged.value), state.value.findIndex(s => s.key === c.key)); dragged.value = '' } }) }
   }),
-  { key: 'action', title: '操作', width: actionWidth.value, fixed: 'right' as const, customHeaderCell: () => ({ onMousedown: resizeAction }) },
+  { key: 'action', title: '操作', width: actionWidth.value, fixed: 'right' as const, customHeaderCell: () => ({ class: 'ops-th', onMousedown: resizeAction }) },
 ])
 const selection = computed(() => props.selectedKeys ? { selectedRowKeys: props.selectedKeys, preserveSelectedRowKeys: true, onChange: (keys: (string | number)[]) => emit('update:selectedKeys', keys.map(String)) } : undefined)
 watch(preferenceKey, restore, { immediate: true })
@@ -105,6 +105,7 @@ onBeforeUnmount(() => {stopResize?.();widthObserver?.disconnect()})
       <a-dropdown v-model:open="settings" :trigger="['click']">
         <a-button>⚙ 列设置</a-button>
         <template #overlay><a-card :body-style="{ padding: '12px' }" style="min-width:240px">
+          <div class="column-hint">拖动表头右边缘可调整列宽，恢复默认可重新自适应。</div>
           <div v-for="(col,index) in state" :key="col.key" class="column-setting"><a-checkbox v-model:checked="col.visible" @change="persist();scheduleAutoFit()">{{ props.columns.find(c => c.key === col.key)?.title }}</a-checkbox><span><a-button type="text" size="small" :disabled="index===0" @click="move(index,index-1)">↑</a-button><a-button type="text" size="small" :disabled="index===state.length-1" @click="move(index,index+1)">↓</a-button></span></div>
           <a-divider style="margin:8px 0" /><a-space><a-button size="small" @click="resetColumns">恢复默认</a-button><a-button type="primary" size="small" @click="settings=false">完成</a-button></a-space>
         </a-card></template>
@@ -117,5 +118,9 @@ onBeforeUnmount(() => {stopResize?.();widthObserver?.disconnect()})
   </div>
 </template>
 <style scoped>
-.foundation-table{height:100%;min-height:0;display:flex;flex-direction:column}.foundation-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.spacer{flex:1}.column-setting{display:flex;justify-content:space-between;align-items:center;gap:16px}.foundation-table :deep(th.ant-table-cell){position:relative}.foundation-table :deep(th.ant-table-cell::after){content:'';position:absolute;right:0;top:0;width:12px;height:100%;cursor:col-resize}
+.foundation-table{height:100%;min-height:0;display:flex;flex-direction:column}.foundation-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.spacer{flex:1}.column-setting{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.column-hint{max-width:240px;margin-bottom:8px;color:#86909c;font-size:12px;line-height:1.5}
+/* Ant Design Vue uses ::after to draw fixed-column shadows. Keep resize handles off that pseudo-element to prevent duplicate header dividers after HMR. */
+.foundation-table :deep(th.ant-table-cell:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)){position:relative}
+.foundation-table :deep(th.ant-table-cell:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after){content:'';position:absolute;right:0;top:0;width:12px;height:100%;cursor:col-resize}
 </style>

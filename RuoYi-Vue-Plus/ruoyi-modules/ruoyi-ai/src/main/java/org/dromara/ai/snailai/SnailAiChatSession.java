@@ -41,6 +41,9 @@ public class SnailAiChatSession {
         this.expiresAt = expiresAt;
     }
 
+    @lombok.Setter
+    private ErpChatDocumentClient.Reader documentReader;
+
     public Flux<Map<String, Object>> approvals() {
         return approvalSink.asFlux();
     }

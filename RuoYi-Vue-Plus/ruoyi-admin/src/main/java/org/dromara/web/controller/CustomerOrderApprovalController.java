@@ -37,6 +37,12 @@ public class CustomerOrderApprovalController {
         UNION ALL
         SELECT 'material_demand_plan'::text AS business_type,id,plan_no AS document_no,document::text AS document,status
         FROM biz_material_demand_plan
+        UNION ALL
+        SELECT 'customer_order_unapprove'::text AS business_type,id,order_no AS document_no,document::text AS document,status
+        FROM biz_customer_order
+        UNION ALL
+        SELECT 'material_demand_plan_unapprove'::text AS business_type,id,plan_no AS document_no,document::text AS document,status
+        FROM biz_material_demand_plan
         """;
     private final JdbcTemplate jdbc;
     private final ISysMessageService messages;
@@ -47,7 +53,7 @@ public class CustomerOrderApprovalController {
     private String businessDocumentsCte(){return "WITH business_documents AS ("+BUSINESS_DOCUMENTS+") ";}
 
     /** 返回审批业务类型的中文显示名，用于提醒标题及日志动作。 / Resolve a Chinese business label for reminders and audit action names. */
-    private String businessName(String type){return "material_demand_plan".equals(type)?"物料需求计划":"客户订单";}
+    private String businessName(String type){return switch(type){case "material_demand_plan"->"物料需求计划";case "customer_order_unapprove"->"客户订单反审核";case "material_demand_plan_unapprove"->"物料需求计划反审核";default->"客户订单";};}
 
     /** 催审和记录在同一事务提交；相同实例限频并只通知仍有待办的人员。 / Commit the reminder and its audit record together; rate-limit each instance and notify only current pending assignees. */
     @SaCheckPermission("approval:initiated:list")
@@ -59,7 +65,7 @@ public class CustomerOrderApprovalController {
         var instances=jdbc.queryForList(businessDocumentsCte()+"""
             SELECT a.business_type AS "businessType",d.document_no AS "documentNo"
             FROM sys_approval_business_instance a JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
-            WHERE a.instance_id=? AND a.business_type IN ('customer_order','material_demand_plan') AND a.initiator_id=? AND a.state='pending' FOR UPDATE OF a
+            WHERE a.instance_id=? AND a.business_type IN ('customer_order','material_demand_plan','customer_order_unapprove','material_demand_plan_unapprove') AND a.initiator_id=? AND a.state='pending' FOR UPDATE OF a
             """,instanceId,userId);
         if (instances.isEmpty()) throw new ServiceException("审批不存在、已结束或您不是发起人");
         Boolean recent=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM sys_approval_reminder WHERE instance_id=? AND create_time > now()-interval '30 minutes')",Boolean.class,instanceId);
@@ -91,9 +97,10 @@ public class CustomerOrderApprovalController {
         return R.ok(jdbc.queryForList(businessDocumentsCte()+"""
             SELECT a.instance_id::text AS "instanceId",a.business_id::text AS "businessId",a.business_type AS "businessType",d.document_no AS "orderNo",d.document_no AS "businessNo",a.state,a.create_time AS "createTime",(SELECT max(r.create_time) FROM sys_approval_reminder r WHERE r.instance_id=a.instance_id) AS "lastRemindedAt",
               COALESCE((SELECT string_agg(DISTINCT t.node_name,'、') FROM flow_task t WHERE t.instance_id=a.instance_id AND t.del_flag='0'),'') AS "currentNode",
-              COALESCE((SELECT string_agg(DISTINCT u.nick_name,'、') FROM flow_task t JOIN flow_user fu ON fu.associated=t.id AND fu.type IN ('1','2','3') AND fu.del_flag='0' JOIN sys_user u ON u.user_id::text=fu.processed_by WHERE t.instance_id=a.instance_id AND t.del_flag='0'),'') AS "currentAssignees"
+              COALESCE((SELECT string_agg(DISTINCT u.nick_name,'、') FROM flow_task t JOIN flow_user fu ON fu.associated=t.id AND fu.type IN ('1','2','3') AND fu.del_flag='0' JOIN sys_user u ON u.user_id::text=fu.processed_by WHERE t.instance_id=a.instance_id AND t.del_flag='0'),'') AS "currentAssignees",
+              COALESCE((SELECT r.reason FROM biz_document_reversal_request r WHERE r.instance_id=a.instance_id LIMIT 1),'') AS "reversalReason"
             FROM sys_approval_business_instance a JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
-            WHERE a.business_type IN ('customer_order','material_demand_plan') AND a.initiator_id=? ORDER BY a.create_time DESC
+            WHERE a.business_type IN ('customer_order','material_demand_plan','customer_order_unapprove','material_demand_plan_unapprove') AND a.initiator_id=? ORDER BY a.create_time DESC
             """, LoginHelper.getUserId()));
     }
     /** 读取发起人有权查看的审批进度和时间轴，并只返回已关联的业务单据摘要。 / Return the initiator-visible workflow timeline and linked business summary. */
@@ -101,7 +108,7 @@ public class CustomerOrderApprovalController {
     @SaCheckPermission("approval:initiated:list")
     @GetMapping("/initiated/{instanceId}")
     public R<Map<String,Object>> initiatedDetail(@PathVariable Long instanceId) {
-        Boolean owns=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM sys_approval_business_instance WHERE instance_id=? AND business_type IN ('customer_order','material_demand_plan') AND initiator_id=?)",Boolean.class,instanceId,LoginHelper.getUserId());
+        Boolean owns=jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM sys_approval_business_instance WHERE instance_id=? AND business_type IN ('customer_order','material_demand_plan','customer_order_unapprove','material_demand_plan_unapprove') AND initiator_id=?)",Boolean.class,instanceId,LoginHelper.getUserId());
         if (!Boolean.TRUE.equals(owns)) throw new ServiceException("审批不存在或无权查看");
         var history=jdbc.queryForList("""
             SELECT h.node_name AS "nodeName",COALESCE(u.nick_name,h.approver) AS approver,h.skip_type AS action,h.message,h.update_time AS "updateTime"
@@ -123,6 +130,14 @@ public class CustomerOrderApprovalController {
             FROM sys_approval_business_instance a JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
             WHERE a.instance_id=?
             """,instanceId);
+        var reversal=jdbc.queryForList("""
+            SELECT r.business_type AS "businessType",r.reason,r.state,r.result_message AS "resultMessage",
+                   r.requested_by::text AS "requestedBy",COALESCE(u.nick_name,u.user_name) AS "requestedByName",
+                   r.created_at AS "requestedAt",r.updated_at AS "updatedAt"
+            FROM biz_document_reversal_request r LEFT JOIN sys_user u ON u.user_id=r.requested_by
+            WHERE r.instance_id=?
+            """,instanceId);
+        if(!reversal.isEmpty())business.put("reversal",reversal.getFirst());
         return R.ok(Map.of("history",history,"copies",copies,"business",business));
     }
 
@@ -136,10 +151,12 @@ public class CustomerOrderApprovalController {
             JOIN sys_approval_business_instance a ON a.instance_id=i.id
             JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
             WHERE t.id=? AND t.del_flag='0' AND i.del_flag='0' AND i.flow_status='waiting'
-              AND a.business_type IN ('customer_order','material_demand_plan') AND a.state='pending' AND d.status='submitted'
-              AND EXISTS (SELECT 1 FROM flow_user u WHERE u.associated=t.id
-                  AND u.processed_by=? AND u.type IN ('1','2','3') AND u.del_flag='0')
-            """, taskId, LoginHelper.getUserIdStr());
+              AND a.business_type IN ('customer_order','material_demand_plan','customer_order_unapprove','material_demand_plan_unapprove') AND a.state='pending'
+              AND ((a.business_type IN ('customer_order','material_demand_plan') AND d.status='submitted')
+                OR (a.business_type IN ('customer_order_unapprove','material_demand_plan_unapprove') AND d.status='approved'))
+              AND (? OR EXISTS (SELECT 1 FROM flow_user u WHERE u.associated=t.id
+                  AND u.processed_by=? AND u.type IN ('1','2','3') AND u.del_flag='0'))
+            """, taskId, LoginHelper.isSuperAdmin(), LoginHelper.getUserIdStr());
         if (orders.isEmpty()) throw new ServiceException("审批待办不存在或已处理");
         return R.ok(enrichBusinessDocument(orders.getFirst()));
     }
@@ -164,8 +181,8 @@ public class CustomerOrderApprovalController {
             FROM flow_his_task h JOIN flow_instance i ON i.id=h.instance_id
             JOIN sys_approval_business_instance a ON a.instance_id=i.id
             JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
-            WHERE h.id=? AND h.del_flag='0' AND h.node_type=1 AND h.flow_status <> 'copy' AND h.approver=?
-            """, taskId, LoginHelper.getUserIdStr());
+            WHERE h.id=? AND h.del_flag='0' AND h.node_type=1 AND h.flow_status <> 'copy' AND (? OR h.approver=?)
+            """, taskId, LoginHelper.isSuperAdmin(), LoginHelper.getUserIdStr());
         if (orders.isEmpty()) throw new ServiceException("已办记录不存在或无权查看");
         return R.ok(enrichBusinessDocument(orders.getFirst()));
     }
@@ -201,24 +218,48 @@ public class CustomerOrderApprovalController {
     /** 按审批实例类型返回关联业务详情，并再次校验对应业务菜单和物料分类权限。 / Resolve the linked document by type and recheck its business and material-category permissions. */
     private Map<String,Object> enrichBusinessDocument(Map<String,Object> row) {
         String type=Objects.toString(row.get("businessType"),"");
-        if("customer_order".equals(type)) {
+        boolean reversal=type.endsWith("_unapprove");
+        String documentType=reversal?type.substring(0,type.length()-"_unapprove".length()):type;
+        if("customer_order".equals(documentType)) {
+            StpUtil.checkPermission("order:customer-order:list");
+            Long orderId=Long.valueOf(Objects.toString(row.get("businessId"),""));
+            Long userId=LoginHelper.getUserId();
+            Boolean accessible=jdbc.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM biz_customer_order
+                 WHERE id=? AND (created_by=? OR sales_id=? OR follower_id=? OR ?))
+                """,Boolean.class,orderId,userId,userId,userId,StpUtil.hasPermission("order:customer-order:review"));
+            if(!Boolean.TRUE.equals(accessible))throw new ServiceException("客户订单不存在或超出访问范围");
             var order=enrichOrder(row);
             order.put("businessType",type);
+            if(reversal)order.put("reversal",reversalInfo(Objects.toString(row.get("instanceId"),"")));
             return order;
         }
-        if(!"material_demand_plan".equals(type))throw new ServiceException("该审批单据类型暂不支持查看");
+        if(!"material_demand_plan".equals(documentType))throw new ServiceException("该审批单据类型暂不支持查看");
         StpUtil.checkPermission("order:material-demand-plan:list");
         Long id=Long.valueOf(row.get("businessId").toString());
         var plan=plans.detail(id,false);
         assertPlanCategories(plan);
         plan.put("businessType",type);plan.put("businessId",row.get("businessId"));plan.put("orderNo",row.get("orderNo"));
         plan.put("instanceId",row.get("instanceId"));plan.put("nodeCode",row.get("nodeCode"));plan.put("nodeName",row.get("nodeName"));
+        if(reversal)plan.put("reversal",reversalInfo(Objects.toString(row.get("instanceId"),"")));
         plan.put("history",jdbc.queryForList("""
             SELECT h.node_name AS "nodeName",COALESCE(u.nick_name,h.approver) AS approver,h.skip_type AS action,h.message,h.update_time AS "updateTime"
             FROM flow_his_task h LEFT JOIN sys_user u ON u.user_id::text=h.approver
             WHERE h.instance_id::text=? AND h.del_flag='0' ORDER BY h.update_time,h.id
             """,Objects.toString(row.get("instanceId"),"")));
         return plan;
+    }
+
+    /** 读取本次反审核申请原因和处理结果，供审批人及发起人查看。 / Load the current reversal request reason and result for approvers and initiators. */
+    private Map<String,Object> reversalInfo(String instanceId) {
+        var requests=jdbc.queryForList("""
+            SELECT r.reason,r.state,r.result_message AS "resultMessage",r.requested_by::text AS "requestedBy",
+                   COALESCE(u.nick_name,u.user_name) AS "requestedByName",r.created_at AS "requestedAt"
+            FROM biz_document_reversal_request r LEFT JOIN sys_user u ON u.user_id=r.requested_by
+            WHERE r.instance_id=?
+            """,Long.valueOf(instanceId));
+        if(requests.isEmpty())throw new ServiceException("反审核申请信息不存在或已失效");
+        return requests.getFirst();
     }
 
     /** 审批详情沿用计划页的全单分类权限规则，避免待办/抄送穿透绕过人员数据范围。 / Apply the same all-or-nothing category scope used by plan pages so approval links cannot bypass employee data access. */

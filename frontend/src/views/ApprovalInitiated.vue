@@ -6,19 +6,17 @@ import api from '../api'
 import { useRoute, useRouter } from 'vue-router'
 import StandardListLayout from '../components/StandardListLayout.vue'
 import FoundationTable from '../components/FoundationTable.vue'
+import ApprovalTimeline from '../components/ApprovalTimeline.vue'
 import { can } from '../utils/perms'
-const rows=ref<any[]>([]), loading=ref(false), selected=ref<any>(), history=ref<any[]>([]), copies=ref<any[]>([])
+const rows=ref<any[]>([]), loading=ref(false), selected=ref<any>(), history=ref<any[]>([]), copies=ref<any[]>([]), business=ref<any>()
 const router=useRouter()
 const route=useRoute()
 const states:Record<string,string>={starting:'发起中',pending:'审批中',approved:'已通过',rejected:'已退回',cancelled:'已取消'}
-const actionLabels:Record<string,string>={PASS:'通过',REJECT:'退回',NONE:'记录'}
-/** 把审批动作编码转换为时间轴中的中文状态说明。 / Map workflow action codes to readable timeline labels. */
-function actionText(item:any) { if (item.nodeName==='开始') return '发起流程'; if (item.nodeName==='申请人' && item.action==='PASS') return '提交审批'; return actionLabels[item.action] || item.action || '记录' }
 /** 格式化审批时间，空值时返回一致的占位文本。 / Format approval timestamps and provide a consistent empty-value label. */
 function formatTime(value:any) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString('zh-CN',{hour12:false}) }
 const keyword=ref(''), stateFilter=ref<string>(), typeFilter=ref<string>(), applied=ref({keyword:'',state:undefined as string|undefined,type:undefined as string|undefined})
 const columns=[{title:'单据类型',key:'typeLabel',width:120},{title:'单据编号',key:'orderNo',width:180},{title:'审批状态',key:'stateLabel',width:120},{title:'当前节点',key:'currentNode',width:160},{title:'当前处理人',key:'currentAssignees',width:160},{title:'提交时间',key:'submittedAt',width:180},{title:'上次催审',key:'lastReminder',width:180}]
-const businessTypes=[{value:'customer_order',label:'客户订单'},{value:'material_demand_plan',label:'物料需求计划'}]
+const businessTypes=[{value:'customer_order',label:'客户订单'},{value:'customer_order_unapprove',label:'客户订单反审核'},{value:'material_demand_plan',label:'物料需求计划'},{value:'material_demand_plan_unapprove',label:'物料需求计划反审核'}]
 const typeNames=Object.fromEntries(businessTypes.map(item=>[item.value,item.label])) as Record<string,string>
 const filteredRows=computed(()=>rows.value.filter(row=>(!applied.value.keyword || String(row.businessNo||row.orderNo||'').toLowerCase().includes(applied.value.keyword.toLowerCase())) && (!applied.value.state || row.state===applied.value.state) && (!applied.value.type || row.businessType===applied.value.type)).map(row=>({...row,id:row.instanceId,orderNo:row.businessNo||row.orderNo,typeLabel:typeNames[row.businessType]||row.businessType,stateLabel:states[row.state] || row.state,submittedAt:formatTime(row.createTime),lastReminder:formatTime(row.lastRemindedAt)})))
 /** 按当前筛选条件重新查询我发起的审批。 / Reload initiated approvals using the current filters. */
@@ -26,11 +24,11 @@ function query() { applied.value={keyword:keyword.value.trim(),state:stateFilter
 /** 清空筛选条件并恢复默认查询结果。 / Clear filters and restore the default initiated-approval query. */
 function reset() { keyword.value='';stateFilter.value=undefined;typeFilter.value=undefined;query() }
 /** 穿透打开审批关联的业务单据，无法穿透时显示原因。 / Open the linked business document and report when navigation is unavailable. */
-function openDocument(row:any) { if(row.businessType==='customer_order'){if(!can('order:customer-order:list')){message.warning('您没有客户订单查看权限，请联系管理员授权');return}void router.push({name:'CustomerOrderManage',query:{orderId:row.businessId}});return}if(row.businessType==='material_demand_plan'){if(!can('order:material-demand-plan:list')){message.warning('您没有物料需求计划查看权限，请联系管理员授权');return}void router.push({name:'MaterialDemandPlanManage',query:{planId:row.businessId}});return}message.warning('该单据暂不支持跳转') }
+function openDocument(row:any) { const type=String(row.businessType||'').replace('_unapprove','');if(type==='customer_order'){if(!can('order:customer-order:list')){message.warning('您没有客户订单查看权限，请联系管理员授权');return}void router.push({name:'CustomerOrderManage',query:{orderId:row.businessId}});return}if(type==='material_demand_plan'){if(!can('order:material-demand-plan:list')){message.warning('您没有物料需求计划查看权限，请联系管理员授权');return}void router.push({name:'MaterialDemandPlanManage',query:{planId:row.businessId}});return}message.warning('该单据暂不支持跳转') }
 /** 读取我发起的审批列表及其当前办理进度。 / Load approvals initiated by the caller with current progress. */
 async function load() { loading.value=true; try { const r:any=await api.get('/approval/customer-orders/initiated'); if(r.code!==200) throw Error(r.msg); rows.value=r.data||[] } catch(e:any){message.error(e.message||'加载失败')} finally{loading.value=false} }
 /** 加载选中审批的时间轴和抄送状态。 / Load the selected approval timeline and carbon-copy status. */
-async function open(row:any) { try { const r:any=await api.get('/approval/customer-orders/initiated/'+row.instanceId); if(r.code!==200) throw Error(r.msg); history.value=r.data.history||[]; copies.value=r.data.copies||[]; selected.value=row } catch(e:any){message.error(e.message||'加载失败')} }
+async function open(row:any) { try { const r:any=await api.get('/approval/customer-orders/initiated/'+row.instanceId); if(r.code!==200) throw Error(r.msg); history.value=r.data.history||[]; copies.value=r.data.copies||[]; business.value=r.data.business||{}; selected.value=row } catch(e:any){message.error(e.message||'加载失败')} }
 /** 重新确认当前待办人后提交催审并更新记录。 / Revalidate current assignees before sending and recording a reminder. */
 async function remind(row:any) { try { const r:any=await api.post('/approval/customer-orders/initiated/'+row.instanceId+'/remind'); if(r.code!==200) throw Error(r.msg); message.success('已发送催审提醒'); await load() } catch(e:any){message.error(e?.response?.data?.msg || e.message || '催审失败')} }
 onMounted(async () => { await load(); const id=String(route.query.instanceId || ''); if (/^\d+$/.test(id)) { const row=rows.value.find(item=>String(item.instanceId)===id); if (row) await open(row); else message.warning('审批记录不存在或无权查看') } })
@@ -46,16 +44,9 @@ onMounted(async () => { await load(); const id=String(route.query.instanceId || 
   </StandardListLayout>
   <a-modal :open="!!selected" title="审批进度" :width="680" :footer="null" @cancel="selected=undefined">
     <div v-if="selected" class="progress-summary"><div><span>单据编号</span><a @click="openDocument(selected)">{{ selected.orderNo }}</a></div><a-tag color="blue">{{ states[selected.state] || selected.state }}</a-tag></div>
+    <a-alert v-if="business?.reversal?.reason || selected?.reversalReason" type="warning" show-icon message="反审核申请原因" :description="business?.reversal?.reason || selected?.reversalReason" />
     <div class="progress-content">
-      <a-timeline v-if="history.length || selected?.state === 'pending'">
-        <a-timeline-item v-for="(item,index) in history" :key="index" :color="item.action === 'REJECT' ? 'red' : 'green'">
-          <div class="timeline-heading"><strong>{{ item.nodeName || '审批节点' }}</strong><a-tag :color="item.action === 'REJECT' ? 'red' : 'green'">{{ actionText(item) }}</a-tag></div>
-          <div class="timeline-meta">{{ item.approver || '系统' }} <span>{{ formatTime(item.updateTime) }}</span></div>
-          <div v-if="item.message" class="timeline-opinion"><span>审批意见</span>{{ item.message }}</div>
-        </a-timeline-item>
-        <a-timeline-item v-if="selected?.state === 'pending'" color="blue"><div class="timeline-heading"><strong>{{ selected.currentNode || '当前审批节点' }}</strong><a-tag color="blue">待处理</a-tag></div><div class="timeline-meta">等待 {{ selected.currentAssignees || '处理人待确定' }} 办理</div></a-timeline-item>
-      </a-timeline>
-      <a-empty v-else description="暂无审批记录" />
+      <ApprovalTimeline :items="history" :pending-node="selected?.state === 'pending' ? (selected.currentNode || '当前审批节点') : ''" :pending-assignees="selected?.currentAssignees" />
       <section class="copy-section"><h4>抄送记录</h4><p class="copy-hint">节点办理时生成抄送记录；当前不提供阅读状态。</p><div v-if="copies.length" class="copy-list"><div v-for="(copy,index) in copies" :key="`${copy.id}-${copy.userId}-${index}`" class="copy-row"><div><strong>{{ copy.userName }}</strong><span>{{ String(copy.nodeName || '审批节点').replace('【抄送】','') }}</span></div><span>已抄送 · {{ formatTime(copy.sentAt) }}</span></div></div><a-empty v-else :image="false" description="暂无抄送记录" /></section>
     </div>
   </a-modal>

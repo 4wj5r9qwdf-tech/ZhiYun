@@ -321,3 +321,9 @@ justauth:
       client-id: 10**********6
       client-secret: 1f7d08**********5b7**********29e
       redirect-uri: ${justauth.address}/social-callback?source=gitea
+
+--- # SnailAI 后台 MCP 密码认证 / Backend MCP Basic authentication
+zhiyun.mcp.basic-auth:
+  enabled: ${ZHIYUN_MCP_BASIC_AUTH_ENABLED:true}
+  username: ${ZHIYUN_MCP_BASIC_AUTH_USERNAME:${SUPER_ADMIN_USERNAME:}}
+  client-id: ${ZHIYUN_MCP_BASIC_AUTH_CLIENT_ID:e5cd7e4891bf95d1d19206ce24a7b32e}

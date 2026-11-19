@@ -87,7 +87,7 @@ async function generate(row:any){busy.value=true;try{const result=await call('po
 async function saveQuantities(){if(!form.value)return;if(!hasChanges.value){message.info('计划数量没有变化');return}if(!adjustmentReason.value.trim()){message.warning('请填写计划数量调整原因');return}busy.value=true;try{const payload={revision:form.value.revision,reason:adjustmentReason.value.trim(),items:form.value.items.map((item:any)=>({itemId:item.itemId,plannedQuantity:item.plannedQuantity}))};form.value=prepare(await call('put','/'+form.value.id+'/quantities',payload));adjustmentReason.value='';message.success('计划数量和调整记录已保存');await load()}catch(error:any){message.error(error?.response?.data?.msg||error.message||'保存计划失败')}finally{busy.value=false}}
 
 /** 执行单据状态操作并在成功后刷新列表和详情。 / Run a plan lifecycle action and reload the latest document after success. */
-function transition(action:string,label:string){if(!form.value)return;if(['cancel','return'].includes(action)){pendingAction.value={action,label};reasonText.value='';reasonOpen.value=true;return}void runTransition(action,label,'')}
+function transition(action:string,label:string){if(!form.value)return;if(['cancel','return','request_unapprove'].includes(action)){pendingAction.value={action,label};reasonText.value='';reasonOpen.value=true;return}void runTransition(action,label,'')}
 async function runTransition(action:string,label:string,reason:string){if(!form.value)return;busy.value=true;try{form.value=prepare(await call('post','/'+form.value.id+'/transition',{revision:form.value.revision,action,reason}));message.success(label+'成功');await load()}catch(error:any){message.error(error?.response?.data?.msg||error.message||label+'失败')}finally{busy.value=false}}
 function confirmReason(){if(!reasonText.value.trim()){message.warning('请填写操作原因');return}const action=pendingAction.value;if(!action)return;reasonOpen.value=false;void runTransition(action.action,action.label,reasonText.value.trim())}
 
@@ -114,13 +114,14 @@ onMounted(async()=>{await load();const id=String(route.query.planId||'');if(/^\d
 
   <div v-else class="mrp-editor">
     <header class="mrp-toolbar">
-      <a-space wrap><a-button @click="close">返回列表</a-button><div class="toolbar-title"><strong>物料需求计划</strong><span>{{ form.planNo }}</span></div><a-tag :color="form.status==='approved'?'green':form.status==='submitted'?'blue':form.status==='cancelled'?'default':'orange'">{{ statusLabels[form.status]||form.status }}</a-tag><a-tag :color="form.calculationStatus==='ready'?'green':'orange'">{{ calculationLabels[form.calculationStatus]||form.calculationStatus }}</a-tag></a-space>
+      <a-space wrap><a-button @click="close">返回列表</a-button><div class="toolbar-title"><strong>物料需求计划</strong><span>{{ form.planNo }}</span></div><a-tag :color="form.status==='approved'?'green':form.status==='submitted'?'blue':form.status==='cancelled'?'default':'orange'">{{ statusLabels[form.status]||form.status }}</a-tag><a-tag :color="form.calculationStatus==='ready'?'green':'orange'">{{ calculationLabels[form.calculationStatus]||form.calculationStatus }}</a-tag><a-tag v-if="form.reverseApprovalPending" color="processing">反审核审批中</a-tag><router-link v-if="form.reverseApprovalPending && form.reverseApproval?.instanceId" :to="{name:'ApprovalInitiated',query:{instanceId:form.reverseApproval.instanceId}}">查看反审核进度</router-link></a-space>
       <a-space wrap>
         <a-button v-if="editable&&hasChanges" :loading="busy" @click="saveQuantities">保存计划调整</a-button>
         <a-button v-if="editable" type="primary" :disabled="hasChanges" :loading="busy" @click="transition('submit','提交审批')">提交审批</a-button>
         <a-button v-if="form.status==='submitted'&&!form.workflowInstanceId&&permission('edit')" :loading="busy" @click="transition('unsubmit','撤回提交')">撤回</a-button>
         <template v-if="directReview"><a-button danger :loading="busy" @click="transition('return','退回')">退回</a-button><a-button type="primary" :loading="busy" @click="transition('approve','审核通过')">审核通过</a-button></template>
         <a-button v-if="editable" danger ghost :loading="busy" @click="transition('cancel','取消计划')">取消计划</a-button>
+        <a-button v-if="form.status==='approved' && permission('edit') && !form.reverseApprovalPending" danger :loading="busy" @click="transition('request_unapprove','申请反审核')">申请反审核</a-button>
       </a-space>
     </header>
     <div class="mrp-content">
@@ -176,7 +177,7 @@ onMounted(async()=>{await load();const id=String(route.query.planId||'');if(/^\d
     <a-table size="small" bordered :loading="sourceLoading" :data-source="sources" row-key="orderId" :pagination="{pageSize:10,showTotal:(n:number)=>`共 ${n} 条`}" :columns="[{title:'客户订单',dataIndex:'orderNo',key:'orderNo'},{title:'客户',dataIndex:'customerName',key:'customerName'},{title:'订单日期',dataIndex:'orderDate',key:'orderDate'},{title:'PO 数量',dataIndex:'poCount',key:'poCount'},{title:'操作',key:'action',width:110}]"><template #bodyCell="{column,record}"><a-button v-if="column.key==='action'" type="link" size="small" @click="generate(record)">生成草稿</a-button><span v-else>{{ record[String(column.key || '')]??'—' }}</span></template><template #emptyText><a-empty description="没有待补建计划的已审核订单"/></template><template #title><div class="source-table-title"><span>已审核且未生成有效需求计划的订单</span></div></template></a-table>
     <div class="source-actions"><a-button @click="sourceOpen=false">关闭</a-button></div>
   </a-modal>
-  <a-modal :open="reasonOpen" :title="pendingAction?.label || '填写操作原因'" ok-text="确认" cancel-text="取消" :confirm-loading="busy" :mask-closable="false" @ok="confirmReason" @cancel="reasonOpen=false"><p>操作原因会随需求计划保留，供后续追溯。</p><a-textarea v-model:value="reasonText" :maxlength="500" :rows="4" show-count placeholder="请填写原因" /></a-modal>
+  <a-modal :open="reasonOpen" :title="pendingAction?.label || '填写操作原因'" :ok-text="pendingAction?.action==='request_unapprove'?'提交审批':'确认'" cancel-text="取消" :confirm-loading="busy" :mask-closable="false" @ok="confirmReason" @cancel="reasonOpen=false"><p v-if="pendingAction?.action==='request_unapprove'">反审核必须由独立审批流程批准。审批通过前计划保持已审核；通过后计划退回草稿，可继续调整或取消。申请原因会保留在反审核记录中。</p><p v-else>操作原因会随需求计划保留，供后续追溯。</p><a-textarea v-model:value="reasonText" :maxlength="500" :rows="4" show-count :placeholder="pendingAction?.action==='request_unapprove'?'请填写反审核原因':'请填写原因'" /></a-modal>
 </template>
 
 <style scoped>

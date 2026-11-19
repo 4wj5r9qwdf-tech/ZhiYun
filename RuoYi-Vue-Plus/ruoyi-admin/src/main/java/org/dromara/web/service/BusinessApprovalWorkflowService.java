@@ -21,7 +21,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BusinessApprovalWorkflowService {
     private static final Map<String,String> BUSINESS_TYPES = Map.of(
-        "customer_order", "客户订单", "material_demand_plan", "物料需求计划");
+        "customer_order", "客户订单", "material_demand_plan", "物料需求计划",
+        "customer_order_unapprove", "客户订单反审核", "material_demand_plan_unapprove", "物料需求计划反审核");
 
     private final JdbcTemplate jdbc;
     private final ObjectProvider<WorkflowService> workflows;
@@ -29,6 +30,17 @@ public class BusinessApprovalWorkflowService {
     /** 绑定流程时启动 Warm-Flow 并完成申请人节点；未绑定时返回 false，由业务单据按审核权限处理。 / Start Warm-Flow and complete its initiator node when a binding exists; otherwise let the document use its direct-review permission. */
     @Transactional(propagation = Propagation.MANDATORY)
     public Long submit(String businessType, Long businessId, int revision, String documentNo) {
+        return submit(businessType,businessId,revision,documentNo,false);
+    }
+
+    /** 反审核等强制走审批的操作不得因缺少流程绑定而退回直接权限处理。 / Require a configured workflow for operations that must never fall back to direct review. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Long submitRequired(String businessType, Long businessId, int revision, String documentNo) {
+        return submit(businessType,businessId,revision,documentNo,true);
+    }
+
+    /** 启动已发布流程并按调用方策略处理未绑定状态。 / Start the published workflow and apply the caller's configured-binding requirement. */
+    private Long submit(String businessType, Long businessId, int revision, String documentNo, boolean required) {
         String typeName = BUSINESS_TYPES.get(businessType);
         if (typeName == null) throw new ServiceException("该业务单据尚未接入审批流程");
 
@@ -39,7 +51,10 @@ public class BusinessApprovalWorkflowService {
             SELECT flow_code FROM sys_approval_binding
             WHERE business_type=? FOR SHARE
             """, String.class, businessType);
-        if (codes.isEmpty()) return null;
+        if (codes.isEmpty()) {
+            if(required) throw new ServiceException("尚未配置该反审核事项的审批流程，请先到审批对象配置中绑定已发布流程");
+            return null;
+        }
         if (codes.size() != 1) throw new ServiceException("审批对象流程绑定异常，请联系管理员");
 
         WorkflowService workflow = workflows.getIfAvailable();

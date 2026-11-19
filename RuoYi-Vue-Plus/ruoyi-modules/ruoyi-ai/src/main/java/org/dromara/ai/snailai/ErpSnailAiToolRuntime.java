@@ -74,16 +74,23 @@ public class ErpSnailAiToolRuntime extends ToolRuntime {
         String systemPrompt = request.getSystemPrompt();
         request.setSystemPrompt((systemPrompt == null ? "" : systemPrompt) + skills.prompt());
 
+        if (session.getDocumentReader() != null) {
+            request.setSystemPrompt(request.getSystemPrompt() + session.getDocumentReader().prompt());
+        }
         ToolResolution resolution = super.resolve(request);
         List<ToolCallback> callbacks = new ArrayList<>(resolution.getTools());
         callbacks.removeIf(callback -> isLocalSkillTool(callback)
             || !SnailAiMcpToolPolicy.isAllowed(callback, session.getPermissions()));
         callbacks.add(ToolCallbacks.from(skillTool)[0]);
+        if (session.getDocumentReader() != null) {
+            callbacks.add(ToolCallbacks.from(session.getDocumentReader())[0]);
+        }
         session.recordVisibleTools(callbacks);
 
         List<ToolCallback> secured = new ArrayList<>(callbacks.size());
         for (ToolCallback callback : callbacks) {
-            boolean requiresApproval = !SnailAiMcpToolPolicy.isReadOnly(callback) && !isLocalSkillTool(callback);
+            boolean requiresApproval = !SnailAiMcpToolPolicy.isReadOnly(callback) && !isLocalSkillTool(callback)
+                && !"read_chat_document".equals(callback.getToolDefinition().name());
             secured.add(new ObservedToolCallback(callback, session, sessions, requiresApproval));
         }
         log.debug("ERP SnailAI tools scoped for userId={}, visibleToolCount={}",

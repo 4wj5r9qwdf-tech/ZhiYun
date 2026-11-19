@@ -165,6 +165,6 @@ onBeforeUnmount(() => widthObserver?.disconnect())
 <style>
 /* 和功能模板一致，表头右缘用于调整列宽；仅限定本页面，避免影响其他表格。 */
 .country-table .ant-table-thead > tr > th { position: relative; }
-.country-table .ant-table-thead > tr > th:not(.zy-th-noresize)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; border-right: 2px solid #E5E8EF; }
-.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):hover::after { border-right-color: #C9CDD4; }
+.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last)::after { content: ''; position: absolute; right: -1px; top: 0; bottom: 0; width: 12px; cursor: col-resize; transition: background .12s; }
+.country-table .ant-table-thead > tr > th:not(.zy-th-noresize):not(.ops-th):not(.ant-table-cell-fix-left-first):not(.ant-table-cell-fix-left-last):not(.ant-table-cell-fix-right-first):not(.ant-table-cell-fix-right-last):hover { border-right-color: #C9CDD4; }
 </style>

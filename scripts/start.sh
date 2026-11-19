@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 织云 ERP - 启动脚本
 # 用法：bash scripts/start.sh
-# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI
+# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI + Spring AI Alibaba
 # 日志：写项目内 logs/（已 gitignore）；不再用 /tmp（agent 沙箱里 /tmp 是隔离 tmpfs，外部看不见日志）
 set -e
 
@@ -63,8 +63,9 @@ if port_listening 8080; then
 elif [ -f RuoYi-Vue-Plus/ruoyi-admin/target/ruoyi-admin.jar ]; then
   set -a && source .env && set +a
   bash "$PROJECT_ROOT/scripts/prepare-snail-document-key.sh"
+  skills_directory="${SNAIL_AI_ERP_SKILLSDIRECTORY:-$PWD/Docs/Skills}"
   cd RuoYi-Vue-Plus
-  nohup java -jar ruoyi-admin/target/ruoyi-admin.jar --spring.profiles.active=dev \
+  nohup java -jar ruoyi-admin/target/ruoyi-admin.jar --spring.profiles.active=dev "--snail-ai.erp.skills-directory=$skills_directory" \
     > "$BACKEND_LOG" 2>&1 < /dev/null &
   BACKEND_PID=$!
   disown "$BACKEND_PID" 2>/dev/null || true
@@ -105,6 +106,9 @@ fi
 
 # 4. 启动独立框架控制台（SnailJob 与 SnailAI）
 bash "$PROJECT_ROOT/scripts/start-framework-consoles.sh"
+
+# 5. 启动 Spring AI Alibaba 第二套智能体框架测试平台
+bash "$PROJECT_ROOT/scripts/start-spring-ai-alibaba.sh"
 
 echo ""
 echo "=== 启动中，等待服务就绪 ==="

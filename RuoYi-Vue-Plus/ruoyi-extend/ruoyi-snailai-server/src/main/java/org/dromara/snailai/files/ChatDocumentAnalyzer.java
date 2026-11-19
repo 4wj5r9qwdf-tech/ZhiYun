@@ -35,9 +35,19 @@ public class ChatDocumentAnalyzer {
         Path dir = Files.createTempDirectory("snail-document-", PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
         Path file = dir.resolve("input." + type);
         try {
-            byte[] bytes = input.readNBytes(ChatDocumentValidator.MAX_BYTES + 1);
-            if (bytes.length == 0 || bytes.length > ChatDocumentValidator.MAX_BYTES) throw new IllegalArgumentException("原始文件大小无效");
-            Files.write(file, bytes);
+            int limit = ChatDocumentValidator.maxBytes(file.getFileName().toString());
+            long size;
+            try (var output = Files.newOutputStream(file)) {
+                byte[] buffer = new byte[64 * 1024];
+                size = 0;
+                while (size <= limit) {
+                    int count = input.read(buffer, 0, (int) Math.min(buffer.length, limit + 1 - size));
+                    if (count < 0) break;
+                    output.write(buffer, 0, count);
+                    size += count;
+                }
+            }
+            if (size == 0 || size > limit) throw new IllegalArgumentException("原始文件大小无效");
             DoclingParseResult result = docling.convert(file.toFile(), DoclingConvertOptions.defaults());
             if (result == null || !result.isSuccess()) throw new IllegalStateException("文档解析失败");
             String markdown = parser.toCleanMarkdown(result);

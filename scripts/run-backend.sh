@@ -5,5 +5,6 @@ cd "$(dirname "$0")/.."
 set -a
 source .env
 set +a
+skills_directory="${SNAIL_AI_ERP_SKILLSDIRECTORY:-$PWD/Docs/Skills}"
 cd RuoYi-Vue-Plus
-exec java -jar ruoyi-admin/target/ruoyi-admin.jar --spring.profiles.active=dev
+exec java -jar ruoyi-admin/target/ruoyi-admin.jar --spring.profiles.active=dev "--snail-ai.erp.skills-directory=$skills_directory"

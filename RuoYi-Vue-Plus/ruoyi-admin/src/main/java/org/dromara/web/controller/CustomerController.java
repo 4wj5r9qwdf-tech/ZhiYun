@@ -18,14 +18,17 @@ import java.util.*;
 @RequestMapping("/system/customer")
 public class CustomerController {
     private final JdbcTemplate jdbc;
-    private static final String SELECT = "SELECT c.*, c.customer_id AS id, u.nick_name AS sales_name, COALESCE(cr.name_zh,c.country_region) AS country_display FROM customer_master c LEFT JOIN sys_user u ON u.user_id=c.sales_representative_id LEFT JOIN sys_country_region cr ON cr.country_code=c.country_region_code ";
+    private final org.dromara.web.service.CategoryAccessService categories;
+    private static final String CATEGORY_KEY = "sales.customer.defaultCategoryScheme";
+    private static final String SELECT = "SELECT c.*, c.category_id::text AS \"categoryId\", bc.category_name AS \"categoryName\", c.customer_id AS id, u.nick_name AS sales_name, COALESCE(cr.name_zh,c.country_region) AS country_display FROM customer_master c LEFT JOIN base_category bc ON bc.category_id=c.category_id LEFT JOIN sys_user u ON u.user_id=c.sales_representative_id LEFT JOIN sys_country_region cr ON cr.country_code=c.country_region_code ";
 
     /** 分页查询支持编号、名称、简称、业务员、状态和客户标签筛选。 */
     @SaCheckPermission("system:customer:list")
     @GetMapping("/list")
     public R<Map<String,Object>> list(@RequestParam(defaultValue="") String keyword,
         @RequestParam(defaultValue="") String status, @RequestParam(required=false) Long salesId,
-        @RequestParam(required=false) Long tagId, @RequestParam(defaultValue="1") int pageNum,
+        @RequestParam(required=false) Long tagId, @RequestParam(required=false) Long categoryId,
+        @RequestParam(required=false) Long schemeId, @RequestParam(defaultValue="1") int pageNum,
         @RequestParam(defaultValue="20") int pageSize) {
         // HTTP 请求参数有默认值，但 MCP 等 Java 内部调用会绕过 Spring 参数绑定，故在业务入口统一兜底。
         // HTTP binds defaults, while direct Java callers such as MCP bypass that layer; normalize optional filters here.
@@ -37,21 +40,38 @@ public class CustomerController {
         if ("0".equals(statusFilter) || "1".equals(statusFilter)) { where += " AND c.status=?"; args.add(statusFilter); }
         if (salesId != null) { where += " AND c.sales_representative_id=?"; args.add(salesId); }
         if (tagId != null) { where += " AND EXISTS (SELECT 1 FROM sys_tag_relation r WHERE r.module_key='customer_master' AND r.record_id=c.customer_id AND r.tag_id=?)"; args.add(tagId); }
+        if (categoryId != null) {
+            if (categoryId == 0L) where += " AND c.category_id IS NULL";
+            else {
+                where += " AND c.category_id IN (WITH RECURSIVE branch(id) AS (SELECT category_id FROM base_category WHERE category_id=? AND del_flag='0' UNION SELECT n.category_id FROM base_category n JOIN branch b ON n.parent_id=b.id WHERE n.del_flag='0') SELECT id FROM branch)";
+                args.add(categoryId);
+            }
+        } else if (schemeId != null) {
+            where += " AND c.category_id IN (SELECT category_id FROM base_category WHERE scheme_id=? AND del_flag='0')";
+            args.add(schemeId);
+        }
         Long total=jdbc.queryForObject("SELECT count(*) FROM customer_master c"+where,Long.class,args.toArray());
         args.add(Math.max(1,Math.min(pageSize,100))); args.add(Math.max(0,pageNum-1)*Math.max(1,Math.min(pageSize,100)));
         return R.ok(Map.of("rows",jdbc.queryForList(SELECT+where+" ORDER BY c.customer_id DESC LIMIT ? OFFSET ?",args.toArray()),"total",total));
     }
 
-    /** 分类数量统计全部客户，不受分页或筛选影响；客户可同时属于多个标签。 */
+    /** 保留原有标签计数接口，供既有 MCP 客户端使用。 */
     @SaCheckPermission("system:customer:list")
     @GetMapping("/category-counts")
     public R<Map<String,Object>> categoryCounts() {
         Long total = jdbc.queryForObject("SELECT count(*) FROM customer_master", Long.class);
-        List<Map<String,Object>> counts = jdbc.queryForList(
-            "SELECT r.tag_id::text AS tag_id, count(DISTINCT c.customer_id) AS customer_count " +
-            "FROM sys_tag_relation r JOIN customer_master c ON c.customer_id=r.record_id " +
-            "WHERE r.module_key='customer_master' GROUP BY r.tag_id");
-        return R.ok(Map.of("total", total == null ? 0L : total, "tags", counts));
+        var tags = jdbc.queryForList("SELECT r.tag_id::text AS tag_id, count(DISTINCT c.customer_id) AS customer_count FROM sys_tag_relation r JOIN customer_master c ON c.customer_id=r.record_id WHERE r.module_key='customer_master' GROUP BY r.tag_id");
+        return R.ok(Map.of("total", total == null ? 0L : total, "tags", tags));
+    }
+
+    /** 分类选项按现有人员授权计算，默认参数只决定初始浏览位置。 */
+    @SaCheckPermission("system:customer:list")
+    @GetMapping("/category-options")
+    public R<Map<String,Object>> categoryOptions() {
+        Map<String,Object> result = new LinkedHashMap<>(categories.options());
+        List<String> configured = jdbc.queryForList("SELECT config_value FROM sys_config WHERE config_key=?", String.class, CATEGORY_KEY);
+        result.put("defaultSchemeId", configured.isEmpty() ? "" : Objects.toString(configured.getFirst(), ""));
+        return R.ok(result);
     }
 
     /** 详情保留停用客户，历史和进行中单据仍可读取。 */
@@ -228,6 +248,20 @@ public class CustomerController {
             "SELECT customer_id FROM customer_master WHERE customer_id=? FOR UPDATE",id);
         if(id != null && previous.isEmpty()) return R.fail("客户不存在");
         Map<String,Object> before = id == null ? Map.of() : auditMaster(id);
+        // 省略分类字段的旧调用保留原值。 / Preserve the category for existing callers.
+        if (b.containsKey("categoryId")) {
+            Long categoryId;
+            try {
+                String value = Objects.toString(b.get("categoryId"), "").trim();
+                categoryId = value.isEmpty() ? null : Long.valueOf(value);
+            } catch (NumberFormatException ex) { return R.fail("客户分类编号无效"); }
+            Long previousCategory = id == null ? null : jdbc.queryForObject(
+                "SELECT category_id FROM customer_master WHERE customer_id=?", Long.class, id);
+            if (categoryId != null && !Objects.equals(previousCategory, categoryId)) {
+                if (jdbc.queryForList("SELECT category_id FROM base_category WHERE category_id=? AND del_flag='0' FOR SHARE", categoryId).isEmpty()
+                    || !categories.categoryAllowed(categoryId) || !categories.categoryIsActive(categoryId)) return R.fail("客户分类无效或无权使用");
+            }
+        }
         if(id==null) id=jdbc.queryForObject("INSERT INTO customer_master(customer_name,customer_short_name,unified_social_credit_code,country_region,country_region_code,sales_representative_id,remark,create_by) VALUES (?,?,?,?,?,?,?,?) RETURNING customer_id",Long.class,name,shortName,credit,customerCountry.name(),customerCountry.code(),sales,remark,user);
         else if(jdbc.update("UPDATE customer_master SET customer_name=?,customer_short_name=?,unified_social_credit_code=?,country_region=?,country_region_code=?,sales_representative_id=?,remark=?,update_by=?,update_time=now() WHERE customer_id=?",name,shortName,credit,customerCountry.name(),customerCountry.code(),sales,remark,user,id)==0) return R.fail("客户不存在");
         // 档案子项按客户整组保存；当前无下游引用，后续单据需要保留开单时快照。
@@ -235,6 +269,10 @@ public class CustomerController {
         for(Map<String,Object> c:contacts) jdbc.update("INSERT INTO customer_contact(customer_id,contact_name,contact_title,phone_number,email,contact_role,is_primary) VALUES (?,?,?,?,?,?,?)",id,c.get("contact_name"),c.get("contact_title"),c.get("phone_number"),c.get("email"),c.get("contact_role"),Boolean.TRUE.equals(c.get("is_primary")));
         jdbc.update("DELETE FROM customer_address WHERE customer_id=?",id);
         for(int i=0;i<addresses.size();i++) { Map<String,Object> a=addresses.get(i); CountryValue region=addressCountries.get(i); jdbc.update("INSERT INTO customer_address(customer_id,address_type,recipient_name,recipient_phone,country_region,country_region_code,province,city,district,address_line,postal_code,is_default) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",id,a.get("address_type"),a.get("recipient_name"),a.get("recipient_phone"),region.name(),region.code(),a.get("province"),a.get("city"),a.get("district"),a.get("address_line"),a.get("postal_code"),Boolean.TRUE.equals(a.get("is_default"))); }
+        if (b.containsKey("categoryId")) {
+            String value = Objects.toString(b.get("categoryId"), "").trim();
+            jdbc.update("UPDATE customer_master SET category_id=? WHERE customer_id=?", value.isEmpty() ? null : Long.valueOf(value), id);
+        }
         jdbc.update("DELETE FROM sys_tag_relation WHERE module_key='customer_master' AND record_id=?",id);
         for(Long tag:tags) jdbc.update("INSERT INTO sys_tag_relation(module_key,record_id,tag_id,create_by) VALUES ('customer_master',?,?,?)",id,tag,user);
         recordAudit(previous.isEmpty() ? "新增客户" : "修改客户",id,name,before,auditMaster(id));
@@ -319,7 +357,9 @@ public class CustomerController {
                    customer_name AS "客户名称", customer_short_name AS "客户简称",
                    unified_social_credit_code AS "统一社会信用代码",
                    country_region AS "国家或地区", country_region_code AS "国家或地区编码",
-                   sales_representative_id AS "关联业务员", remark AS "备注"
+                   sales_representative_id AS "关联业务员", remark AS "备注",
+                   (SELECT category_name FROM base_category WHERE category_id=customer_master.category_id) AS "客户分类",
+                   category_id::text AS "客户分类编号"
             FROM customer_master WHERE customer_id=?
             """,id);
         snapshot.put("联系人",jdbc.queryForList("""

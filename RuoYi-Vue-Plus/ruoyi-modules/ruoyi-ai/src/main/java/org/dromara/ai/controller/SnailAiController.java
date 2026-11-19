@@ -29,6 +29,7 @@ import org.dromara.ai.domain.SnailAiApprovalRequest;
 import org.dromara.ai.domain.SnailAiChatRequest;
 import org.dromara.ai.domain.SnailAiConversationRequest;
 import org.dromara.ai.snailai.SnailAiAttachmentStore;
+import org.dromara.ai.snailai.ErpChatDocumentClient;
 import org.dromara.ai.snailai.SnailAiAttachmentStore.UploadedAttachment;
 import org.dromara.ai.snailai.SnailAiChatSession;
 import org.dromara.ai.snailai.SnailAiChatSessionStore;
@@ -90,6 +91,7 @@ public class SnailAiController extends BaseController {
     private final SnailAiResourceClient resourceClient;
     private final SnailAiHistoryClient historyClient;
     private final SnailAiAttachmentStore attachmentStore;
+    private final ErpChatDocumentClient documentClient;
     private final SnailAiTraceService traceService;
 
     @Value("${snail-ai.erp.default-agent-id:2}")
@@ -97,11 +99,12 @@ public class SnailAiController extends BaseController {
 
     /** 上传图片并绑定员工短时票据。 / Upload images using user-bound short-lived tickets. */
     @PostMapping(value = "/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public R<Map<String, String>> uploadAttachment(@RequestParam("file") MultipartFile file) throws IOException {
+    public R<Map<String, String>> uploadAttachment(@RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) Long agentId, @RequestParam(required = false) String conversationId) throws IOException {
         StpUtil.checkLogin();
         Long userId = LoginHelper.getUserId();
-        if (userId == null || file.isEmpty() || file.getSize() > 10 * 1024 * 1024) {
-            throw new IllegalArgumentException("文件大小须在 10 MB 以内");
+        if (userId == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请选择非空文件");
         }
         String originalName = file.getOriginalFilename();
         if (originalName == null || originalName.length() > 200) {
@@ -109,6 +112,11 @@ public class SnailAiController extends BaseController {
         }
         String safeName = originalName.replaceAll("[\\\\/\\\\\\\\]", "_");
         String lowerName = safeName.toLowerCase(java.util.Locale.ROOT);
+        boolean pdf = lowerName.endsWith(".pdf");
+        int sizeLimitMb = pdf ? 50 : 10;
+        if (file.getSize() > sizeLimitMb * 1024L * 1024) {
+            throw new IllegalArgumentException("文件大小须在 " + sizeLimitMb + " MB 以内");
+        }
         byte[] content = file.getBytes();
         String mimeType = detectImageMimeType(content);
         boolean image = mimeType != null && (lowerName.endsWith(".png") && "image/png".equals(mimeType)
@@ -118,7 +126,7 @@ public class SnailAiController extends BaseController {
         }
 
         Long resourceId = null;
-        String extractedText = null;
+        SnailAiAttachmentStore.Document document = null;
         if (image) {
             OpenApiUserVO user = ensureOpenApiUser();
             OpenApiResourceUploadRequest request = new OpenApiResourceUploadRequest();
@@ -134,12 +142,22 @@ public class SnailAiController extends BaseController {
             resourceId = result.getData().getId();
             log.info("SnailAI image uploaded for ERP userId={}, size={}, mimeType={}", userId, file.getSize(), mimeType);
         } else {
-            throw new IllegalArgumentException("当前仅支持 PNG、JPG、JPEG 图片，文档上传正在重新设计");
+            if (agentId == null || conversationId == null || !conversationId.matches("[A-Za-z0-9_-]{1,64}")) {
+                throw new IllegalArgumentException("请先打开智能体对话");
+            }
+            if (!lowerName.matches(".+\\.(pdf|docx|xlsx|pptx|md|txt|csv)")) {
+                throw new IllegalArgumentException("不支持该附件格式");
+            }
+            OpenApiUserVO user = ensureOpenApiUser();
+            ensureAgentAccessible(user.getOpenId(), agentId);
+            ensureConversationBelongsToUser(user.getOpenId(), agentId, conversationId);
+            String documentId = documentClient.upload(user.getOpenId(), agentId, conversationId, safeName, content);
+            document = new SnailAiAttachmentStore.Document(documentId, agentId, conversationId);
+            mimeType = "application/octet-stream";
         }
-        String ticket = attachmentStore.put(userId, safeName, mimeType, file.getSize(), resourceId, extractedText);
+        String ticket = attachmentStore.put(userId, safeName, mimeType, file.getSize(), resourceId, document);
         return R.ok(Map.of("id", ticket, "name", safeName, "mimeType", mimeType,
-            "size", String.valueOf(file.getSize()), "kind", image ? "image" : "document",
-            "extractedChars", String.valueOf(extractedText == null ? 0 : extractedText.length())));
+            "size", String.valueOf(file.getSize()), "kind", image ? "image" : "document"));
     }
 
     /** 保留框架 OpenAPI 用户注册能力，但不向浏览器暴露可伪造的员工字段。 */
@@ -269,6 +287,7 @@ public class SnailAiController extends BaseController {
             throw new IllegalStateException("当前登录会话信息不完整，无法安全启动 ERP 智能体");
         }
 
+        Map<String, String> documents = new LinkedHashMap<>();
         List<UploadedAttachment> selectedAttachments = new ArrayList<>();
         List<Map<String, Object>> attachmentSummaries = new ArrayList<>();
         if (body.getAttachmentIds() != null) {
@@ -277,6 +296,13 @@ public class SnailAiController extends BaseController {
                 if (attachment == null) {
                     throw new IllegalArgumentException("附件已过期或不属于当前员工，请重新上传");
                 }
+                if (attachment.document() != null) {
+                    var document = attachment.document();
+                    if (!Objects.equals(document.agentId(), body.getAgentId()) || !document.conversationId().equals(body.getConversationId())) {
+                        throw new IllegalArgumentException("文档不属于当前对话");
+                    }
+                    documents.put(document.id(), attachment.name());
+                }
                 selectedAttachments.add(attachment);
                 Map<String, Object> summary = new LinkedHashMap<>();
                 summary.put("name", attachment.name());
@@ -284,7 +310,7 @@ public class SnailAiController extends BaseController {
                 summary.put("size", attachment.size());
                 summary.put("kind", attachment.isImage() ? "image" : "document");
                 if (attachment.isImage()) summary.put("resourceId", String.valueOf(attachment.resourceId()));
-                summary.put("extractedChars", attachment.extractedText() == null ? 0 : attachment.extractedText().length());
+
                 attachmentSummaries.add(summary);
             }
         }
@@ -326,6 +352,9 @@ public class SnailAiController extends BaseController {
             if (!attachments.isEmpty()) {
                 request.setAttachments(attachments);
             }
+        }
+        if (!documents.isEmpty()) {
+            session.setDocumentReader(documentClient.new Reader(user.getOpenId(), body.getAgentId(), body.getConversationId(), documents));
         }
         request.setSid(session.getSid());
         request.setDeepPlanEnabled(false);
