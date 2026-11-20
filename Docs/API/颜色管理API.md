@@ -1,7 +1,11 @@
 <!--
 文件用途：颜色管理API
 文件版本：1.0
-初始编制人员：待追溯
+功能目的：说明颜色档案 REST API 与 MCP 工具的输入、权限、响应和业务约束。
+设计思路：按业务域描述入口、认证、参数、数据范围、响应、错误和副作用，并将静态契约与运行时可用状态分开。
+实现方法：使用请求/响应示例和逐接口说明维护契约；接口变化时同步核对 API 索引、实现和对应任务记录。
+依赖与引用：Docs/API/API文档.md；Docs/规范/API文档规范.md；RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/web/controller/ColorController.java；RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/web/mcp/FoundationMcpTools.java
+初始编制人员：JY
 初始编制时间：待追溯
 当前责任人：JY
 最近修改人员：JY
@@ -9,8 +13,8 @@ AI辅助工具：Codex（智能体）
 最近修改时间：2026-11-20
 修改标记：文档归类、交叉引用和导航更新
 最近测试时间：2026-11-20
-测试人员：Codex（智能体）
-测试状态：内部 Markdown 路径核验通过（222 条，无失效）；不适用业务代码测试
+测试人员：JY
+测试状态：内部 Markdown 路径核验通过（224 条，无失效）；不适用业务代码测试
 -->
 # 颜色管理 API 与 MCP 契约
 

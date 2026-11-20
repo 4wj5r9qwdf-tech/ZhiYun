@@ -1,3 +1,23 @@
+/*
+ * 文件用途：将 SnailAI 管理端接入织云 ERP 的员工身份、MCP 工具、文件处理、对话记录和审计服务。
+ * 文件版本：1.0.0
+ * 功能目的：将 SnailAI 管理端接入织云 ERP 的员工身份、MCP 工具、文件处理、对话记录和审计服务。
+ * 设计思路：沿用上游管理端与 Agent 执行结构，在 ERP 调用链显式注入员工会话和受控工具运行时。
+ * 实现方法：配置 ERP OpenAPI、工具运行时、会话存储和文件/历史客户端等 Spring Bean。
+ * 关键约束：框架原生后台仍走原上游路径；ERP 接入使用员工身份和服务端权限，不共享可伪造身份。
+ * 依赖与引用：Docs/AI/织云AI集成总体规划.md；Docs/规范/开发规范.md；RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/web/mcp/
+ * 初始开发人员：JY（织云项目自研内容）
+ * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
+ * 当前责任人：JY（项目维护责任）
+ * 最近修改人员：JY
+ * AI辅助工具：Codex（智能体）
+ * 最近修改时间：2026-11-20
+ * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
+ * 最近测试时间：本次整理未执行功能测试
+ * 测试人员：本次整理未执行
+ * 测试状态：待功能回归；历史测试记录待追溯
+ * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ */
 package org.dromara.ai.config;
 
 import com.aizuda.snail.ai.agent.core.resolver.BaseToolResolver;

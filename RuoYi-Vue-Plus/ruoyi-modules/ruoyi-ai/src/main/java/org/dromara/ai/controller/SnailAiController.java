@@ -1,3 +1,23 @@
+/*
+ * 文件用途：扩展 SnailAI 上游控制器，使 ERP 员工可在受控身份上下文中使用智能体、文件、审批和历史会话。
+ * 文件版本：1.0.0
+ * 功能目的：把当前 ERP 员工身份映射到 SnailAI 用户，并为对话工具、文件与审批建立逐轮授权边界。
+ * 设计思路：保留上游对话/资源能力；员工、权限和附件归属由 ERP 登录上下文决定，写工具确认与诊断记录由服务端会话维护。
+ * 实现方法：认证后映射 OpenAPI 用户，验证 Agent/会话和附件票据，再建立短期服务端 SID 并代理上游事件流。
+ * 关键约束：必须保留原作者和许可证声明；JY 仅登记实际项目改造责任。
+ * 依赖与引用：Docs/AI/织云AI集成总体规划.md；RuoYi-Vue-Plus/ruoyi-modules/ruoyi-ai/src/main/java/org/dromara/ai/snailai/ErpSnailAiToolRuntime.java；RuoYi-Vue-Plus/ruoyi-modules/ruoyi-ai/src/main/java/org/dromara/ai/snailai/SnailAiChatSessionStore.java
+ * 初始开发人员：上游原作者/许可证：保留源文件既有声明；本项目改造责任人：JY
+ * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
+ * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
+ * 最近修改人员：JY
+ * AI辅助工具：Codex（智能体）
+ * 最近修改时间：2026-11-20
+ * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
+ * 最近测试时间：本次整理未执行功能测试
+ * 测试人员：本次整理未执行
+ * 测试状态：待功能回归；历史测试记录待追溯
+ * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ */
 package org.dromara.ai.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
@@ -97,7 +117,10 @@ public class SnailAiController extends BaseController {
     @Value("${snail-ai.erp.default-agent-id:2}")
     private Long defaultAgentId;
 
-    /** 上传图片并绑定员工短时票据。 / Upload images using user-bound short-lived tickets. */
+    /**
+     * 上传 PNG/JPEG 图片或可解析文档，并返回绑定当前员工的一小时短期票据。
+     * 图片进入 SnailAI 资源存储以参与多模态对话；文档原件绑定当前 Agent/会话并按需解析。
+     */
     @PostMapping(value = "/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public R<Map<String, String>> uploadAttachment(@RequestParam("file") MultipartFile file,
             @RequestParam(required = false) Long agentId, @RequestParam(required = false) String conversationId) throws IOException {
@@ -110,6 +133,7 @@ public class SnailAiController extends BaseController {
         if (originalName == null || originalName.length() > 200) {
             throw new IllegalArgumentException("文件名无效");
         }
+        // 原始名称只用于展示和选择解析器；去除路径分隔符，避免被误认为服务器文件路径。
         String safeName = originalName.replaceAll("[\\\\/\\\\\\\\]", "_");
         String lowerName = safeName.toLowerCase(java.util.Locale.ROOT);
         boolean pdf = lowerName.endsWith(".pdf");
@@ -118,6 +142,7 @@ public class SnailAiController extends BaseController {
             throw new IllegalArgumentException("文件大小须在 " + sizeLimitMb + " MB 以内");
         }
         byte[] content = file.getBytes();
+        // 图片必须同时满足扩展名和文件头签名，浏览器上传的 Content-Type 不作为可信依据。
         String mimeType = detectImageMimeType(content);
         boolean image = mimeType != null && (lowerName.endsWith(".png") && "image/png".equals(mimeType)
             || (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) && "image/jpeg".equals(mimeType));
@@ -128,6 +153,7 @@ public class SnailAiController extends BaseController {
         Long resourceId = null;
         SnailAiAttachmentStore.Document document = null;
         if (image) {
+            // 图片需要 SnailAI 原生资源 ID 才能随多模态请求发送；资源上传者来自 ERP 当前用户映射。
             OpenApiUserVO user = ensureOpenApiUser();
             OpenApiResourceUploadRequest request = new OpenApiResourceUploadRequest();
             request.setOpenId(user.getOpenId());
@@ -142,6 +168,7 @@ public class SnailAiController extends BaseController {
             resourceId = result.getData().getId();
             log.info("SnailAI image uploaded for ERP userId={}, size={}, mimeType={}", userId, file.getSize(), mimeType);
         } else {
+            // 文档必须绑定当前 Agent 与 conversation，后续模型仅能通过按轮授权工具读取其内容。
             if (agentId == null || conversationId == null || !conversationId.matches("[A-Za-z0-9_-]{1,64}")) {
                 throw new IllegalArgumentException("请先打开智能体对话");
             }
@@ -155,6 +182,7 @@ public class SnailAiController extends BaseController {
             document = new SnailAiAttachmentStore.Document(documentId, agentId, conversationId);
             mimeType = "application/octet-stream";
         }
+        // 对外只返回短期随机票据；对象存储资源编号和文档内部编号不会作为客户端授权凭据。
         String ticket = attachmentStore.put(userId, safeName, mimeType, file.getSize(), resourceId, document);
         return R.ok(Map.of("id", ticket, "name", safeName, "mimeType", mimeType,
             "size", String.valueOf(file.getSize()), "kind", image ? "image" : "document"));
@@ -268,7 +296,10 @@ public class SnailAiController extends BaseController {
             .header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(content);
     }
 
-    /** Forwards one stream and persists bounded chat/tool diagnostics for administrators. */
+    /**
+     * 以当前 ERP 员工身份发起一轮多模态智能体对话，并合并模型事件流与待确认工具事件。
+     * 员工权限、附件归属和审批 SID 均由服务端会话持有；诊断记录限制文本长度且不保存工具参数正文。
+     */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> chatStream(@Valid @RequestBody SnailAiChatRequest body) {
         StpUtil.checkLogin();
@@ -276,6 +307,7 @@ public class SnailAiController extends BaseController {
         ensureAgentAccessible(user.getOpenId(), body.getAgentId());
         ensureConversationBelongsToUser(user.getOpenId(), body.getAgentId(), body.getConversationId());
 
+        // 认证上下文必须同时提供员工、Bearer 令牌及匹配的客户端 ID，避免用不一致的令牌启动 MCP。
         LoginUser loginUser = LoginHelper.getLoginUser();
         Long userId = LoginHelper.getUserId();
         String token = StpUtil.getTokenValue();
@@ -287,11 +319,13 @@ public class SnailAiController extends BaseController {
             throw new IllegalStateException("当前登录会话信息不完整，无法安全启动 ERP 智能体");
         }
 
+        // 图片通过 SnailAI 多模态资源 ID 发送；文档只登记本轮可读 ID，不提前把解析正文塞进提示词。
         Map<String, String> documents = new LinkedHashMap<>();
         List<UploadedAttachment> selectedAttachments = new ArrayList<>();
         List<Map<String, Object>> attachmentSummaries = new ArrayList<>();
         if (body.getAttachmentIds() != null) {
             for (String ticket : body.getAttachmentIds()) {
+                // 每张票据都必须属于当前员工且未过期，不能因同一请求包含多个附件而跳过单个校验。
                 UploadedAttachment attachment = attachmentStore.getValid(ticket, userId);
                 if (attachment == null) {
                     throw new IllegalArgumentException("附件已过期或不属于当前员工，请重新上传");
@@ -323,6 +357,7 @@ public class SnailAiController extends BaseController {
         if (modelContent.length() == 0) {
             modelContent.append("请分析我上传的附件。");
         }
+        // 在服务端会话创建时冻结本轮权限快照，后续工具筛选依据该员工当前权限集。
         Set<String> permissions = Set.copyOf(StpUtil.getPermissionList());
         String traceId = traceService.start(userId, loginUser.getNickname(), body.getAgentId(),
             body.getConversationId(), modelContent.toString(), attachmentSummaries);
@@ -339,6 +374,7 @@ public class SnailAiController extends BaseController {
         request.setOpenId(user.getOpenId());
         request.setConversationId(body.getConversationId());
         request.setContent(modelContent.toString());
+        // 只有图片以 IMAGE 资源附件传给上游；文档由 Reader 工具按需读取，保持模型最小必要数据访问。
         if (!selectedAttachments.isEmpty()) {
             List<OpenApiChatAttachmentRequest> attachments = new ArrayList<>();
             for (UploadedAttachment selected : selectedAttachments) {
@@ -357,6 +393,7 @@ public class SnailAiController extends BaseController {
             session.setDocumentReader(documentClient.new Reader(user.getOpenId(), body.getAgentId(), body.getConversationId(), documents));
         }
         request.setSid(session.getSid());
+        // ERP 对话的计划和外部访问走本项目授权工具；禁用未纳入本轮权限检查的上游扩展动作。
         request.setDeepPlanEnabled(false);
         request.setWebSearchEnabled(false);
 
@@ -366,6 +403,7 @@ public class SnailAiController extends BaseController {
         long startedAt = System.currentTimeMillis();
         Flux<ServerSentEvent<String>> assistantEvents = chatClient.chatStream(request)
             .doOnNext(event -> {
+                // 只把文本增量写入有上限的诊断摘要；工具参数和非文本事件不落入对话诊断字段。
                 if ("text".equalsIgnoreCase(event.getType()) && event.getData() != null
                     && answerText.length() < 100_000) {
                     String delta = extractTextDelta(String.valueOf(event.getData()));
@@ -383,6 +421,7 @@ public class SnailAiController extends BaseController {
                     ? extractTextDelta(String.valueOf(event.getData())) : event.getData()
             )))
             .onErrorResume(error -> {
+                // 对用户返回稳定提示；详细异常不传给模型或浏览器，避免暴露内部连接与认证信息。
                 log.warn("SnailAI stream failed for ERP userId={}, agentId={}", userId, body.getAgentId());
                 traceStatus.set("FAILED");
                 traceError.set("SnailAI 流式调用异常，请核对智能体模型或 MCP 配置");
@@ -392,6 +431,7 @@ public class SnailAiController extends BaseController {
                 )));
             })
             .doFinally(signal -> {
+                // 正常结束、浏览器取消和运行失败都要收口本轮状态并完成诊断记录。
                 if (signal == SignalType.CANCEL && !"FAILED".equals(traceStatus.get())) {
                     traceStatus.set("CANCELLED");
                 }
@@ -404,6 +444,7 @@ public class SnailAiController extends BaseController {
                     System.currentTimeMillis() - startedAt);
             });
 
+        // 审批事件与模型文本复用同一 SSE 连接，页面据此展示逐项确认卡片。
         Flux<ServerSentEvent<String>> approvalEvents = session.approvals()
             .map(event -> toEvent("approval-required", event));
 
@@ -426,6 +467,7 @@ public class SnailAiController extends BaseController {
         return R.ok(true);
     }
 
+    /** 从 ERP 当前登录员工创建或读取唯一 OpenAPI 身份，不接受客户端传入的员工映射字段。 */
     private OpenApiUserVO ensureOpenApiUser() {
         StpUtil.checkLogin();
         Long userId = LoginHelper.getUserId();
@@ -493,6 +535,7 @@ public class SnailAiController extends BaseController {
         }
     }
 
+    /** 在上传文件或发起对话前复核会话归属，防止把文档挂到其他员工/智能体的会话。 */
     private void ensureConversationBelongsToUser(String openId, Long agentId, String conversationId) {
         OpenApiConversationIdentityRequest request = new OpenApiConversationIdentityRequest();
         request.setAgentId(agentId);

@@ -1,3 +1,23 @@
+<!--
+文件用途：为 ERP 页面提供内嵌智能体入口，在当前业务上下文中提问并使用已授权工具。
+文件版本：1.0.0
+功能目的：为 ERP 页面提供内嵌智能体入口，在当前业务上下文中提问并使用已授权工具。
+设计思路：对话界面和 ERP 业务工具分离；文件、图片及工具调用通过受控服务传递，浏览器不绕过业务权限。
+实现方法：收集文本/附件与页面上下文，提交会话 API，展示答复、工具过程及可确认的业务提议。
+关键约束：截图或文件内容只作为分析输入；会改变 ERP 数据的动作仍须用户确认和服务端授权。
+依赖与引用：Docs/AI/织云AI集成总体规划.md；Docs/API/API文档.md
+初始开发人员：JY（织云项目自研内容）
+初始开发时间：待追溯（不以补录时间代替原始开发时间）
+当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
+最近修改人员：JY
+AI辅助工具：Codex（智能体）
+最近修改时间：2026-11-20
+修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
+最近测试时间：本次整理未执行功能测试
+测试人员：本次整理未执行
+测试状态：待功能回归；历史测试记录待追溯
+测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api, { CLIENT_ID } from '../api'
@@ -93,6 +113,7 @@ watch(() => props.open, (open) => {
   if (open && agents.value.length === 0) void loadAgents()
 })
 
+/** 读取当前员工可使用的智能体，并在成功后恢复最近会话。 / Load available agents, then restore the latest conversation. */
 async function loadAgents() {
   loadingAgents.value = true
   errorText.value = ''
@@ -113,6 +134,7 @@ async function loadAgents() {
   }
 }
 
+/** 恢复所选智能体最近的一条会话；无历史或读取失败时创建新会话。 / Restore the latest conversation or create a fresh one. */
 async function restoreLatestConversation() {
   if (selectedAgentId.value == null) return
   try {
@@ -210,6 +232,7 @@ async function restoreHistoryImages(id: string, agentId: number) {
   }
 }
 
+/** 创建新会话前保护尚未发送的文字和附件，避免切换时丢失用户输入。 / Protect unsent input before creating a conversation. */
 async function startNewConversation() {
   if (selectedAgentId.value == null) return
   if (input.value.trim() || attachments.value.length) { errorText.value = '请先发送或清空当前输入和附件，再新建对话。'; return }
@@ -231,6 +254,7 @@ async function startNewConversation() {
   }
 }
 
+/** 归一化选择器返回值，切换智能体后清理旧上下文并创建对应会话。 / Normalize the selection and start an agent-specific conversation. */
 async function changeAgent(value: unknown) {
   const optionValue = value && typeof value === 'object' && 'value' in value
     ? (value as { value?: unknown }).value
@@ -243,6 +267,7 @@ async function changeAgent(value: unknown) {
   await startNewConversation()
 }
 
+/** 将文字和已上传附件提交给当前会话，消费服务端事件流并展示待确认动作。 / Submit a message and render streamed replies and approval requests. */
 async function sendMessage(text = input.value) {
   const content = text.trim()
   if ((!content && attachments.value.length === 0) || sending.value || uploadingImages.value || attachments.value.some(item => item.status !== 'done') || !conversationId.value || selectedAgentId.value == null) return
@@ -255,6 +280,7 @@ async function sendMessage(text = input.value) {
   let screenshot: { id: string; name: string; previewUrl: string } | undefined
   if (screenshotQuestion.value) {
     try {
+      // 页面截图走与普通附件相同的 ERP 上传接口，消息只携带短期附件 ID。
       screenshot = await captureCurrentPage()
     } catch (error: any) {
       errorText.value = error?.response?.data?.msg || error?.message || '页面截图失败，请重试。'
@@ -266,6 +292,7 @@ async function sendMessage(text = input.value) {
   const sentAttachments = attachments.value.map(item => ({ name: item.name, previewUrl: item.previewUrl, kind: item.kind }))
   const attachmentIds = attachments.value.flatMap(item => item.id ? [item.id] : [])
   if (screenshot) {
+    // 截图与提问一起提交，保留模型回答时对应的页面状态。
     sentAttachments.push({ name: screenshot.name, previewUrl: screenshot.previewUrl, kind: undefined })
     attachmentIds.push(screenshot.id)
   }
@@ -352,6 +379,7 @@ async function captureCurrentPage() {
   return { id: result.data.id as string, name, previewUrl: createPreviewUrl(blob) }
 }
 
+/** 读取文件选择器结果并复用统一上传校验；重置 input 以允许重复选择同一文件。 / Reuse upload validation and allow reselecting the same file. */
 async function handleImageSelection(event: Event) {
   const target = event.target as HTMLInputElement
   const files = Array.from(target.files || [])
@@ -377,6 +405,7 @@ function handlePaste(event: ClipboardEvent) {
   void uploadImages(files)
 }
 
+/** 上传图片或文档附件；前端先限制数量、格式和大小，服务端仍负责最终校验与归属控制。 / Upload bounded attachments while leaving final validation and ownership to the server. */
 async function uploadImages(files: File[]) {
   const remaining = Math.max(0, 4 - attachments.value.length)
   if (files.length > remaining) errorText.value = '每条消息最多添加 4 个附件。'
@@ -420,6 +449,7 @@ function removeAttachment(uid: string) {
   attachments.value = attachments.value.filter(item => item.uid !== uid)
 }
 
+/** 按 SSE 空行边界增量解码 UTF-8 事件，并在结束时释放读取锁。 / Decode streamed SSE blocks and always release the reader lock. */
 async function readEventStream(stream: ReadableStream<Uint8Array>, answer: ChatMessage) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
@@ -445,6 +475,7 @@ async function readEventStream(stream: ReadableStream<Uint8Array>, answer: ChatM
   }
 }
 
+/** 将一个服务端事件映射到回复、错误或确认卡片；不在浏览器执行 ERP 工具。 / Map server events to UI state without executing ERP tools in the browser. */
 function handleEventBlock(block: string, answer: ChatMessage) {
   let eventName = 'message'
   const dataLines: string[] = []
@@ -487,6 +518,7 @@ function handleEventBlock(block: string, answer: ChatMessage) {
   }
 }
 
+/** 提交用户对待确认动作的明确选择；动作执行和权限复核由服务端负责。 / Submit the employee's decision; the server owns execution and authorization. */
 async function resolveApproval(item: ChatMessage, approved: boolean) {
   const approval = item.approval
   if (!approval || approval.status !== 'pending' || approval.loading) return

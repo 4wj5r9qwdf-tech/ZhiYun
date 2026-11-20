@@ -1,3 +1,23 @@
+/*
+ * 文件用途：实现织云内嵌智能体的员工智能体会话历史接口服务能力。
+ * 文件版本：1.0.0
+ * 功能目的：实现织云内嵌智能体的员工智能体会话历史接口服务能力。
+ * 设计思路：模型和文件服务只处理经 ERP 身份验证的请求；模型输出不能直接成为正式业务数据。
+ * 实现方法：校验会话/员工/文件/配置后调用分析、存储或提议逻辑并返回结构化结果。
+ * 关键约束：文件访问、敏感数据和知识发布遵守服务端权限与人工确认边界。
+ * 依赖与引用：Docs/AI/织云AI集成总体规划.md；Docs/API/API文档.md
+ * 初始开发人员：JY（织云项目自研内容）
+ * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
+ * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
+ * 最近修改人员：JY
+ * AI辅助工具：Codex（智能体）
+ * 最近修改时间：2026-11-20
+ * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
+ * 最近测试时间：本次整理未执行功能测试
+ * 测试人员：本次整理未执行
+ * 测试状态：待功能回归；历史测试记录待追溯
+ * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ */
 package org.dromara.snailai.history;
 
 import com.aizuda.snail.ai.common.model.Result;
@@ -69,9 +89,14 @@ public class EmployeeChatHistoryController {
         return Result.ok(Map.of("rows", rows, "total", total == null ? 0 : total, "page", page, "size", size));
     }
 
+    /**
+     * 读取 ERP 员工身份映射到的指定智能体会话消息，并提取允许展示的附件元信息。
+     * 先验证 OpenAPI 用户与会话所有权，再查询消息，避免仅凭会话 ID 读取他人对话。
+     */
     @PostMapping("/messages")
     public Result<List<Map<String, Object>>> messages(@RequestBody OpenApiConversationIdentityRequest request) {
         Long userId = requireConversation(request.getOpenId(), request.getAgentId(), request.getConversationId());
+        // 查询条件同时绑定员工、智能体和会话三元组；仅凭 conversationId 不足以确定访问权。
         List<Map<String, Object>> records = jdbc.queryForList("""
             SELECT role, content, metadata, create_dt FROM sai_agent_conversation_record
              WHERE user_id = ? AND agent_id = ? AND conversation_id = ? ORDER BY create_dt ASC, id ASC
@@ -87,6 +112,10 @@ public class EmployeeChatHistoryController {
         return Result.ok(result);
     }
 
+    /**
+     * 返回当前员工会话中的 PNG/JPEG 图片内容，供 ERP 对话界面展示或后续视觉分析。
+     * 图片 ID 必须出现在该会话消息元数据中，且对象存储所有者和业务类型必须匹配。
+     */
     @PostMapping("/image")
     public Result<Map<String, String>> image(@RequestBody ImageRequest request) throws IOException {
         Long userId = requireConversation(request.openId(), request.agentId(), request.conversationId());
@@ -96,6 +125,7 @@ public class EmployeeChatHistoryController {
             SELECT metadata FROM sai_agent_conversation_record
              WHERE user_id = ? AND agent_id = ? AND conversation_id = ? AND metadata IS NOT NULL
             """, String.class, userId, request.agentId(), request.conversationId());
+        // 先验证图片 ID 出现在当前会话附件清单，再验证资源归属与类型，两个条件缺一不可。
         boolean belongs = metadata.stream().flatMap(value -> imageMetadata(value).stream())
             .anyMatch(item -> resourceId.toString().equals(item.get("id")));
         if (!belongs) throw new IllegalArgumentException("该图片不属于当前对话");
@@ -105,6 +135,7 @@ public class EmployeeChatHistoryController {
             throw new IllegalArgumentException("该图片不可访问");
         }
         try (InputStream input = resources.load(resourceId)) {
+            // 只多读一个字节检测大小上限，避免异常资源一次性占满内存。
             byte[] bytes = input.readNBytes(MAX_IMAGE_BYTES + 1);
             if (bytes.length > MAX_IMAGE_BYTES) throw new IllegalArgumentException("图片超过允许的大小");
             return Result.ok(Map.of("mimeType", resource.getMimeType(), "content", Base64.getEncoder().encodeToString(bytes)));

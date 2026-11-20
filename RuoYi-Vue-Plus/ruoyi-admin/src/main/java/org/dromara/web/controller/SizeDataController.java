@@ -1,3 +1,23 @@
+/*
+ * 文件用途：为织云 ERP 的尺码基础资料接口提供服务端 HTTP 接口。
+ * 文件版本：1.0.0
+ * 功能目的：为织云 ERP 的尺码基础资料接口提供服务端 HTTP 接口。
+ * 设计思路：控制器承接请求契约和权限入口，业务流程由服务层承载；写操作维护事务与审计。
+ * 实现方法：校验参数和权限范围后调用服务/持久层，并通过项目统一响应返回。
+ * 关键约束：接口权限、数据范围、异常和审计须与 API 契约一致。
+ * 依赖与引用：Docs/API/API文档.md；Docs/规范/开发规范.md；Docs/项目记录/功能实现状态.md
+ * 初始开发人员：JY（织云项目自研内容）
+ * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
+ * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
+ * 最近修改人员：JY
+ * AI辅助工具：Codex（智能体）
+ * 最近修改时间：2026-11-20
+ * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
+ * 最近测试时间：本次整理未执行功能测试
+ * 测试人员：本次整理未执行
+ * 测试状态：待功能回归；历史测试记录待追溯
+ * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ */
 package org.dromara.web.controller;
 
 import cn.dev33.satoken.stp.StpUtil;
@@ -45,18 +65,29 @@ public class SizeDataController {
   if(kind.equals("size-group")) for(Map<String,Object> row:rows) row.put("items",jdbc.queryForList("SELECT s.*,i.sort_order AS group_order FROM sys_size_group_item i JOIN sys_size s ON s.id=i.size_id WHERE i.group_id=? ORDER BY i.sort_order",row.get("id")));
   return R.ok(rows);
  }
+ /**
+  * 创建尺码或尺码组基础资料，并复用统一保存逻辑处理编码、关联标签和组内成员。
+  * 路径 kind 只允许 size / size-group，具体表名由白名单映射产生，不接受调用方表名。
+  */
  @PostMapping
  @Transactional
  @Log(title="尺码基础资料",businessType=BusinessType.INSERT)
  public R<Long> add(@PathVariable String kind,@RequestBody Map<String,Object> body) { permission(kind,"add"); return save(kind,null,body); }
+ /**
+  * 原子替换多条尺码记录的标签集合。
+  * 每次最多处理 500 条；所有目标尺码与标签都必须有效，失败时事务回滚整批变更。
+  */
  @PostMapping("/batch-tags")
  @Transactional
  @Log(title="尺码类型标签批量修改",businessType=BusinessType.UPDATE)
  public R<Void> batchTags(@PathVariable String kind,@RequestBody Map<String,Object> body) {
   permission(kind,"edit");
+  // 尺码组没有此业务标签批量编辑契约，不能因为共用路由而对它开放该动作。
   if(!kind.equals("size")) return R.fail("仅尺码支持批量修改类型标签");
+  // 对批量大小设上限，避免一次请求构造过大的 SQL 参数列表并锁住过多记录。
   if(!(body.get("ids") instanceof List<?> rawIds) || rawIds.isEmpty() || rawIds.size()>500) return R.fail("请选择1到500条尺码");
   List<Long> ids=new ArrayList<>();
+  // 先把外部 JSON 值规范成主键，再拒绝重复项，确保后续快照和审计都一一对应。
   try { for(Object value:rawIds) ids.add(Long.valueOf(value.toString())); } catch(Exception e) { return R.fail("尺码编号无效"); }
   if(new HashSet<>(ids).size()!=ids.size()) return R.fail("尺码列表包含重复项");
   List<Long> tags=new ArrayList<>();
@@ -64,12 +95,14 @@ public class SizeDataController {
    try { for(Object value:rawTags) tags.add(Long.valueOf(value.toString())); } catch(Exception e) { return R.fail("标签编号无效"); }
   } else if(body.containsKey("tagIds")) return R.fail("标签列表无效");
   if(new HashSet<>(tags).size()!=tags.size()) return R.fail("标签列表包含重复项");
+  // 按主键锁定实际记录，并要求查询结果数量与请求一致；列表过期时整批停止，不忽略缺失项。
   String placeholders=String.join(",",Collections.nCopies(ids.size(),"?"));
   List<Object> args=new ArrayList<>(ids);
   List<Long> found=jdbc.queryForList("SELECT id FROM sys_size WHERE id IN ("+placeholders+") ORDER BY id FOR UPDATE",Long.class,args.toArray());
   if(found.size()!=ids.size()) return R.fail("部分尺码已不存在，请刷新列表后重试");
   Map<Long,Map<String,Object>> before=new LinkedHashMap<>();
   for(Long id:ids) before.put(id,snapshot("size",id,false));
+  // 允许继续使用已停用但原本已关联的标签，以免批量保存其它标签时意外丢失历史分类；新关联只能选启用标签。
   for(Long tag:tags) {
    List<Object> tagArgs=new ArrayList<>(); tagArgs.add(tag); tagArgs.addAll(ids);
    String idPlaceholders=String.join(",",Collections.nCopies(ids.size(),"?"));
@@ -77,6 +110,7 @@ public class SizeDataController {
    if(jdbc.queryForObject(sql,Long.class,tagArgs.toArray())==0) return R.fail("标签无效或已停用");
   }
   Long user=LoginHelper.getUserId();
+  // 事务内先清理本批目标的旧关联，再写入完整新集合，审计同时记录变更前后标签列表。
   for(Long id:ids) {
    jdbc.update("DELETE FROM sys_tag_relation WHERE module_key='size' AND record_id=?",id);
    for(Long tag:tags) jdbc.update("INSERT INTO sys_tag_relation(module_key,record_id,tag_id,create_by) VALUES('size',?,?,?)",id,tag,user);
@@ -86,6 +120,10 @@ public class SizeDataController {
       "changes",Map.of("tagIds",Arrays.asList(before.values().stream().map(row -> row.get("tagIds")).toList(),tags.stream().map(String::valueOf).toList()))));
   return R.ok();
  }
+ /**
+  * 删除尺码或尺码组，并清理本档案拥有的组内成员与标签关系。
+  * 尺码仍被尺码组引用时拒绝删除，防止破坏组内顺序和既有选择关系。
+  */
  @DeleteMapping("/{id}")
  @Transactional
  @Log(title="尺码基础资料",businessType=BusinessType.DELETE)
@@ -94,9 +132,11 @@ public class SizeDataController {
   Map<String,Object> before=snapshot(kind,id,true);
   if(before.isEmpty()) return R.fail("记录不存在");
   if(kind.equals("size")) {
+   // 尺码被尺码组引用时保留档案，让维护者先在尺码组中解除引用。
    Long used=jdbc.queryForObject("SELECT count(*) FROM sys_size_group_item WHERE size_id=?",Long.class,id);
    if(used!=null && used>0) return R.fail("该尺码仍被"+used+"个尺码组引用，请先从尺码组中移除");
   } else {
+   // 尺码组是成员关系的拥有方；删除组时清理子项，但不删除组内尺码档案。
    jdbc.update("DELETE FROM sys_size_group_item WHERE group_id=?",id);
   }
   String module=kind.equals("size")?"size":"size_group";
@@ -107,6 +147,7 @@ public class SizeDataController {
       "deleted",true,"changes",Map.of("_record",Arrays.asList(before,Map.of("deleted",true)))));
   return R.ok();
  }
+ /** 更新尺码或尺码组主档，并由统一保存逻辑维护相关字段及组成员。 */
  @PutMapping("/{id}")
  @Transactional
  @Log(title="尺码基础资料",businessType=BusinessType.UPDATE)

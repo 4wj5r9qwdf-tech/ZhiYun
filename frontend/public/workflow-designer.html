@@ -1,3 +1,21 @@
+<!--
+文件用途：提供流程设计器在 ERP 前端路由中的独立 HTML 容器。
+文件版本：1.0.0
+功能目的：为 Warm-Flow 流程设计器静态页面提供浏览器挂载点和加载提示。
+设计思路：独立容器避免将流程设计器页面结构混入 ERP Vue 页面；访问安全与流程数据权限由后端负责。
+实现方法：前端路由将此文件作为独立页面入口，并由流程设计器资源填充 #app。
+关键约束：本文件不承担流程保存授权；后端流程设计器接口必须执行认证与权限校验。
+依赖与引用：RuoYi-Vue-Plus/ruoyi-admin/src/main/java/org/dromara/web/config/WorkflowDesignerSecurityConfig.java；Docs/API/框架原生能力接入API.md；Docs/规范/前端规范.md
+初始开发人员：JY（织云项目自研内容）
+初始开发时间：待追溯
+当前责任人：JY（项目维护责任）
+最近修改人员：JY；AI辅助工具：Codex（智能体）
+最近修改时间：2026-11-20
+修改标记：ZY-ERP-20261120-注释整理；说明独立容器与后端安全边界
+最近测试时间：本次整理未执行功能测试；测试人员：本次整理未执行
+测试状态：待流程设计器页面回归；历史测试记录待追溯
+测试范围与记录位置：Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-->
 <!doctype html>
 <html lang="zh-CN">
 <head><meta charset="utf-8"><title>流程设计</title></head>
