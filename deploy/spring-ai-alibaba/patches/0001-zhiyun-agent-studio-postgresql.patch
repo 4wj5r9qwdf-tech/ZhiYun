@@ -1,0 +1,280 @@
+diff --git a/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/DetailDrawer/index.tsx b/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/DetailDrawer/index.tsx
+index b8ec028..5441c8c 100644
+--- a/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/DetailDrawer/index.tsx
++++ b/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/DetailDrawer/index.tsx
+@@ -33,8 +33,14 @@ export default function DetailDrawer(props: IProps) {
+       const ret = await getAppComponentDetailByCode(props.data.code!);
+       const componentDetailCfg = JSON.parse(ret.config);
+       setState({
+-        input: componentDetailCfg.input,
+-        output: componentDetailCfg.output,
++        input: {
++          system_params: componentDetailCfg.input?.system_params ?? [],
++          user_params: (componentDetailCfg.input?.user_params ?? []).map((item: any) => ({
++            ...item,
++            params: item.params ?? [],
++          })),
++        },
++        output: componentDetailCfg.output ?? [],
+       });
+     } finally {
+       setState({
+diff --git a/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/EditDrawer/index.tsx b/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/EditDrawer/index.tsx
+index 95da959..25f5a08 100644
+--- a/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/EditDrawer/index.tsx
++++ b/spring-ai-alibaba-admin/frontend/packages/main/src/pages/Component/AppComponent/components/EditDrawer/index.tsx
+@@ -167,8 +167,14 @@ export default function EditDrawer(props: IProps) {
+         if (!res) return;
+         const componentDetailCfg = JSON.parse(res.config);
+         setState({
+-          input: componentDetailCfg.input,
+-          output: componentDetailCfg.output,
++          input: {
++            system_params: componentDetailCfg.input?.system_params ?? [],
++            user_params: (componentDetailCfg.input?.user_params ?? []).map((item: any) => ({
++              ...item,
++              params: item.params ?? [],
++            })),
++          },
++          output: componentDetailCfg.output ?? [],
+           detail: res,
+         });
+         form.setFieldsValue({
+@@ -179,8 +185,14 @@ export default function EditDrawer(props: IProps) {
+         const ret = await getConfigByAppId(props.data.app_id as string);
+         const componentParams = JSON.parse(ret.config);
+         setState({
+-          input: componentParams.input,
+-          output: componentParams.output,
++          input: {
++            system_params: componentParams.input?.system_params ?? [],
++            user_params: (componentParams.input?.user_params ?? []).map((item: any) => ({
++              ...item,
++              params: item.params ?? [],
++            })),
++          },
++          output: componentParams.output ?? [],
+           // @ts-ignore
+           detail: {
+             app_name: ret.app_name,
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/base/service/impl/WorkspaceServiceImpl.java b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/base/service/impl/WorkspaceServiceImpl.java
+index 2291263..b0182ad 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/base/service/impl/WorkspaceServiceImpl.java
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/base/service/impl/WorkspaceServiceImpl.java
+@@ -205,7 +205,7 @@ public class WorkspaceServiceImpl extends ServiceImpl<WorkspaceMapper, Workspace
+ 
+ 		LambdaQueryWrapper<WorkspaceEntity> queryWrapper = new LambdaQueryWrapper<>();
+ 		queryWrapper.eq(WorkspaceEntity::getAccountId, context.getAccountId())
+-			.ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getValue());
++			.ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getStatus());
+ 		if (StringUtils.isNotBlank(query.getName())) {
+ 			queryWrapper.like(WorkspaceEntity::getName, query.getName());
+ 		}
+@@ -255,7 +255,7 @@ public class WorkspaceServiceImpl extends ServiceImpl<WorkspaceMapper, Workspace
+ 
+ 		LambdaQueryWrapper<WorkspaceEntity> queryWrapper = new LambdaQueryWrapper<>();
+ 		queryWrapper.eq(WorkspaceEntity::getAccountId, uid)
+-			.ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getValue())
++			.ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getStatus())
+ 			.orderByAsc(WorkspaceEntity::getId)
+ 			.last("limit 1");
+ 
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/utils/concurrent/RequestContextThreadPoolWrapper.java b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/utils/concurrent/RequestContextThreadPoolWrapper.java
+index 0ca9665..48f4b37 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/utils/concurrent/RequestContextThreadPoolWrapper.java
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-core/src/main/java/com/alibaba/cloud/ai/studio/core/utils/concurrent/RequestContextThreadPoolWrapper.java
+@@ -24,6 +24,7 @@ import java.util.Collection;
+ import java.util.concurrent.Callable;
+ import java.util.concurrent.ExecutionException;
+ import java.util.concurrent.ExecutorService;
++import java.util.concurrent.ThreadPoolExecutor;
+ import java.util.concurrent.Future;
+ import java.util.concurrent.TimeUnit;
+ import java.util.concurrent.TimeoutException;
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/pom.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/pom.xml
+index 15f10e7..ee39cb1 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/pom.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/pom.xml
+@@ -63,6 +63,12 @@
+         <dependency>
+             <groupId>com.alibaba.cloud.ai</groupId>
+             <artifactId>spring-ai-alibaba-admin-server-core</artifactId>
++            <exclusions>
++                <exclusion>
++                    <groupId>com.mysql</groupId>
++                    <artifactId>mysql-connector-j</artifactId>
++                </exclusion>
++            </exclusions>
+         </dependency>
+         <dependency>
+             <groupId>com.alibaba.cloud.ai</groupId>
+@@ -195,9 +201,9 @@
+         <!-- DB  -->
+ 
+         <dependency>
+-            <groupId>com.mysql</groupId>
+-            <artifactId>mysql-connector-j</artifactId>
+-            <version>${mysql.version}</version>
++            <groupId>org.postgresql</groupId>
++            <artifactId>postgresql</artifactId>
++            <version>42.4.4</version>
+         </dependency>
+ 
+ 
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetItemMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetItemMapper.xml
+index 91b1451..5fad97f 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetItemMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetItemMapper.xml
+@@ -48,7 +48,7 @@
+             </if>
+         </where>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- Query dataset item count -->
+@@ -87,7 +87,7 @@
+         FROM dataset_item
+         WHERE dataset_id = #{datasetId} AND deleted = 0
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- Find dataset items by dataset ID and item IDs with pagination -->
+@@ -100,7 +100,7 @@
+             #{itemId}
+         </foreach>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <select id="selectByDatasetIdAndItemIds" resultMap="datasetItemResultMap">
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetMapper.xml
+index 5291dab..51d5f7e 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetMapper.xml
+@@ -48,7 +48,7 @@
+             </if>
+         </where>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 查询评测集总数 -->
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetVersionMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetVersionMapper.xml
+index 3c64955..a4fcc93 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetVersionMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/DatasetVersionMapper.xml
+@@ -46,7 +46,7 @@
+         FROM dataset_version
+         WHERE dataset_id = #{datasetId}
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- Query dataset version count -->
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorMapper.xml
+index 3917d97..28600ab 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorMapper.xml
+@@ -54,7 +54,7 @@
+             AND name LIKE CONCAT('%', #{name}, '%')
+         </if>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 统计评估器数量 -->
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorTemplateMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorTemplateMapper.xml
+index 081e996..843b05c 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorTemplateMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorTemplateMapper.xml
+@@ -36,7 +36,7 @@
+         <include refid="base_column_list"/>
+         FROM
+         <include refid="table_name"/>
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <select id="count" resultType="int">
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorVersionMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorVersionMapper.xml
+index bb68955..8533a90 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorVersionMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/EvaluatorVersionMapper.xml
+@@ -57,7 +57,7 @@
+             AND name LIKE CONCAT('%', #{name}, '%')
+         </if>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 根据评估器ID统计评估器版本数量 -->
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/ExperimentResultMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/ExperimentResultMapper.xml
+index 92e30da..4c5ae17 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/ExperimentResultMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/ExperimentResultMapper.xml
+@@ -85,7 +85,7 @@
+         WHERE experiment_id = #{experimentId}
+         and evaluator_version_id = #{evaluatorVersionId}
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+ 
+     </select>
+ 
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptMapper.xml
+index 431a868..97af89e 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptMapper.xml
+@@ -55,7 +55,7 @@
+             AND (tags = #{tag} OR tags LIKE CONCAT('%,', #{tag}, ',%') OR tags LIKE CONCAT(#{tag}, ',%') OR tags LIKE CONCAT('%,', #{tag}))
+         </if>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 查询Prompt总数 -->
+@@ -140,7 +140,7 @@
+             AND (p.tags = #{tag} OR p.tags LIKE CONCAT('%,', #{tag}, ',%') OR p.tags LIKE CONCAT(#{tag}, ',%') OR p.tags LIKE CONCAT('%,', #{tag}))
+         </if>
+         ORDER BY p.create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+ </mapper>
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptTemplateMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptTemplateMapper.xml
+index 8a9f818..00d51ca 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptTemplateMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptTemplateMapper.xml
+@@ -44,7 +44,7 @@
+             AND (tags = #{tag} OR tags LIKE CONCAT('%,', #{tag}, ',%') OR tags LIKE CONCAT(#{tag}, ',%') OR tags LIKE CONCAT('%,', #{tag}))
+         </if>
+         ORDER BY id DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 查询Prompt模板总数 -->
+diff --git a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptVersionMapper.xml b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptVersionMapper.xml
+index adf52e7..c54e954 100644
+--- a/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptVersionMapper.xml
++++ b/spring-ai-alibaba-admin/spring-ai-alibaba-admin-server-start/src/main/resources/mapper/PromptVersionMapper.xml
+@@ -43,7 +43,7 @@
+             AND status = #{status}
+         </if>
+         ORDER BY create_time DESC
+-        LIMIT #{offset}, #{limit}
++        LIMIT #{limit} OFFSET #{offset}
+     </select>
+ 
+     <!-- 查询Prompt版本总数 -->

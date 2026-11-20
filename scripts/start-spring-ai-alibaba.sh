@@ -9,6 +9,7 @@ SOURCE_ROOT="$RUNTIME_ROOT/source-worktree"
 ADMIN_ROOT="$SOURCE_ROOT/spring-ai-alibaba-admin"
 MIDDLEWARE_COMPOSE="$PROJECT_ROOT/deploy/spring-ai-alibaba/docker-compose.middleware.yml"
 PG_ADAPTER="$PROJECT_ROOT/scripts/spring-ai-alibaba-postgresql.py"
+PATCH_APPLIER="$PROJECT_ROOT/deploy/spring-ai-alibaba/apply-patches.sh"
 ENV_FILE="$PROJECT_ROOT/.env"
 SAA_DATABASE="spring_ai_alibaba_admin"
 BACKEND_PORT=8091
@@ -88,6 +89,7 @@ if [[ ! -f "$ADMIN_ROOT/pom.xml" ]]; then
   exit 1
 fi
 
+"$PATCH_APPLIER" "$SOURCE_ROOT"
 python3 "$PG_ADAPTER" prepare "$ADMIN_ROOT"
 
 db_exists="$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname='$SAA_DATABASE'" 2>/dev/null || true)"

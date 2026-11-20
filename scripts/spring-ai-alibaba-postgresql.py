@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""为固定版本的 Spring AI Alibaba Agent Studio 准备 PostgreSQL 运行适配。"""
+"""初始化固定版本 Agent Studio 的 PostgreSQL 数据，并校验源码补丁及本机 Node 兼容项。"""
 
 from __future__ import annotations
 
@@ -38,19 +38,12 @@ def prepare_pom(admin_root: Path) -> None:
     pom = admin_root / "spring-ai-alibaba-admin-server-start/pom.xml"
     content = pom.read_text(encoding="utf-8")
 
-    if CORE_DEPENDENCY in content:
-        content = content.replace(CORE_DEPENDENCY, CORE_DEPENDENCY_WITHOUT_MYSQL, 1)
-    elif CORE_DEPENDENCY_WITHOUT_MYSQL not in content:
-        raise SystemExit("Agent Studio core Maven dependency changed; review PostgreSQL exclusion before building")
+    if CORE_DEPENDENCY in content or MYSQL_DEPENDENCY in content:
+        raise SystemExit("Spring AI Alibaba 织云源码补丁尚未应用；请先运行 deploy/spring-ai-alibaba/apply-patches.sh")
+    if CORE_DEPENDENCY_WITHOUT_MYSQL not in content or POSTGRES_DEPENDENCY not in content:
+        raise SystemExit("Agent Studio PostgreSQL Maven 配置不符合已验证补丁；请检查补丁包版本")
 
-    if MYSQL_DEPENDENCY in content:
-        content = content.replace(MYSQL_DEPENDENCY, POSTGRES_DEPENDENCY, 1)
-    elif POSTGRES_DEPENDENCY not in content:
-        raise SystemExit("Agent Studio JDBC Maven dependency changed; review PostgreSQL driver before building")
-
-    pom.write_text(content, encoding="utf-8")
-
-    # 固定版本的 Agent Studio 源码缺少 ThreadPoolExecutor 导入，补齐后才能编译。
+    # 这里只校验源码补丁已应用，不再动态改写上游源文件。
     wrapper = admin_root / (
         "spring-ai-alibaba-admin-server-core/src/main/java/"
         "com/alibaba/cloud/ai/studio/core/utils/concurrent/"
@@ -59,11 +52,7 @@ def prepare_pom(admin_root: Path) -> None:
     source = wrapper.read_text(encoding="utf-8")
     missing_import = "import java.util.concurrent.ThreadPoolExecutor;"
     if missing_import not in source:
-        anchor = "import java.util.concurrent.ExecutorService;\n"
-        if anchor not in source or "ThreadPoolExecutor" not in source:
-            raise SystemExit("Agent Studio thread-pool source changed; review the compile compatibility patch")
-        source = source.replace(anchor, anchor + missing_import + "\n", 1)
-        wrapper.write_text(source, encoding="utf-8")
+        raise SystemExit("Agent Studio thread-pool patch is missing; apply the versioned patch package first")
 
     # MySQL coerces the upstream display string "deleted" to 0 when comparing
     # the numeric status column. PostgreSQL rejects that varchar/smallint
@@ -75,20 +64,15 @@ def prepare_pom(admin_root: Path) -> None:
     source = workspace_service.read_text(encoding="utf-8")
     mysql_status_value = ".ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getValue())"
     postgres_status_value = ".ne(WorkspaceEntity::getStatus, CommonStatus.DELETED.getStatus())"
-    if mysql_status_value in source:
-        source = source.replace(mysql_status_value, postgres_status_value)
-        workspace_service.write_text(source, encoding="utf-8")
-    elif source.count(postgres_status_value) < 5:
+    if mysql_status_value in source or source.count(postgres_status_value) < 5:
         raise SystemExit("Agent Studio workspace status query changed; review PostgreSQL enum compatibility patch")
 
-    # 将上游 MySQL 分页语法中的 offset、limit 顺序转为 PostgreSQL 写法。
+    # 确认管理端分页 Mapper 已采用 PostgreSQL 的 LIMIT/OFFSET 顺序。
     mapper_dir = admin_root / "spring-ai-alibaba-admin-server-start/src/main/resources/mapper"
     for mapper in mapper_dir.glob("*.xml"):
         source = mapper.read_text(encoding="utf-8")
-        adapted = re.sub(r"\bLIMIT\s+#\{offset\}\s*,\s*#\{limit\}",
-                         "LIMIT #{limit} OFFSET #{offset}", source, flags=re.IGNORECASE)
-        if adapted != source:
-            mapper.write_text(adapted, encoding="utf-8")
+        if re.search(r"\bLIMIT\s+#\{offset\}\s*,\s*#\{limit\}", source, flags=re.IGNORECASE):
+            raise SystemExit(f"MySQL pagination syntax remains in {mapper.name}; apply the source patch package first")
 
 
 def prepare_frontend(admin_root: Path) -> None:
@@ -97,20 +81,8 @@ def prepare_frontend(admin_root: Path) -> None:
     for drawer_name in ("EditDrawer", "DetailDrawer"):
         drawer = component_dir / drawer_name / "index.tsx"
         source = drawer.read_text(encoding="utf-8")
-        for config in ("componentDetailCfg", "componentParams"):
-            original = f"input: {config}.input,\n"
-            normalized = (f"input: {{\n"
-                          f"            system_params: {config}.input?.system_params ?? [],\n"
-                          f"            user_params: ({config}.input?.user_params ?? []).map((item: any) => ({{\n"
-                          f"              ...item, params: item.params ?? [],\n"
-                          f"            }})),\n"
-                          f"          }},\n")
-            source = source.replace(original, normalized)
-            source = source.replace(f"output: {config}.output,", f"output: {config}.output ?? [],")
         if "input: componentDetailCfg.input," in source or "input: componentParams.input," in source:
-            raise SystemExit("Agent Studio component configuration changed; review empty parameter handling")
-        if source != drawer.read_text(encoding="utf-8"):
-            drawer.write_text(source, encoding="utf-8")
+            raise SystemExit("Agent Studio component configuration patch is missing; apply the source patch package first")
 
     node_modules = admin_root / "frontend/node_modules"
     modules = [node_modules / "@umijs/bundler-utils/dist/https.js"]
