@@ -56,14 +56,13 @@ COMMENT ON COLUMN sys_post_role.remark         IS '备注';
 CREATE INDEX IF NOT EXISTS idx_sys_post_role_role_id ON sys_post_role (role_id);
 
 -- ------------------------------------------------------------
--- 2. sys_role 扩展：数据范围支持"指定节点集合"（权限地基 2.2 第 3 种）
---    RuoYi 内置 data_scope 取值：1全数据 2本部门 3本部门及以下 4仅本人 5自定义
---    织云扩展第 6 种：6指定节点集合（跨部门协作，如总监/计划部跨车间排产）
---    data_scope=6 时，本列存逗号分隔的 sys_org.org_id 集合
---    （2026-10-30 同步：dept→org 全局改名后，线上列为 data_scope_org_ids）
+-- 2. sys_role 历史兼容字段：组织节点 ID 集合
+--    当前系统的自定义组织范围由 data_scope='2' 与 sys_role_org 关联表承载。
+--    data_scope_org_ids 为历史迁移保留列，当前应用代码不读写；不要用它作为现行权限配置来源。
+--    （2026-10-30 dept→org 重命名后保留线上列名 data_scope_org_ids）
 -- ------------------------------------------------------------
 ALTER TABLE sys_role ADD COLUMN IF NOT EXISTS data_scope_org_ids varchar(2000) DEFAULT '';
-COMMENT ON COLUMN sys_role.data_scope_org_ids IS '数据范围=6(指定节点集合)时的组织节点ID集合，逗号分隔，→ sys_org.org_id';
+COMMENT ON COLUMN sys_role.data_scope_org_ids IS '历史兼容字段：旧版指定组织节点ID集合；当前权限配置以sys_role_org关联表为准';
 
 -- ------------------------------------------------------------
 -- 3. 内置敏感数据权限点（权限地基 3.4.2）
@@ -590,6 +589,7 @@ CREATE TABLE IF NOT EXISTS customer_master (
  unified_social_credit_code varchar(18),
  customer_short_name varchar(100),
  country_region varchar(100),
+ category_id bigint,
  sales_representative_id bigint NOT NULL,
  status char(1) NOT NULL DEFAULT '0' CHECK (status IN ('0','1')),
  remark varchar(2000),
@@ -598,6 +598,7 @@ CREATE TABLE IF NOT EXISTS customer_master (
  update_by bigint,
  update_time timestamp
 );
+ALTER TABLE customer_master ADD COLUMN IF NOT EXISTS category_id bigint;
 COMMENT ON TABLE customer_master IS '客户档案；供订单及样衣引用，停用不改变历史单据';
 COMMENT ON COLUMN customer_master.customer_id IS '客户主键';
 COMMENT ON COLUMN customer_master.customer_code IS '系统自动生成的稳定客户编号';
@@ -605,6 +606,7 @@ COMMENT ON COLUMN customer_master.customer_name IS '客户名称；允许同名�
 COMMENT ON COLUMN customer_master.unified_social_credit_code IS '统一社会信用代码；境外客户可空';
 COMMENT ON COLUMN customer_master.customer_short_name IS '客户简称';
 COMMENT ON COLUMN customer_master.country_region IS '国家地区，手动录入';
+COMMENT ON COLUMN customer_master.category_id IS '客户档案归属的分类节点ID；空值表示未分类，查询和维护受人员分类权限限制';
 COMMENT ON COLUMN customer_master.sales_representative_id IS '业务员，关联人员信息，不校验特定岗位';
 COMMENT ON COLUMN customer_master.status IS '状态：0启用，1停用；停用仅禁止新增业务引用';
 COMMENT ON COLUMN customer_master.remark IS '备注';
@@ -613,6 +615,8 @@ COMMENT ON COLUMN customer_master.create_time IS '创建时间';
 COMMENT ON COLUMN customer_master.update_by IS '更新人用户ID';
 COMMENT ON COLUMN customer_master.update_time IS '更新时间';
 CREATE INDEX IF NOT EXISTS idx_customer_master_name ON customer_master(lower(customer_name));
+CREATE INDEX IF NOT EXISTS idx_customer_master_category_id ON customer_master(category_id);
+COMMENT ON INDEX idx_customer_master_category_id IS '按客户分类筛选档案';
 CREATE TABLE IF NOT EXISTS customer_contact (
  contact_id bigserial PRIMARY KEY,
  customer_id bigint NOT NULL REFERENCES customer_master(customer_id),
@@ -1475,6 +1479,15 @@ CREATE TABLE IF NOT EXISTS base_category (
  create_by bigint, create_time timestamp NOT NULL DEFAULT now(), update_by bigint, update_time timestamp,
  CHECK(parent_id IS NULL OR parent_id<>category_id)
 );
+-- 客户档案可不分类；已分类客户必须引用真实分类节点，并阻止删除仍被客户使用的分类。
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_customer_master_category' AND conrelid='customer_master'::regclass) THEN
+  ALTER TABLE customer_master ADD CONSTRAINT fk_customer_master_category
+   FOREIGN KEY (category_id) REFERENCES base_category(category_id) ON DELETE RESTRICT;
+ END IF;
+END $$;
+COMMENT ON CONSTRAINT fk_customer_master_category ON customer_master IS '客户分类引用保护；有客户使用时禁止物理删除分类节点';
 -- 兼容已执行旧版增量：有效分类编码唯一；逻辑删除后可重新使用编码，历史记录仍保留原稳定ID。
 ALTER TABLE base_category DROP CONSTRAINT IF EXISTS base_category_scheme_id_category_code_key;
 DROP INDEX IF EXISTS uq_category_scheme_code_active;
@@ -1508,6 +1521,28 @@ COMMENT ON COLUMN base_category.create_by IS '创建员工ID，关联sys_user.us
 COMMENT ON COLUMN base_category.create_time IS '创建时间';
 COMMENT ON COLUMN base_category.update_by IS '最后修改员工ID，关联sys_user.user_id的身份语义';
 COMMENT ON COLUMN base_category.update_time IS '最后修改时间';
+-- 人员分类权限：未登记授权记录时默认全部可见；指定范围按分类类型或分类节点保存。
+CREATE TABLE IF NOT EXISTS sys_person_category_scope (
+ user_id bigint PRIMARY KEY REFERENCES sys_user(user_id) ON DELETE CASCADE,
+ scope_mode varchar(12) NOT NULL CHECK(scope_mode IN ('ALL','NONE','SELECTED'))
+);
+COMMENT ON TABLE sys_person_category_scope IS '人员分类授权；无记录或ALL表示全部分类可见，NONE表示不可见，SELECTED表示按明细授权';
+COMMENT ON COLUMN sys_person_category_scope.user_id IS '员工账号稳定主键，关联sys_user.user_id';
+COMMENT ON COLUMN sys_person_category_scope.scope_mode IS '授权模式：ALL全部可见、NONE全部不可见、SELECTED指定范围';
+CREATE TABLE IF NOT EXISTS sys_person_category_grant (
+ user_id bigint NOT NULL REFERENCES sys_person_category_scope(user_id) ON DELETE CASCADE,
+ scheme_id bigint REFERENCES base_category_scheme(scheme_id),
+ category_id bigint REFERENCES base_category(category_id),
+ include_children boolean NOT NULL,
+ CHECK((scheme_id IS NOT NULL AND category_id IS NULL AND include_children)
+    OR (scheme_id IS NULL AND category_id IS NOT NULL)),
+ UNIQUE NULLS NOT DISTINCT(user_id,scheme_id,category_id)
+);
+COMMENT ON TABLE sys_person_category_grant IS '人员指定分类范围，授权对象为分类类型或分类节点';
+COMMENT ON COLUMN sys_person_category_grant.user_id IS '所属人员分类授权账号主键';
+COMMENT ON COLUMN sys_person_category_grant.scheme_id IS '整类授权的分类类型主键；整类授权包含该类型现有及未来分类';
+COMMENT ON COLUMN sys_person_category_grant.category_id IS '节点授权的分类主键';
+COMMENT ON COLUMN sys_person_category_grant.include_children IS '是否包含该节点现有及未来下级；类型授权必须为true';
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time) SELECT 1762700000000000010,'分类管理',1761400000000000001,170,'category','system/CategoryManage','N','Y','C','0','0','system:category:list','#',now() WHERE NOT EXISTS(SELECT 1 FROM sys_menu WHERE perms='system:category:list');
 INSERT INTO sys_menu(menu_id,menu_name,parent_id,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time) SELECT x.id,x.name,(SELECT menu_id FROM sys_menu WHERE perms='system:category:list'),x.sort,'#','','N','Y','F','0','0',x.perms,'#',now() FROM (VALUES (1762700000000000011::bigint,'分类管理新增',171,'system:category:add'),(1762700000000000012::bigint,'分类管理修改与启停',172,'system:category:edit'),(1762700000000000013::bigint,'分类管理删除',173,'system:category:remove')) x(id,name,sort,perms) WHERE NOT EXISTS(SELECT 1 FROM sys_menu m WHERE m.perms=x.perms);
 UPDATE sys_menu SET parent_id=1761400000000000001,menu_name='分类管理',menu_type='C',path='category',component='system/CategoryManage',visible='0',status='0' WHERE perms='system:category:list';
@@ -1518,7 +1553,7 @@ DECLARE app_role text;
 BEGIN
  SELECT pg_get_userbyid(relowner) INTO app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
  IF app_role IS NULL THEN RAISE EXCEPTION '无法识别应用数据库角色'; END IF;
- EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.base_category_scheme,public.base_category TO %I',app_role);
+ EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.base_category_scheme,public.base_category,public.sys_person_category_scope,public.sys_person_category_grant TO %I',app_role);
  EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE public.base_category_scheme_scheme_id_seq,public.base_category_category_id_seq TO %I',app_role);
 END $$;
 COMMENT ON SEQUENCE base_category_scheme_scheme_id_seq IS '生成分类体系稳定主键的序列';
@@ -2352,7 +2387,7 @@ COMMENT ON COLUMN sys_snail_ai_chat_trace.trace_id IS 'ERP 本地随机诊断编
 COMMENT ON COLUMN sys_snail_ai_chat_trace.user_id IS '发起本轮对话的 ERP 员工ID';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.nickname IS '发起时的员工昵称快照';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.agent_id IS '本轮使用的 SnailAI 智能体ID';
-COMMENT ON COLUMN sys_snail_ai_chat_trace.conversation_id IS 'SnailAI 对话编号';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.conversation_id IS 'SnailAI 对话编号；空白表示上游未提供，只能按本轮诊断编号查看，不与其他轮次合并';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.question IS '员工本轮提问，长度受应用限制';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.answer IS '本轮模型流式文本回复';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.attachment_summary IS '附件名称、类型、大小和解析字符数，不保存原始文件或音频';
@@ -2390,8 +2425,8 @@ COMMENT ON COLUMN sys_snail_ai_tool_trace.event_id IS '工具调用事件随机�
 COMMENT ON COLUMN sys_snail_ai_tool_trace.trace_id IS '所属 ERP 员工对话诊断编号';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_name IS '实际调用的 MCP 或本地 Skill 工具名';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_description IS '工具说明快照';
-COMMENT ON COLUMN sys_snail_ai_tool_trace.arguments_preview IS '脱敏并截断后的工具输入预览';
-COMMENT ON COLUMN sys_snail_ai_tool_trace.result_preview IS '脱敏并截断后的工具结果预览';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.arguments_preview IS '历史参数预览字段；当前写入未记录提示，不保存工具参数正文';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.result_preview IS '历史结果预览字段；当前写入未记录提示，不保存工具结果正文';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.status IS '工具调用状态：RUNNING、SUCCEEDED、FAILED 或 NOT_APPROVED';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.error_message IS '工具失败或未获确认原因';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.duration_ms IS '工具调用耗时，单位毫秒';
@@ -2412,3 +2447,386 @@ UPDATE sys_menu
  WHERE menu_id=1763300000000000018;
 
 COMMIT;
+
+-- 订单和审批基础表：先建立订单及流程关联，再建立需求计划和反审核记录。
+
+-- 同步开发迁移：客户订单_20261114.sql
+BEGIN;
+CREATE TABLE IF NOT EXISTS biz_customer_order (
+ id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+ order_no varchar(60) NOT NULL,
+ customer_id bigint NOT NULL REFERENCES customer_master(customer_id),
+ company_id bigint NOT NULL REFERENCES sys_company(company_id),
+ sales_id bigint NOT NULL REFERENCES sys_user(user_id),
+ follower_id bigint REFERENCES sys_user(user_id),
+ created_by bigint NOT NULL,
+ status varchar(16) NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','submitted','approved','cancelled')),
+ document jsonb NOT NULL,
+ demand jsonb NOT NULL DEFAULT '[]',
+ revision integer NOT NULL DEFAULT 1,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_biz_customer_order_no ON biz_customer_order(lower(order_no));
+CREATE INDEX IF NOT EXISTS ix_biz_customer_order_customer ON biz_customer_order(customer_id);
+COMMENT ON TABLE biz_customer_order IS '客户订单主单，按 PO 保存订购、配套和交付分配，审核后冻结需求快照';
+COMMENT ON COLUMN biz_customer_order.id IS '客户订单内部主键，供订单明细及派生单据关联';
+COMMENT ON COLUMN biz_customer_order.order_no IS '系统订单号，唯一索引按忽略大小写方式校验，供用户检索和单据引用';
+COMMENT ON COLUMN biz_customer_order.customer_id IS '客户，关联 customer_master.customer_id';
+COMMENT ON COLUMN biz_customer_order.company_id IS '归属公司，关联 sys_company.company_id，首次保存后锁定';
+COMMENT ON COLUMN biz_customer_order.sales_id IS '业务员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_customer_order.follower_id IS '跟单员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_customer_order.created_by IS '实际制单员工，关联 sys_user.user_id；与业务员、跟单员字段分开记录';
+COMMENT ON COLUMN biz_customer_order.status IS '单据状态：draft 草稿、submitted 已提交待审核、approved 已审核、cancelled 已取消';
+COMMENT ON COLUMN biz_customer_order.document IS '订单业务快照 JSON：订单日期、客户与公司展示信息、PO、款式/颜色/尺码、交期、供料安排、单价和交付分配；金额按元保留两位小数';
+COMMENT ON COLUMN biz_customer_order.demand IS '订单算料快照 JSON：按 PO、款式规格、物料颜色与规格保存需求；含库存单位数量、采购单位数量、换算系数及 BOM 版本，空数组表示未算料';
+COMMENT ON COLUMN biz_customer_order.revision IS '订单并发修订号，创建时为1，每次成功保存递增，用于拒绝基于旧版本的覆盖';
+COMMENT ON COLUMN biz_customer_order.created_at IS '订单记录首次创建时间';
+COMMENT ON COLUMN biz_customer_order.updated_at IS '订单记录最后一次成功保存时间';
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1763100000000000100,parent_id,'客户订单',5,'manage','','N','Y','C','0','0','order:customer-order:list','#',now()
+FROM sys_menu WHERE perms='system:customer:list' AND menu_type='C'
+ON CONFLICT(menu_id) DO NOTHING;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT v.id,m.menu_id,v.name,v.n,'#','','N','Y','F','0','0',v.perm,'#',now()
+FROM sys_menu m CROSS JOIN (VALUES
+ (1763100000000000101,'制单与提交',1,'order:customer-order:edit'),
+ (1763100000000000102,'订单审核',2,'order:customer-order:review'),
+ (1763100000000000103,'取消订单',3,'order:customer-order:cancel')
+) v(id,name,n,perm) WHERE m.perms='order:customer-order:list'
+ON CONFLICT(menu_id) DO NOTHING;
+DO $$
+DECLARE app_role text;
+BEGIN
+ SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+ EXECUTE format('GRANT SELECT, INSERT, UPDATE ON biz_customer_order TO %I',app_role);
+ EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE biz_customer_order_id_seq TO %I',app_role);
+END $$;
+COMMIT;
+
+-- 同步开发迁移：审批对象流程绑定_20261114.sql
+-- 业务对象与已发布的 Warm-Flow 流程定义绑定；流程结构和待办仍由引擎维护。
+BEGIN;
+CREATE TABLE IF NOT EXISTS sys_approval_binding (
+    business_type varchar(48) PRIMARY KEY,
+    flow_code varchar(40) NOT NULL,
+    update_by bigint NOT NULL,
+    update_time timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE sys_approval_binding IS '业务审批对象与 Warm-Flow 流程编码的配置绑定，不保存流程节点或待办';
+COMMENT ON COLUMN sys_approval_binding.business_type IS '业务对象注册编码：customer_order 客户订单、material_demand_plan 物料需求计划、production_task 生产任务单；当前仅客户订单支持实际发起流程，其余须完成业务接入后方可启用';
+COMMENT ON COLUMN sys_approval_binding.flow_code IS '绑定的流程定义编码，关联 flow_definition.flow_code；仅允许已发布且启用的流程，节点由 Warm-Flow 维护';
+COMMENT ON COLUMN sys_approval_binding.update_by IS '最后修改绑定的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN sys_approval_binding.update_time IS '最后一次新增或修改审批对象流程绑定的时间';
+DO $$ DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON sys_approval_binding TO %I',app_role);
+END $$;
+COMMIT;
+
+-- 同步开发迁移：审批业务实例关联_20261114.sql
+-- 业务单据与审批实例的稳定关联；流程节点、待办和审批意见仍由 Warm-Flow 保存。
+BEGIN;
+CREATE TABLE IF NOT EXISTS sys_approval_business_instance (
+    business_key varchar(36) PRIMARY KEY,
+    business_type varchar(48) NOT NULL,
+    business_id bigint NOT NULL,
+    business_revision integer NOT NULL,
+    flow_code varchar(40) NOT NULL,
+    instance_id bigint UNIQUE,
+    state varchar(16) NOT NULL CHECK (state IN ('starting','pending','approved','rejected','cancelled')),
+    initiator_id bigint NOT NULL,
+    create_time timestamptz NOT NULL DEFAULT now(),
+    update_time timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_business_active ON sys_approval_business_instance(business_type,business_id) WHERE state IN ('starting','pending');
+COMMENT ON TABLE sys_approval_business_instance IS '业务对象与 Warm-Flow 审批实例的关联及发起快照，不重复存储流程节点与待办';
+COMMENT ON COLUMN sys_approval_business_instance.business_key IS '业务审批关联键，使用随机值避免不同单据类型的业务主键冲突及可枚举猜测';
+COMMENT ON COLUMN sys_approval_business_instance.business_type IS '业务对象注册编码：customer_order 客户订单、material_demand_plan 物料需求计划、production_task 生产任务单；当前仅客户订单支持实际发起流程，其余须完成业务接入后方可启用';
+COMMENT ON COLUMN sys_approval_business_instance.business_id IS '来源业务单据主键；目标表由 business_type 决定，不能作为跨表外键';
+COMMENT ON COLUMN sys_approval_business_instance.business_revision IS '发起审批时锁定的业务单据修订号，用于防止审批期间以旧版本覆盖新数据';
+COMMENT ON COLUMN sys_approval_business_instance.flow_code IS '发起时选定的 Warm-Flow 流程定义编码；后续配置变更不影响此历史实例';
+COMMENT ON COLUMN sys_approval_business_instance.instance_id IS 'Warm-Flow 审批引擎流程实例编号；实例节点、审批意见和待办由引擎保存';
+COMMENT ON COLUMN sys_approval_business_instance.state IS '关联状态：starting 启动中、pending 审批中、approved 已通过、rejected 已驳回、cancelled 已撤销';
+COMMENT ON COLUMN sys_approval_business_instance.initiator_id IS '发起审批的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN sys_approval_business_instance.create_time IS '本业务单据首次关联审批实例的发起时间';
+COMMENT ON COLUMN sys_approval_business_instance.update_time IS '本关联记录最近一次同步审批实例状态的时间';
+DO $$ DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE ON sys_approval_business_instance TO %I',app_role);
+END $$;
+COMMIT;
+
+-- 同步开发迁移：物料需求计划_20261117.sql
+-- 物料需求计划单、来源明细快照与计划调整历史。
+BEGIN;
+
+-- 兼容既有订单派生计划表，并补齐单据查询、算料状态和业务流转字段。
+CREATE TABLE IF NOT EXISTS biz_material_demand_plan (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    order_id bigint NOT NULL REFERENCES biz_customer_order(id),
+    order_revision integer NOT NULL,
+    plan_no varchar(64) NOT NULL UNIQUE,
+    status varchar(16) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','cancelled')),
+    calculation_status varchar(16) NOT NULL DEFAULT 'pending' CHECK (calculation_status IN ('pending','ready','incomplete','outdated')),
+    calculation_message text NOT NULL DEFAULT '',
+    revision integer NOT NULL DEFAULT 1,
+    source_order_no varchar(60) NOT NULL DEFAULT '',
+    customer_id bigint,
+    document jsonb NOT NULL DEFAULT '{}'::jsonb,
+    workflow_instance_id bigint,
+    created_by bigint NOT NULL,
+    updated_by bigint,
+    submitted_by bigint,
+    approved_by bigint,
+    approved_at timestamptz,
+    cancel_reason varchar(500),
+    review_note varchar(500),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS calculation_status varchar(16) NOT NULL DEFAULT 'pending';
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS calculation_message text NOT NULL DEFAULT '';
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS source_order_no varchar(60) NOT NULL DEFAULT '';
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS customer_id bigint;
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS updated_by bigint;
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS submitted_by bigint;
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS approved_by bigint;
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS approved_at timestamptz;
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS cancel_reason varchar(500);
+ALTER TABLE biz_material_demand_plan ADD COLUMN IF NOT EXISTS review_note varchar(500);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_material_demand_plan_active_order
+    ON biz_material_demand_plan(order_id) WHERE status <> 'cancelled';
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_status_updated
+    ON biz_material_demand_plan(status,updated_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_source_order
+    ON biz_material_demand_plan(source_order_no);
+
+COMMENT ON TABLE biz_material_demand_plan IS '客户订单审核后生成的物料需求计划主单，保留订单修订、算料状态、审批状态及订单快照；取消单保留供追溯';
+COMMENT ON COLUMN biz_material_demand_plan.id IS '需求计划内部主键，供需求明细、审批业务关联和下游采购计划引用';
+COMMENT ON COLUMN biz_material_demand_plan.order_id IS '来源客户订单主键，关联 biz_customer_order.id；每张订单最多有一张未取消的有效计划';
+COMMENT ON COLUMN biz_material_demand_plan.order_revision IS '生成或同步本计划时的客户订单修订号，用于判断算料依据是否变化';
+COMMENT ON COLUMN biz_material_demand_plan.plan_no IS '物料需求计划单号，全表唯一，供列表检索、审批标题和单据穿透';
+COMMENT ON COLUMN biz_material_demand_plan.status IS '单据状态：draft 草稿、submitted 审批中、approved 已审核、cancelled 已取消';
+COMMENT ON COLUMN biz_material_demand_plan.calculation_status IS '算料状态：pending 待算料、ready 已有完整快照、incomplete 用料不完整、outdated 来源快照已过期';
+COMMENT ON COLUMN biz_material_demand_plan.calculation_message IS '算料待处理原因快照；说明缺少 BOM、套装配套无法定位或订单用料不完整等提交阻断原因';
+COMMENT ON COLUMN biz_material_demand_plan.revision IS '单据并发修订号，创建时为1，每次成功保存或状态流转递增';
+COMMENT ON COLUMN biz_material_demand_plan.source_order_no IS '来源客户订单编号快照，复制 biz_customer_order.order_no 便于计划列表检索';
+COMMENT ON COLUMN biz_material_demand_plan.customer_id IS '来源客户主键快照，关联 customer_master.customer_id；名称快照另存于 document';
+COMMENT ON COLUMN biz_material_demand_plan.document IS '订单单头及 PO 快照，记录客户、公司、订单日期、供料安排、PO/交期、款式配套及最近审核说明，不代替结构化需求明细';
+COMMENT ON COLUMN biz_material_demand_plan.workflow_instance_id IS 'Warm-Flow 审批实例编号；未绑定流程或未提交时为空，节点和意见由审批引擎保存';
+COMMENT ON COLUMN biz_material_demand_plan.created_by IS '创建或自动派生本计划的登录人员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_material_demand_plan.updated_by IS '最后一次修改需求计划的人员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_material_demand_plan.submitted_by IS '最近一次提交审批的人员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_material_demand_plan.approved_by IS '未绑定流程时直接审核计划的人员，关联 sys_user.user_id；流程审批人由引擎记录';
+COMMENT ON COLUMN biz_material_demand_plan.approved_at IS '计划最近一次审核通过时间；流程办理时间以 Warm-Flow 审批记录为准';
+COMMENT ON COLUMN biz_material_demand_plan.cancel_reason IS '取消草稿计划的业务原因，最长500字';
+COMMENT ON COLUMN biz_material_demand_plan.review_note IS '最近一次直接审核或退回说明；绑定流程后的节点意见保存在 Warm-Flow';
+COMMENT ON COLUMN biz_material_demand_plan.created_at IS '需求计划首次创建时间';
+COMMENT ON COLUMN biz_material_demand_plan.updated_at IS '需求计划最近一次保存或状态更新的时间';
+
+-- 每行绑定来源 PO/色码和 BOM 物料行；引用 ID 仅作来源，不用外键阻止历史快照留存。
+CREATE TABLE IF NOT EXISTS biz_material_demand_plan_item (
+    item_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    plan_id bigint NOT NULL REFERENCES biz_material_demand_plan(id),
+    line_no integer NOT NULL,
+    po_number varchar(100) NOT NULL DEFAULT '',
+    po_due_date date,
+    supply_mode varchar(16) NOT NULL DEFAULT 'customer' CHECK (supply_mode IN ('customer','purchase','mixed')),
+    source_line_key varchar(64) NOT NULL DEFAULT '',
+    source_style_id bigint,
+    source_style_code varchar(100) NOT NULL DEFAULT '',
+    source_style_name varchar(200) NOT NULL DEFAULT '',
+    set_spec_id bigint,
+    set_spec_name varchar(200) NOT NULL DEFAULT '',
+    child_style_id bigint,
+    child_style_code varchar(100) NOT NULL DEFAULT '',
+    child_style_name varchar(200) NOT NULL DEFAULT '',
+    color_id bigint,
+    color_name varchar(100) NOT NULL DEFAULT '',
+    size_id bigint,
+    size_name varchar(100) NOT NULL DEFAULT '',
+    order_quantity numeric(20,8) NOT NULL DEFAULT 0,
+    bom_id bigint,
+    bom_version varchar(40) NOT NULL DEFAULT '',
+    usage_type varchar(40) NOT NULL DEFAULT '',
+    part_name varchar(200) NOT NULL DEFAULT '',
+    material_id bigint NOT NULL,
+    material_code varchar(100) NOT NULL DEFAULT '',
+    material_name varchar(200) NOT NULL DEFAULT '',
+    category_id bigint,
+    category_name varchar(200) NOT NULL DEFAULT '',
+    material_variant_id bigint,
+    material_spec varchar(200) NOT NULL DEFAULT '',
+    material_color_id bigint,
+    material_color_name varchar(100) NOT NULL DEFAULT '',
+    inventory_unit_id bigint,
+    inventory_unit_name varchar(50) NOT NULL DEFAULT '',
+    per_unit_usage numeric(24,8),
+    original_quantity numeric(24,8) NOT NULL DEFAULT 0 CHECK (original_quantity >= 0),
+    planned_quantity numeric(24,8) NOT NULL DEFAULT 0 CHECK (planned_quantity >= 0),
+    purchase_units jsonb NOT NULL DEFAULT '[]'::jsonb,
+    adjustment_reason varchar(500),
+    sort_order integer NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_material_demand_plan_item_line UNIQUE(plan_id,line_no)
+);
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_item_plan ON biz_material_demand_plan_item(plan_id,sort_order,item_id);
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_item_material ON biz_material_demand_plan_item(material_id,material_variant_id,material_color_id);
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_item_po ON biz_material_demand_plan_item(plan_id,po_number);
+
+COMMENT ON TABLE biz_material_demand_plan_item IS '物料需求计划的来源需求明细；保留 PO、订单色码、BOM、物料分类/规格/颜色、库存单位和采购单位换算快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.item_id IS '需求明细主键，供计划调整历史和采购需求分摊引用';
+COMMENT ON COLUMN biz_material_demand_plan_item.plan_id IS '所属需求计划主键，关联 biz_material_demand_plan.id';
+COMMENT ON COLUMN biz_material_demand_plan_item.line_no IS '本计划内的稳定明细行号，用于排序和并发保存校验';
+COMMENT ON COLUMN biz_material_demand_plan_item.po_number IS '来源客户 PO 编号快照；不同 PO 的交期和供料方式不能在明细中丢失';
+COMMENT ON COLUMN biz_material_demand_plan_item.po_due_date IS '来源 PO 默认交期快照，作为计划到料时间参考，不等同于采购承诺交期';
+COMMENT ON COLUMN biz_material_demand_plan_item.supply_mode IS '供料方式：customer 客供、purchase 自采、mixed 客供＋自采；mixed 表示收货来源可选，不预拆数量';
+COMMENT ON COLUMN biz_material_demand_plan_item.source_line_key IS '来源客户订单款式规格行键，关联 document 中的订单规格快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.source_style_id IS '来源订单款式主键快照，关联 rd_style.style_id；名称和款号单独快照保存';
+COMMENT ON COLUMN biz_material_demand_plan_item.source_style_code IS '来源客户款号快照，来自 rd_style.internal_code';
+COMMENT ON COLUMN biz_material_demand_plan_item.source_style_name IS '来源款式名称快照，保留订单制单时的显示名称';
+COMMENT ON COLUMN biz_material_demand_plan_item.set_spec_id IS '来源套装规格主键快照，关联 rd_style_set_spec.id；单款为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.set_spec_name IS '套装规格名称快照；单款为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.child_style_id IS '套装当前需求对应子款主键快照，关联 rd_style.style_id；套装共用用料为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.child_style_code IS '套装子款客户款号快照；无子款归属时为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.child_style_name IS '套装子款名称快照；无子款归属时为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.color_id IS '订单款式或套装子款颜色主键快照，关联 base_color.color_id';
+COMMENT ON COLUMN biz_material_demand_plan_item.color_name IS '订单款式或套装子款颜色名称快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.size_id IS '订单款式或套装子款尺码主键快照，关联 sys_size.id';
+COMMENT ON COLUMN biz_material_demand_plan_item.size_name IS '订单款式或套装子款尺码名称快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.order_quantity IS '来源 PO 中该款式规格的订单数量；套装子款需求另按每套配套件数展开';
+COMMENT ON COLUMN biz_material_demand_plan_item.bom_id IS '计算本行需求的款式 BOM 主键快照，关联 rd_style_bom.id';
+COMMENT ON COLUMN biz_material_demand_plan_item.bom_version IS '计算本行需求时的 BOM 版本号快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.usage_type IS 'BOM 用料类型快照，取值沿用款式 BOM 中已登记的类型';
+COMMENT ON COLUMN biz_material_demand_plan_item.part_name IS 'BOM 用料位置或套装子款名称快照，用于说明该物料用于何处';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_id IS '物料档案主键快照，关联 inv_material.material_id；停用或改名不影响本计划文字快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_code IS '物料编码快照，来自 inv_material.material_code';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_name IS '物料名称快照，来自 inv_material.material_name';
+COMMENT ON COLUMN biz_material_demand_plan_item.category_id IS '物料所属分类主键快照，关联 base_category.category_id，用于权限复核和分类汇总';
+COMMENT ON COLUMN biz_material_demand_plan_item.category_name IS '物料分类名称快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_variant_id IS '物料规格主键快照，关联 inv_material_variant.variant_id；单规格物料为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_spec IS '具体物料规格编码和名称快照，不能与物料档案的规格参数模板混淆';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_color_id IS 'BOM 指定的物料颜色主键快照，关联 base_color.color_id';
+COMMENT ON COLUMN biz_material_demand_plan_item.material_color_name IS 'BOM 指定的物料颜色名称快照；无指定颜色时为空';
+COMMENT ON COLUMN biz_material_demand_plan_item.inventory_unit_id IS '需求数量使用的库存单位主键快照，关联 base_unit.unit_id';
+COMMENT ON COLUMN biz_material_demand_plan_item.inventory_unit_name IS '需求数量使用的库存单位名称快照';
+COMMENT ON COLUMN biz_material_demand_plan_item.per_unit_usage IS '每件订单成衣对应的物料用量；单位为 inventory_unit_name，套装子款按展开件数计算';
+COMMENT ON COLUMN biz_material_demand_plan_item.original_quantity IS '订单算料产生的原始需求数量，按库存单位计；保存后不因计划调整而改变';
+COMMENT ON COLUMN biz_material_demand_plan_item.planned_quantity IS '计划人员确认的需求数量，按库存单位计；公式基数为原始需求量，允许调整但不得小于0，整数最多16位、小数最多8位';
+COMMENT ON COLUMN biz_material_demand_plan_item.purchase_units IS '采购单位换算参考快照，保存单位、固定/实际换算模式、系数和建议数量；实际换算模式不虚构数量';
+COMMENT ON COLUMN biz_material_demand_plan_item.adjustment_reason IS '本行最近一次计划数量调整原因；每次前后值另记 biz_material_demand_plan_adjustment';
+COMMENT ON COLUMN biz_material_demand_plan_item.sort_order IS '计划内显示顺序，按来源 PO、订单款式色码、BOM 明细顺序生成';
+COMMENT ON COLUMN biz_material_demand_plan_item.created_at IS '需求明细首次生成时间';
+COMMENT ON COLUMN biz_material_demand_plan_item.updated_at IS '需求明细最近一次调整时间';
+
+-- 每次数量调整独立留存，不覆盖历史前后值。
+CREATE TABLE IF NOT EXISTS biz_material_demand_plan_adjustment (
+    adjustment_id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    plan_id bigint NOT NULL REFERENCES biz_material_demand_plan(id),
+    item_id bigint NOT NULL REFERENCES biz_material_demand_plan_item(item_id),
+    previous_quantity numeric(24,8) NOT NULL CHECK (previous_quantity >= 0),
+    planned_quantity numeric(24,8) NOT NULL CHECK (planned_quantity >= 0),
+    reason varchar(500) NOT NULL,
+    changed_by bigint NOT NULL,
+    changed_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_material_demand_plan_adjustment_plan ON biz_material_demand_plan_adjustment(plan_id,changed_at DESC,adjustment_id DESC);
+COMMENT ON TABLE biz_material_demand_plan_adjustment IS '物料需求计划人工调整历史，逐次保存库存单位计划量的前后值、调整原因和操作人';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.adjustment_id IS '需求计划调整历史主键';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.plan_id IS '被调整的需求计划主键，关联 biz_material_demand_plan.id';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.item_id IS '被调整的需求明细主键，关联 biz_material_demand_plan_item.item_id';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.previous_quantity IS '本次调整前的计划需求数量，单位与对应明细库存单位相同';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.planned_quantity IS '本次调整后的计划需求数量，单位与对应明细库存单位相同';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.reason IS '计划人员调整需求数量的业务原因，必填且最长500字';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.changed_by IS '执行本次计划调整的人员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_material_demand_plan_adjustment.changed_at IS '本次计划数量调整时间';
+
+-- 审批配置与审批中心共用注册的业务类型和实例关联，不重复建流程数据。
+COMMENT ON COLUMN sys_approval_business_instance.business_type IS '业务对象注册编码：customer_order 客户订单、material_demand_plan 物料需求计划、production_task 生产任务单；流程节点、意见与待办由 Warm-Flow 保存';
+COMMENT ON COLUMN sys_approval_binding.business_type IS '业务对象注册编码：customer_order 客户订单、material_demand_plan 物料需求计划、production_task 生产任务单；流程绑定只影响后续提交';
+
+-- 将物料需求计划入口挂入订单模块；操作权限由角色按计划岗位分配。
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT 1763100000000000300,parent_id,'物料需求计划',20,'demand-plans','order/MaterialDemandPlanManage','N','Y','C','0','0','order:material-demand-plan:list','FileSearchOutlined',now()
+FROM sys_menu WHERE perms='order:customer-order:list' AND menu_type='C'
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,path=EXCLUDED.path,
+    component=EXCLUDED.component,menu_type='C',visible='0',status='0',perms=EXCLUDED.perms,icon=EXCLUDED.icon;
+INSERT INTO sys_menu(menu_id,parent_id,menu_name,order_num,path,component,is_frame,is_cache,menu_type,visible,status,perms,icon,create_time)
+SELECT v.id,m.menu_id,v.name,v.n,'#','','N','Y','F','0','0',v.perm,'#',now()
+FROM sys_menu m CROSS JOIN (VALUES
+    (1763100000000000301,'计划编辑与补生成',1,'order:material-demand-plan:edit'),
+    (1763100000000000302,'计划审核',2,'order:material-demand-plan:review'),
+    (1763100000000000303,'取消计划',3,'order:material-demand-plan:cancel')
+) v(id,name,n,perm)
+WHERE m.perms='order:material-demand-plan:list'
+ON CONFLICT(menu_id) DO UPDATE SET parent_id=EXCLUDED.parent_id,menu_name=EXCLUDED.menu_name,perms=EXCLUDED.perms,status='0',visible='0';
+
+DO $$ DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE ON biz_material_demand_plan, biz_material_demand_plan_adjustment TO %I',app_role);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON biz_material_demand_plan_item TO %I',app_role);
+    EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE biz_material_demand_plan_id_seq, biz_material_demand_plan_item_item_id_seq, biz_material_demand_plan_adjustment_adjustment_id_seq TO %I',app_role);
+END $$;
+
+COMMIT;
+
+-- 同步开发迁移：业务单据反审核审批_20261119.sql
+-- 客户订单与物料需求计划的反审核申请及审批结果快照。
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS biz_document_reversal_request (
+    id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    business_type varchar(64) NOT NULL CHECK (business_type IN ('customer_order_unapprove','material_demand_plan_unapprove')),
+    business_id bigint NOT NULL,
+    business_revision integer NOT NULL,
+    instance_id bigint NOT NULL UNIQUE,
+    requested_by bigint NOT NULL,
+    reason varchar(500) NOT NULL,
+    source_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
+    state varchar(16) NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','approved','rejected','cancelled')),
+    result_message varchar(500) NOT NULL DEFAULT '',
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_reversal_pending
+    ON biz_document_reversal_request(business_type,business_id) WHERE state='pending';
+CREATE INDEX IF NOT EXISTS ix_document_reversal_requester
+    ON biz_document_reversal_request(requested_by,created_at DESC,id DESC);
+
+COMMENT ON TABLE biz_document_reversal_request IS '业务单据反审核申请记录，关联独立 Warm-Flow 审批实例并保留原因、来源快照及审批结果；不替代原单和原审核历史';
+COMMENT ON COLUMN biz_document_reversal_request.id IS '反审核申请记录主键';
+COMMENT ON COLUMN biz_document_reversal_request.business_type IS '反审核业务类型：customer_order_unapprove 客户订单反审核、material_demand_plan_unapprove 物料需求计划反审核';
+COMMENT ON COLUMN biz_document_reversal_request.business_id IS '被申请反审核的业务单据主键；目标业务表由 business_type 决定，不能作为跨表外键';
+COMMENT ON COLUMN biz_document_reversal_request.business_revision IS '发起申请时锁定的原单修订号；审批通过时必须仍与原单版本一致';
+COMMENT ON COLUMN biz_document_reversal_request.instance_id IS '本次反审核专用 Warm-Flow 流程实例编号；与原审核实例分开保存';
+COMMENT ON COLUMN biz_document_reversal_request.requested_by IS '发起反审核申请的人员，关联 sys_user.user_id';
+COMMENT ON COLUMN biz_document_reversal_request.reason IS '申请反审核的业务原因，必填且最多500字，供审批人和发起人查看';
+COMMENT ON COLUMN biz_document_reversal_request.source_snapshot IS '申请时的原单关键状态快照；用于追溯，审批期间不得覆盖';
+COMMENT ON COLUMN biz_document_reversal_request.state IS '反审核申请状态：pending 审批中、approved 审批通过、rejected 被退回、cancelled 流程取消或终止';
+COMMENT ON COLUMN biz_document_reversal_request.result_message IS '审批结束时记录的审批意见或处理结果说明';
+COMMENT ON COLUMN biz_document_reversal_request.created_at IS '反审核申请发起时间';
+COMMENT ON COLUMN biz_document_reversal_request.updated_at IS '反审核申请最近一次处理时间';
+
+COMMENT ON COLUMN sys_approval_business_instance.business_type IS '业务对象注册编码：customer_order 客户订单、customer_order_unapprove 客户订单反审核、material_demand_plan 物料需求计划、material_demand_plan_unapprove 物料需求计划反审核、production_task 生产任务单；流程节点、意见与待办由 Warm-Flow 保存';
+COMMENT ON COLUMN sys_approval_binding.business_type IS '业务对象注册编码：customer_order 客户订单、customer_order_unapprove 客户订单反审核、material_demand_plan 物料需求计划、material_demand_plan_unapprove 物料需求计划反审核、production_task 生产任务单；普通单据与反审核事项分别绑定流程';
+
+DO $$ DECLARE app_role text;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO STRICT app_role FROM pg_class WHERE oid='public.sys_tag'::regclass;
+    EXECUTE format('GRANT SELECT,INSERT,UPDATE ON biz_document_reversal_request TO %I',app_role);
+    EXECUTE format('GRANT USAGE,SELECT ON SEQUENCE biz_document_reversal_request_id_seq TO %I',app_role);
+END $$;
+
+COMMIT;
+
+-- 显示位数供只读视图使用；不改变单据原值和结算金额。
+INSERT INTO sys_config(config_id,config_name,config_key,config_value,config_type,create_time,remark)
+SELECT COALESCE(MAX(config_id),0)+1,'数字显示精度','system.display.decimals',
+       '{"bomUsage":4,"purchasePrice":4,"costPrice":6,"percentage":2}','Y',now(),'BOM单耗、采购单价、成本单价和百分比显示位数，各为0至8'
+FROM sys_config HAVING NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='system.display.decimals');

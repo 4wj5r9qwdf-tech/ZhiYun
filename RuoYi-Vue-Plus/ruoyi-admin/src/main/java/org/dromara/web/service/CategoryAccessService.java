@@ -26,14 +26,28 @@ public class CategoryAccessService {
         Set<String> allowed = new HashSet<>();
         if (scope.mode.equals("ALL")) all.forEach(row->allowed.add(String.valueOf(row.get("id"))));
         else {
+            // 类型授权覆盖该类型全部节点；节点授权本身只覆盖当前节点，递归扩展仅来自 include_children。
+            // Scheme grants cover every node; category grants cover themselves and expand only when include_children is true.
             for (Map<String,Object> row : all) if (scope.schemeIds.contains(String.valueOf(row.get("schemeId"))) || scope.categoryIds.contains(String.valueOf(row.get("id")))) allowed.add(String.valueOf(row.get("id")));
             if (!scope.descendantRoots.isEmpty()) {
                 Set<String> parents = new HashSet<>(scope.descendantRoots);
                 boolean changed;
-                do { changed=false; for (Map<String,Object> row:all) if (parents.contains(String.valueOf(row.get("parentId"))) && allowed.add(String.valueOf(row.get("id")))) { parents.add(String.valueOf(row.get("id"))); changed=true; } } while(changed);
+                do {
+                    changed = false;
+                    for (Map<String,Object> row : all) {
+                        if (!parents.contains(String.valueOf(row.get("parentId")))) continue;
+                        String childId = String.valueOf(row.get("id"));
+                        allowed.add(childId);
+                        // 即使子节点已被单独授权，也必须继续把它加入遍历前沿，才能完整展开更深层级。
+                        // Continue traversal through already-granted children so deeper descendants are not omitted.
+                        if (parents.add(childId)) changed = true;
+                    }
+                } while (changed);
             }
         }
         Map<String,Map<String,Object>> index=new LinkedHashMap<>(); all.forEach(row->index.put(String.valueOf(row.get("id")),row));
+        // 授权节点的祖先只用于树形定位，selectable=false 防止它们被误当成已授权分类。
+        // Ancestors are returned only for tree navigation and remain non-selectable unless separately granted.
         Set<String> visible=new HashSet<>(allowed);
         for(String id:new ArrayList<>(allowed)){Map<String,Object> row=index.get(id);while(row!=null&&row.get("parentId")!=null){String parent=String.valueOf(row.get("parentId"));visible.add(parent);row=index.get(parent);}}
         List<Map<String,Object>> result=all.stream().filter(row->visible.contains(String.valueOf(row.get("id"))))
@@ -41,9 +55,42 @@ public class CategoryAccessService {
         return Map.of("rows",result,"restricted",!scope.mode.equals("ALL"));
     }
 
+    /** 已解析的分类授权快照，ID以字符串保存以兼容 bigint 的接口与前端边界。 / Resolved category grants using string IDs at bigint boundaries. */
     public record Scope(String mode,Set<String> schemeIds,Set<String> categoryIds,Set<String> descendantRoots){}
     /** 未单独配置时默认全部可见；指定范围解析为类型、节点和包含下级的授权集合。 / Resolve employee category grants; an absent row means all. */
-    public Scope scope(){Long user=LoginHelper.getUserId();if(user==null||LoginHelper.isSuperAdmin(user))return new Scope("ALL",Set.of(),Set.of(),Set.of());List<String> modes=jdbc.queryForList("SELECT scope_mode FROM sys_person_category_scope WHERE user_id=?",String.class,user);if(modes.isEmpty()||"ALL".equals(modes.getFirst()))return new Scope("ALL",Set.of(),Set.of(),Set.of());if("NONE".equals(modes.getFirst()))return new Scope("NONE",Set.of(),Set.of(),Set.of());List<Map<String,Object>> grants=jdbc.queryForList("SELECT scheme_id::text AS scheme_id,category_id::text AS category_id,include_children FROM sys_person_category_grant WHERE user_id=?",user);Set<String> schemes=new HashSet<>(),nodes=new HashSet<>(),children=new HashSet<>();for(Map<String,Object> g:grants){if(g.get("scheme_id")!=null)schemes.add(String.valueOf(g.get("scheme_id")));if(g.get("category_id")!=null){nodes.add(String.valueOf(g.get("category_id")));if(Boolean.TRUE.equals(g.get("include_children")))children.add(String.valueOf(g.get("category_id")));}}return new Scope("SELECTED",schemes,nodes,children);}
+    public Scope scope() {
+        Long userId = LoginHelper.getUserId();
+        if (userId == null || LoginHelper.isSuperAdmin(userId)) {
+            return new Scope("ALL", Set.of(), Set.of(), Set.of());
+        }
+        List<String> modes = jdbc.queryForList(
+            "SELECT scope_mode FROM sys_person_category_scope WHERE user_id=?", String.class, userId);
+        String mode = modes.isEmpty() ? "ALL" : modes.getFirst();
+        if ("ALL".equals(mode) || "NONE".equals(mode)) {
+            return new Scope(mode, Set.of(), Set.of(), Set.of());
+        }
+
+        Set<String> schemes = new HashSet<>();
+        Set<String> nodes = new HashSet<>();
+        Set<String> descendantRoots = new HashSet<>();
+        var grants = jdbc.queryForList("""
+            SELECT scheme_id::text AS scheme_id, category_id::text AS category_id, include_children
+            FROM sys_person_category_grant WHERE user_id=?
+            """, userId);
+        for (var grant : grants) {
+            String schemeId = (String) grant.get("scheme_id");
+            String categoryId = (String) grant.get("category_id");
+            if (schemeId != null) schemes.add(schemeId);
+            if (categoryId != null) {
+                nodes.add(categoryId);
+                // 节点本身始终授权，仅勾选包含下级时才展开子树。
+                // A node grant includes the node itself; expand its subtree only when requested.
+                if (Boolean.TRUE.equals(grant.get("include_children"))) descendantRoots.add(categoryId);
+            }
+        }
+        return new Scope("SELECTED", schemes, nodes, descendantRoots);
+    }
+
     /** 将分类授权安全拼入受控SQL；节点包含下级通过递归CTE，不信任前端隐藏。 / Enforce grants in SQL, including descendant inheritance. */
     public void appendScope(StringBuilder sql, List<Object> args, String column, Scope scope) {
         if ("ALL".equals(scope.mode())) {
@@ -81,9 +128,40 @@ public class CategoryAccessService {
     private String placeholders(Set<String> ids) {
         return String.join(",", Collections.nCopies(ids.size(), "?"));
     }
-    /** 判断分类是否属于当前人员明确可见的范围。 / Check whether a category is explicitly visible to the current user. */
+    /** 判断分类是否处于当前人员明确授权的可见范围内。 / Check whether a category is explicitly included in the current user's authorized scope. */
 
-    public boolean categoryAllowed(Long id){StringBuilder q=new StringBuilder("SELECT c.category_id FROM base_category c WHERE c.category_id=? AND ");List<Object>a=new ArrayList<>();a.add(id);appendScope(q,a,"c.category_id",scope());return !jdbc.queryForList(q.toString(),a.toArray()).isEmpty();}
-    /** 新引用必须有完整启用的分类祖先链及启用体系。 / Require an enabled taxonomy and every ancestor for new references. */
-    public boolean categoryIsActive(Long id){if(id==null)return false;Long count=jdbc.queryForObject("WITH RECURSIVE ancestors(category_id,parent_id,status,del_flag,scheme_id) AS (SELECT category_id,parent_id,status,del_flag,scheme_id FROM base_category WHERE category_id=? UNION ALL SELECT p.category_id,p.parent_id,p.status,p.del_flag,p.scheme_id FROM base_category p JOIN ancestors a ON p.category_id=a.parent_id) SELECT count(*) FROM ancestors a JOIN base_category_scheme s ON s.scheme_id=a.scheme_id WHERE a.status<>'0' OR a.del_flag<>'0' OR s.status<>'0' OR s.del_flag<>'0'",Long.class,id);return count!=null&&count==0;}
+    public boolean categoryAllowed(Long id) {
+        if (id == null) return false;
+        StringBuilder sql = new StringBuilder("SELECT c.category_id FROM base_category c WHERE c.category_id=? AND ");
+        List<Object> args = new ArrayList<>();
+        args.add(id);
+        appendScope(sql, args, "c.category_id", scope());
+        return !jdbc.queryForList(sql.toString(), args.toArray()).isEmpty();
+    }
+
+    /**
+     * 新引用要求分类存在，且整条祖先链和所属分类类型均启用。
+     * New references require an existing category with enabled ancestors and category types.
+     */
+    public boolean categoryIsActive(Long id) {
+        if (id == null) return false;
+        // 不存在的分类没有祖先记录，必须明确返回 false。
+        // An empty ancestor set means the category is unknown and must be rejected.
+        Boolean active = jdbc.queryForObject("""
+            WITH RECURSIVE ancestors(category_id, parent_id, status, del_flag, scheme_id) AS (
+                SELECT category_id, parent_id, status, del_flag, scheme_id FROM base_category WHERE category_id=?
+                UNION
+                SELECT p.category_id, p.parent_id, p.status, p.del_flag, p.scheme_id
+                FROM base_category p JOIN ancestors a ON p.category_id=a.parent_id
+            )
+            SELECT EXISTS (SELECT 1 FROM ancestors WHERE parent_id IS NULL OR parent_id=0)
+                AND NOT EXISTS (
+                    SELECT 1 FROM ancestors a
+                    LEFT JOIN base_category_scheme s ON s.scheme_id=a.scheme_id
+                    WHERE a.status IS DISTINCT FROM '0' OR a.del_flag IS DISTINCT FROM '0'
+                       OR s.status IS DISTINCT FROM '0' OR s.del_flag IS DISTINCT FROM '0'
+                )
+            """, Boolean.class, id);
+        return Boolean.TRUE.equals(active);
+    }
 }

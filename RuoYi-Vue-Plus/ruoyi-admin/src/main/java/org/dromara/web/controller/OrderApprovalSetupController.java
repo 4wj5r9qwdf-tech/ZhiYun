@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
+/** 审批对象与 Warm-Flow 流程定义的适配入口。 / Adapter between ERP approval objects and Warm-Flow definitions. */
 @RestController
 @RequestMapping("/approval/customer-orders/setup")
 @RequiredArgsConstructor
@@ -29,7 +30,9 @@ public class OrderApprovalSetupController {
 
     private static final String INITIATOR_ORG_LEADER = "#{@spelRuleComponent.selectOrgLeaderById(#initiatorOrgId)}";
 
+    /** 一个审批节点的审批人规则、会签方式和抄送对象。 / One approval step's assignee rule, approval mode, and copy recipients. */
     public record Step(String name, String assignee, boolean unanimous, List<String> copyUsers) {}
+    /** 可复用的流程定义输入；draft 和 modelValue 控制草稿状态及流程设计器类型。 / Reusable workflow definition input, including draft state and designer model. */
     public record Setup(String businessType, String name, List<Step> steps, Boolean draft, String modelValue) {}
     /** 返回审批对象配置可选业务类型及可绑定的流程定义。 / Provide registered business types and eligible workflow definitions for binding. */
 
@@ -75,9 +78,12 @@ public class OrderApprovalSetupController {
             case "material_demand_plan_unapprove"->"mrp_unapprove_";
             default->throw new ServiceException("该单据暂未接入审批");
         };
-        // 反审核业务前缀较长，编码总长必须不超过流程表与绑定表的40字符上限。
-        // Keep generated flow codes within the 40-character database limit, including longer reversal prefixes.
-        String code = prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 40-prefix.length());
+        // UUID 去掉连字符后固定为32位；按流程编码列的40字符上限截取，避免短前缀场景请求超过UUID长度。
+        // A hyphen-free UUID is 32 characters; cap the suffix at both UUID length and the 40-character column limit.
+        String randomPart = UUID.randomUUID().toString().replace("-", "");
+        int suffixLength = Math.min(randomPart.length(), 40 - prefix.length());
+        if (suffixLength <= 0) throw new ServiceException("流程编码前缀长度超出限制");
+        String code = prefix + randomPart.substring(0, suffixLength);
         var nodes = new ArrayList<Map<String,Object>>();
         int end = setup.steps().size() + 2;
         nodes.add(node(0, end, "0", "开始", "", false, vertical));
@@ -87,7 +93,8 @@ public class OrderApprovalSetupController {
             if (step == null) throw new ServiceException("审批节点不能为空");
             String label = Objects.toString(step.name(), "").trim();
             String assignee = Objects.toString(step.assignee(), "");
-            // 动态负责人在流程运行时解析，其他候选项仍在配置时校验。
+        // 动态负责人在流程运行时解析，其他候选项仍在配置时校验。
+        // Resolve the initiator's department leader at runtime; validate static assignee rules during configuration.
             // Resolve the initiator's org leader at runtime and validate static assignees at setup.
             var selections = Arrays.asList(assignee.split(",", -1));
             boolean validSelections = selections.size() <= 100 && selections.stream().allMatch(selection ->

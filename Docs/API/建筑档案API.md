@@ -22,6 +22,10 @@
 | `PUT /system/building` | 修改建筑档案 | `system:building:edit` | 更新档案与审计；需员工确认 |
 | `DELETE /system/building/{plantId}` | 软删除建筑 | `system:building:remove` | 非幂等；有关联组织时拒绝；需员工确认 |
 
+### 列表筛选约束
+
+`keyword`、`buildingType`、`status` 可省略；`status` 仅允许字符串 `"0"`（启用）或 `"1"`（停用）。其他非空状态值会返回明确的参数错误，避免筛选拼错后误读为空结果。
+
 ### 新增/修改请求体
 
 ```json

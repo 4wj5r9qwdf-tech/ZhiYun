@@ -11,6 +11,10 @@ import { encodeCsv, parseCsv } from '../utils/csv'
 import { downloadFoundationFile, foundationError, foundationRequest } from '../utils/foundation'
 import { can } from '../utils/perms'
 
+import { readPrecision, precisionKey, displayDecimal } from '../utils/decimalDisplay'
+const bomPrecision = ref(readPrecision().bomUsage)
+const rawUsage = ref(false)
+
 type Option = { value: string; label: string }
 type Pair = { colorId?: string; sizeId?: string }
 type Part = { id: string; label: string; quantity: number; colors: Option[]; sizes: Option[]; excluded: Pair[] }
@@ -1335,6 +1339,13 @@ async function preview() {
   })
 }
 onMounted(() => void run(async () => {
+  // 显示参数不可用时使用统一默认值，避免权限或配置服务问题阻断 BOM 列表和详情。
+  // Fall back to the shared default so a config lookup cannot block BOM access.
+  try {
+    bomPrecision.value = readPrecision(await foundationRequest<string>('get', '/system/config/configKey/'+precisionKey)).bomUsage
+  } catch {
+    bomPrecision.value = readPrecision().bomUsage
+  }
   const [catalog, unitOptions, categoryData] = await Promise.all([
     foundationRequest<Style[]>('get', '/rd/style-bom/styles'),
     foundationRequest<{ id: string; name: string }[]>('get', '/system/unit/options'),
@@ -1556,7 +1567,8 @@ onMounted(() => void run(async () => {
                         :aria-label="spec.label + '物料颜色'" placeholder="物料颜色" :value="row.cells.get(spec.key)?.[0]?.materialColorId"
                         :options="materialColors[row.source.materialId || ''] || []"
                         @change="(value: unknown) => writeMatrixUsage(row, [spec], typeof value === 'string' ? value : '', 'materialColorId')" />
-                      <a-input data-bom-field="usage" :key="row.cells.get(spec.key)?.[0]?.usage || ''"
+                      <span v-if="readonly">{{ displayDecimal(row.cells.get(spec.key)?.[0]?.usage,bomPrecision,rawUsage) }}</span>
+                      <a-input v-else data-bom-field="usage" :key="row.cells.get(spec.key)?.[0]?.usage || ''"
                         :default-value="row.cells.get(spec.key)?.[0]?.usage || ''" size="small" inputmode="decimal"
                         :aria-label="spec.label + '用量'" placeholder="填写用量"
                         @blur="event => writeMatrixUsage(row, [spec], (event.target as HTMLInputElement).value)" />
@@ -1611,7 +1623,8 @@ onMounted(() => void run(async () => {
                 <a-select v-model:value="rule.usageUnitId" :options="allowedUnits(rule)" @change="changeUnit(rule)" />
               </a-form-item>
               <a-form-item v-if="!rule.omitted" data-hover-column="6" :label="group.id ? '单件用量' : '每套用量'" required>
-                <a-input data-bom-field="usage" v-model:value="rule.usage" inputmode="decimal" :suffix="rule.usageUnitName || rule.unit" />
+                <span v-if="readonly">{{ displayDecimal(rule.usage,bomPrecision,rawUsage) }} {{ rule.usageUnitName || rule.unit }}</span>
+                <a-input v-else data-bom-field="usage" v-model:value="rule.usage" inputmode="decimal" :suffix="rule.usageUnitName || rule.unit" />
               </a-form-item>
               <a-form-item data-hover-column="7" label="备注"><a-input data-bom-field="remark" v-model:value="rule.remark" :maxlength="500" /></a-form-item>
               <a-form-item v-if="!rule.omitted && variableUnit(rule)" class="bom-conversion" :label="'每单位等于多少' + (rule.unit || '库存单位')" required>
@@ -1636,6 +1649,7 @@ onMounted(() => void run(async () => {
         <span v-if="styleId && context.parts.length">已填写 {{ groups.filter(group => group.id).reduce((sum, group) => sum + (specsByPart[group.id] || []).filter(spec => specStatus(group.id, spec) === '已填写').length, 0) }} / {{ groups.filter(group => group.id).reduce((sum, group) => sum + (specsByPart[group.id] || []).length, 0) }} 个规格</span>
         <span v-else>请选择款式后维护用料</span>
         <a-space>
+          <a-checkbox v-if="readonly" v-model:checked="rawUsage">查看用量原值</a-checkbox>
           <a-button :disabled="saving" @click="closeEditor">{{ readonly ? '关闭' : '取消' }}</a-button>
           <template v-if="!readonly">
             <a-button :loading="saving" :disabled="!styleId || loading" @click="save(false)">保存草稿</a-button>

@@ -1,6 +1,6 @@
 # 款式 BOM API
 
-一期已于 2026-11-13 通过用户验收。路径前缀为 `/rd/style-bom`。请求使用当前员工身份，ID 使用十进制字符串。查询需要 `rd:bom:list`，生成建议单号、保存和发布还需要 `rd:bom:edit`。
+一期已于 2026-11-13 通过用户验收。路径前缀为 `/rd/style-bom`。请求使用当前员工身份，ID 使用正十进制字符串以避免 bigint 精度丢失。查询需要 `rd:bom:list`，生成建议单号、保存和发布还需要 `rd:bom:edit`。
 
 | 方法及相对路径 | 用途 |
 | --- | --- |
@@ -19,4 +19,4 @@
 
 单规格及批量填写共用单据层 CSV 导入导出，使用款号、成衣色码、物料编码、物料规格编码、颜色和单位名称。导入先确认替换草稿用料，保存时统一走以上接口及审计。
 
-MCP 工具包括 `style_bom_list`、`style_bom_detail`、`style_bom_coverage`、`style_bom_preview`、`style_bom_save`，沿用同一业务授权和审计。
+MCP 工具包括 `style_bom_list`、`style_bom_detail`、`style_bom_coverage`、`style_bom_preview`、`style_bom_save`，沿用同一业务授权和审计。所有必填 ID 必须是正十进制数字字符串；可选套装规格、颜色和尺码 ID 可以省略或传空串，传入时同样必须为正十进制 ID。空对象不能作为保存请求。

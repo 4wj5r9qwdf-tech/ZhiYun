@@ -26,6 +26,7 @@ const categoryFilter = ref<string>()
 const schemeFilter = ref<string>()
 const defaultScheme = ref<string>()
 const categoryConfigUnavailable = ref(false)
+const categoryScopeRestricted = ref(false)
 const pageNum = ref(1)
 const pageSize = ref(20)
 const keyword = ref('')
@@ -51,7 +52,8 @@ function categoryNodes(rows: CustomerCategory[], forForm = false): CategoryNode[
   return roots
 }
 const categoryTree = computed(() => [
-  { title: '全部客户', key: 'all' }, { title: '未分类', key: '0' },
+  { title: '全部客户', key: 'all' },
+  ...(!categoryScopeRestricted.value ? [{ title: '未分类', key: '0' }] : []),
   ...categoryNodes(categoryRows.value.filter(row => {
     const activeScheme = defaultScheme.value || schemeFilter.value
     return !activeScheme || row.schemeId === activeScheme
@@ -73,6 +75,7 @@ async function loadCustomerCategories(initial = false) {
     const response: any = await api.get('/system/customer/category-options')
     if (response.code !== 200) throw new Error(response.msg)
     categoryRows.value = response.data.rows || []
+    categoryScopeRestricted.value = !!response.data.restricted
     const configured = String(response.data.defaultSchemeId || '')
     defaultScheme.value = configured || undefined
     categoryConfigUnavailable.value = !!configured && !categorySchemes.value.some(item => item.value === configured)
@@ -83,7 +86,7 @@ async function loadList() {
   loading.value = true
   try {
     const res: any = await api.get('/system/customer/list', {
-      params: { pageNum: pageNum.value, pageSize: pageSize.value, keyword: keyword.value, status: statusFilter.value, salesId: salesFilter.value, tagId: tagFilter.value, categoryId: categoryFilter.value, schemeId: schemeFilter.value },
+      params: { pageNum: pageNum.value, pageSize: pageSize.value, keyword: keyword.value, status: statusFilter.value, salesId: salesFilter.value, tagId: tagFilter.value, categoryId: categoryFilter.value, schemeId: categoryFilter.value ? undefined : schemeFilter.value },
     })
     if (res.code === 200) {
       rows.value = res.data.rows || []
@@ -593,6 +596,7 @@ watch(treeCollapsed, () => { void scheduleAutoFit() })
         <a v-if="categoryFilter || schemeFilter" class="tree-clear" @click="resetCategoryTree">重置</a>
       </div>
       <div class="tree-body">
+        <a-alert v-if="categoryScopeRestricted" type="info" show-icon message="列表仅显示人员分类权限内的客户；未分类客户和无权分类不会显示。预期客户未出现时，请检查人员分类权限。" style="margin-bottom:8px" />
         <a-alert v-if="categoryConfigUnavailable" type="warning" show-icon message="客户默认分类类型不可用或无权查看，请检查系统参数和分类权限。" />
         <a-select v-model:value="schemeFilter" :options="categorySchemes" :allow-clear="!defaultScheme" placeholder="全部分类类型" style="width:100%;margin-bottom:8px" @change="categoryFilter = undefined; onSearch()" />
         <a-tree :tree-data="categoryTree" :selected-keys="[categoryFilter || 'all']" block-node @select="selectCustomerCategory" />

@@ -13,7 +13,7 @@ description: 查询、核对及维护织云 ERP 款式 BOM。适用于单款及�
 
 ## 查询调用示例
 
-`style_bom_list` 的 `styleId` 是必填十进制字符串，必须从 `style_list` 返回值中复制，不能传款号文本：
+`style_bom_list` 的 `styleId` 是必填正十进制字符串，必须从 `style_list` 返回值中复制，不能传款号文本。所有必填 ID 都遵循此格式；可选规格、颜色、尺码 ID 可以省略或传空串，若传值也必须是正十进制字符串：
 
 ```json
 {"name":"style_bom_list","arguments":{"styleId":"123456789012345678"}}

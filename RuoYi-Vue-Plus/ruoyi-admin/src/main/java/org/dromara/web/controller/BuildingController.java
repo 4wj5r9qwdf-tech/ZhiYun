@@ -30,13 +30,18 @@ public class BuildingController {
     private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 建筑列表（含占用车间数，供删除校验/展示）。可选 buildingType 筛选用途类别。
+     * 查询建筑列表并返回占用车间数；状态筛选只接受0/1，避免非法值被误当作有效查询。
+     * Query buildings with their workshop counts; accept only 0/1 status filters to reject malformed queries.
      */
     @SaCheckPermission("system:building:list")
     @GetMapping("/list")
     public R<List<Map<String, Object>>> list(@RequestParam(required = false) String keyword,
                                              @RequestParam(required = false) String buildingType,
                                              @RequestParam(required = false) String status) {
+        String statusFilter = status == null ? "" : status.trim();
+        if (!statusFilter.isEmpty() && !java.util.Set.of("0", "1").contains(statusFilter)) {
+            return R.fail("建筑状态筛选只能是0（启用）或1（停用）");
+        }
         StringBuilder sql = new StringBuilder(
             "SELECT b.*, " +
             "  (SELECT count(*) FROM sys_org d WHERE d.building_id = b.plant_id AND d.del_flag='0') AS org_count " +
@@ -51,18 +56,16 @@ public class BuildingController {
             sql.append(" AND b.building_type = ?");
             args.add(buildingType.trim());
         }
-        if (status != null && !status.isBlank()) {
+        if (!statusFilter.isEmpty()) {
             sql.append(" AND b.status = ?");
-            args.add(status.trim());
+            args.add(statusFilter);
         }
         sql.append(" ORDER BY b.building_type, b.plant_id");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
         return R.ok(rows);
     }
 
-    /**
-     * 厂房详情。
-     */
+    /** 查询单栋建筑档案，包含用途、面积、楼层和地址信息。 / Read one building with its usage, area, floor and address details. */
     @SaCheckPermission("system:building:query")
     @GetMapping("/{plantId}")
     public R<Map<String, Object>> getInfo(@PathVariable Long plantId) {
@@ -96,9 +99,7 @@ public class BuildingController {
         return R.ok();
     }
 
-    /**
-     * 编辑建筑。
-     */
+    /** 更新建筑档案并记录前后快照供业务审计。 / Update a building and retain before/after snapshots for business audit. */
     @SaCheckPermission("system:building:edit")
     @Log(title = "建筑档案", businessType = BusinessType.UPDATE)
     @org.springframework.transaction.annotation.Transactional
@@ -124,9 +125,7 @@ public class BuildingController {
         return R.ok();
     }
 
-    /**
-     * 删除建筑（软删）：有车间占用时不允许删。
-     */
+    /** 软删除未被车间使用的建筑；仍有关联时拒绝删除以保护组织数据。 / Soft-delete only unused buildings and preserve linked organization data. */
     @SaCheckPermission("system:building:remove")
     @Log(title = "建筑档案", businessType = BusinessType.DELETE)
     @org.springframework.transaction.annotation.Transactional
@@ -143,11 +142,18 @@ public class BuildingController {
         return R.ok();
     }
 
-    /** 安全取字符串（null→null，数字→字符串）。 */
+    /**
+     * 将请求值转换为可空字符串；保留数字文本，供表单与审计字段统一处理。
+     * Convert a request value to a nullable string while preserving numeric text for form and audit handling.
+     */
     private String str(Object o) {
         if (o == null) return null;
         return o instanceof Number ? o.toString() : String.valueOf(o);
     }
+    /**
+     * 查询建筑业务审计快照；更新场景可锁定行，避免并发修改时前后状态错配。
+     * Load a building audit snapshot and optionally lock its row to prevent mismatched concurrent before/after states.
+     */
     private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
         var row = BusinessAudit.snapshot(jdbcTemplate,"SELECT plant_name AS \"名称\", building_type AS \"建筑类型\", plant_code AS \"建筑编码\", floor_info AS \"楼层\", land_area AS \"占地面积\", building_area AS \"建筑面积\", address AS \"地址\", built_year AS \"建成年份\", status AS \"状态\", remark AS \"备注\", del_flag AS \"删除标记\" FROM sys_building WHERE plant_id=?"+(lock ? " FOR UPDATE" : ""),id);
         return row;

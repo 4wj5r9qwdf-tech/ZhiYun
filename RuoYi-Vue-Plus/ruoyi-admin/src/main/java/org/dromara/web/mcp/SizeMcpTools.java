@@ -50,7 +50,7 @@ public class SizeMcpTools {
     public R<?> sizeUpdate(@McpToolParam(description = "尺码ID十进制字符串") String id,
                            @McpToolParam(description = "完整尺码字段对象：code、name、name_en、sort_order、remark、tagIds") Map<String, Object> body) {
         StpUtil.checkPermission("system:size:edit");
-        return sizeController.edit("size", Long.valueOf(id), body);
+        return sizeController.edit("size", McpInputValidator.requirePositiveId(id, "尺码ID"), body);
     }
 
     /** 启停尺码但保留已有尺码组引用。 / Change size availability while preserving existing group references. */
@@ -58,14 +58,15 @@ public class SizeMcpTools {
     public R<?> sizeSetStatus(@McpToolParam(description = "尺码ID十进制字符串") String id,
                               @McpToolParam(description = "目标状态：0启用、1停用") String status) {
         StpUtil.checkPermission("system:size:edit");
-        return sizeController.status("size", Long.valueOf(id), Map.of("status", status));
+        return sizeController.status("size", McpInputValidator.requirePositiveId(id, "尺码ID"),
+            Map.of("status", McpInputValidator.requireBinaryFlag(status, "尺码状态")));
     }
 
     /** 删除未被尺码组引用的尺码。 / Delete a size only when no size group references it. */
     @McpTool(name = "size_delete", description = "删除尺码；被尺码组引用时后端会拒绝，执行前展示编码名称并取得本次确认，需要 system:size:delete 权限")
     public R<?> sizeDelete(@McpToolParam(description = "尺码ID十进制字符串") String id) {
         StpUtil.checkPermission("system:size:delete");
-        return sizeController.delete("size", Long.valueOf(id));
+        return sizeController.delete("size", McpInputValidator.requirePositiveId(id, "尺码ID"));
     }
 
     /** 批量替换选中尺码的最终类型标签集合。 / Replace the final type-tag set for selected sizes. */
@@ -117,7 +118,7 @@ public class SizeMcpTools {
     public R<?> sizeGroupUpdate(@McpToolParam(description = "尺码组ID十进制字符串") String id,
                                 @McpToolParam(description = "完整尺码组对象：code、name、name_en、sort_order、remark、tagIds、sizeIds") Map<String, Object> body) {
         StpUtil.checkPermission("system:size-group:edit");
-        return sizeController.edit("size-group", Long.valueOf(id), body);
+        return sizeController.edit("size-group", McpInputValidator.requirePositiveId(id, "尺码组ID"), body);
     }
 
     /** 启停尺码组并保留历史引用。 / Change size-group availability and preserve historical references. */
@@ -125,14 +126,15 @@ public class SizeMcpTools {
     public R<?> sizeGroupSetStatus(@McpToolParam(description = "尺码组ID十进制字符串") String id,
                                    @McpToolParam(description = "目标状态：0启用、1停用") String status) {
         StpUtil.checkPermission("system:size-group:edit");
-        return sizeController.status("size-group", Long.valueOf(id), Map.of("status", status));
+        return sizeController.status("size-group", McpInputValidator.requirePositiveId(id, "尺码组ID"),
+            Map.of("status", McpInputValidator.requireBinaryFlag(status, "尺码组状态")));
     }
 
     /** 删除尺码组以及控制器事务内清理的成员和标签关联。 / Delete a group and its transactional member/tag links. */
     @McpTool(name = "size_group_delete", description = "删除尺码组并清理组内尺码关系；不可恢复，执行前展示编码名称并取得本次确认，需要 system:size-group:delete 权限")
     public R<?> sizeGroupDelete(@McpToolParam(description = "尺码组ID十进制字符串") String id) {
         StpUtil.checkPermission("system:size-group:delete");
-        return sizeController.delete("size-group", Long.valueOf(id));
+        return sizeController.delete("size-group", McpInputValidator.requirePositiveId(id, "尺码组ID"));
     }
 
     /** 只读取固定尺码组编码规则参数。 / Read only the fixed size-group code rule key. */

@@ -17,7 +17,7 @@ import { encodeCsv } from '../utils/csv'
 import { can } from '../utils/perms'
 type Unit = { id: string; code: string; name: string; symbol: string; dimension: string; decimalPlaces: number; baseUnitId: string | null; factor: string; sortOrder: number; status: string; remark: string }
 const dimensions = [{ value:'length',label:'长度' },{ value:'mass',label:'质量' },{ value:'area',label:'面积' },{ value:'volume',label:'体积' },{ value:'time',label:'时间' },{ value:'count',label:'计数' },{ value:'other',label:'其他' }]
-const columns = [{key:'code',title:'单位编码',width:120},{key:'name',title:'单位名称',width:120},{key:'symbol',title:'符号',width:90},{key:'dimensionName',title:'计量维度',width:100},{key:'decimalPlaces',title:'小数位数',width:100,numeric:true},{key:'conversionText',title:'固定换算关系',width:200},{key:'status',title:'状态',width:100},{key:'sortOrder',title:'排序',width:90,numeric:true},{key:'remark',title:'备注',width:160}]
+const columns = [{key:'code',title:'单位编码',width:120},{key:'name',title:'单位名称',width:120},{key:'symbol',title:'符号',width:90},{key:'dimensionName',title:'计量维度',width:100},{key:'decimalPlaces',title:'数量显示位数',width:100,numeric:true},{key:'conversionText',title:'固定换算关系',width:200},{key:'status',title:'状态',width:100},{key:'sortOrder',title:'排序',width:90,numeric:true},{key:'remark',title:'备注',width:160}]
 const rows = ref<Unit[]>([]), loading = ref(false), keyword = ref(''), dimension = ref<string>(), status = ref<string>(), selected = ref<string[]>([])
 const helpOpen = ref(false), formOpen = ref(false), saving = ref(false), importOpen = ref(false), editId = ref(''), initial = ref('')
 /** 构造独立单位默认值，不自动假设包装换算。 / Start with an independent unit rather than an invented conversion. */
@@ -153,7 +153,7 @@ onMounted(load)
         <a-col :span="8"><a-form-item label="单位名称" required><a-input v-model:value="form.name" :maxlength="80" placeholder="例如 米" /></a-form-item></a-col>
         <a-col :span="8"><a-form-item label="符号"><a-input v-model:value="form.symbol" :maxlength="20" placeholder="例如 m" /></a-form-item></a-col>
         <a-col :span="8"><a-form-item label="计量维度" required><a-select v-model:value="form.dimension" :options="dimensions" :disabled="!editId&&newType==='auxiliary'" @change="changeDimension" /></a-form-item></a-col>
-        <a-col :span="8"><a-form-item label="小数位数" :required="form.dimension!=='time'" :extra="form.dimension==='time' ? '时间维度由系统处理，工时按时分秒显示。' : undefined"><a-input-number v-model:value="form.decimalPlaces" :min="0" :max="8" :precision="0" :disabled="form.dimension==='time'" style="width:100%" /></a-form-item></a-col>
+        <a-col :span="8"><a-form-item label="数量显示位数" :required="form.dimension!=='time'" :extra="form.dimension==='time' ? '时间维度由系统处理，工时按时分秒显示。' : undefined"><a-input-number v-model:value="form.decimalPlaces" :min="0" :max="8" :precision="0" :disabled="form.dimension==='time'" style="width:100%" /></a-form-item></a-col>
         <a-col :span="8"><a-form-item label="排序"><a-input-number v-model:value="form.sortOrder" :min="0" :max="999999" :precision="0" style="width:100%" /></a-form-item></a-col>
         <template v-if="editId||newType==='auxiliary'">
           <a-col :span="12"><a-form-item label="库存单位" :required="!editId"><a-select :value="form.baseUnitId ?? undefined" :allow-clear="!!editId" show-search option-filter-prop="label" :options="editId ? roots : inventoryUnitOptions" placeholder="请选择库存单位" @change="setBase" /></a-form-item></a-col>
@@ -166,7 +166,7 @@ onMounted(load)
       <div class="unit-section__heading"><div><span class="unit-section__title">辅助单位</span><span class="unit-count">{{ childRows.length }} 项</span></div><a-button v-if="can('system:unit:add')" :disabled="saving" @click="addChild"><PlusOutlined />添加辅助单位</a-button></div>
       <div class="unit-section__description">计量维度：{{ dimensions.find(d => d.value === form.dimension)?.label }}。1 个辅助单位 = 换算系数 × 库存单位，例如 1 厘米 = 0.01 米。</div>
       <div class="unit-section__tip">移除绑定后，辅助单位将转为库存单位；该行未保存的修改不会带入，已有业务引用时可能无法变更。</div>
-      <a-row v-if="childRows.length" :gutter="8" class="unit-row-head"><a-col :span="4">编码</a-col><a-col :span="4">名称</a-col><a-col :span="3">符号</a-col><a-col :span="3">小数位数</a-col><a-col :span="4">换算系数</a-col><a-col :span="6">状态 / 操作</a-col></a-row>
+      <a-row v-if="childRows.length" :gutter="8" class="unit-row-head"><a-col :span="4">编码</a-col><a-col :span="4">名称</a-col><a-col :span="3">符号</a-col><a-col :span="3">数量显示位数</a-col><a-col :span="4">换算系数</a-col><a-col :span="6">状态 / 操作</a-col></a-row>
       <div v-for="(child,index) in childRows" :key="index" class="unit-row"><a-row :gutter="8" align="middle">
         <a-col :span="4"><a-input v-model:value="child.code" placeholder="例如 CM" :maxlength="40" :disabled="saving||child.saved||child.detached" /></a-col>
         <a-col :span="4"><a-input v-model:value="child.name" placeholder="例如 厘米" :maxlength="80" :disabled="saving||child.saved||child.detached" /></a-col>

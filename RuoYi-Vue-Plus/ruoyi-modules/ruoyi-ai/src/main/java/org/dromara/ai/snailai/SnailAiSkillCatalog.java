@@ -6,22 +6,25 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.LinkOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 
-/** Reads the ERP-owned Skills directly from Docs/Skills without copying them into SnailAI storage. */
+/** 直接读取 ERP 管理的 Docs/Skills，不复制到智能体数据库。 / Read ERP-owned Skills in place without copying them into SnailAI storage. */
 @Slf4j
 @Component
 public class SnailAiSkillCatalog {
 
     private final Path root;
 
+    /** 初始化受配置路径限制的 Skill 根目录。 / Initialize the configured root directory for ERP Skills. */
     public SnailAiSkillCatalog(@Value("${snail-ai.erp.skills-directory:Docs/Skills}") String directory) {
         this.root = Path.of(directory).toAbsolutePath().normalize();
     }
 
+    /** 扫描 Skill 文件并生成稳定排序的目录；目录不可读时返回空集合以保持聊天可用。 / Discover Skills in stable order and fail soft when the directory is unavailable. */
     public List<SkillEntry> list() {
         if (!Files.isDirectory(root)) {
             return List.of();
@@ -29,7 +32,7 @@ public class SnailAiSkillCatalog {
         try (var paths = Files.walk(root)) {
             return paths.filter(path -> path.getFileName() != null
                     && "SKILL.md".equals(path.getFileName().toString())
-                    && Files.isRegularFile(path))
+                    && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
                 .sorted(Comparator.comparing(Path::toString))
                 .map(this::readEntry)
                 .toList();
@@ -39,17 +42,19 @@ public class SnailAiSkillCatalog {
         }
     }
 
+    /** 按英文标识或目录名读取 Skill 正文，拒绝空名称并返回明确的未找到提示。 / Resolve a Skill by its declared name or folder name. */
     public String read(String skillName) {
         if (skillName == null || skillName.isBlank()) {
             return "请提供 Skill 名称。";
         }
         return list().stream()
-            .filter(skill -> skill.name().equals(skillName.trim()))
+            .filter(skill -> skill.name().equals(skillName.trim()) || skill.folderName().equals(skillName.trim()))
             .findFirst()
             .map(SkillEntry::content)
-            .orElse("未找到该 Skill。请先从可用 Skill 列表中选择名称。");
+            .orElse("未找到该 Skill。请使用可用 Skill 列表中的英文标识或括号内的目录名称。");
     }
 
+    /** 为当前会话生成可用 Skill 摘要，完整业务指引仍由专用读取工具按需提供。 / Build a compact session prompt while leaving full instructions to the read tool. */
     public String prompt() {
         List<SkillEntry> entries = list();
         if (entries.isEmpty()) {
@@ -61,23 +66,27 @@ public class SnailAiSkillCatalog {
             .append("只通过当前 ERP MCP 工具开展业务；工具目录已按当前员工权限过滤。写操作会暂停并等待员工在页面确认。\n")
             .append("不要把未执行的操作说成已完成，也不要调用普通 HTTP、SQL、命令行或其他未授权工具。\n\n");
         for (SkillEntry entry : entries) {
-            prompt.append("- **").append(entry.name()).append("**：")
+            prompt.append("- **").append(entry.name()).append("**（目录名：")
+                .append(entry.folderName()).append("）：")
                 .append(entry.description()).append('\n');
         }
         return prompt.toString();
     }
 
+    /** 读取单个 Skill 文件并解析元数据；读取失败时返回可诊断的占位目录项。 / Load one Skill and preserve a visible fallback when its file cannot be read. */
     private SkillEntry readEntry(Path file) {
         try {
             String content = Files.readString(file, StandardCharsets.UTF_8);
             Metadata metadata = parseMetadata(content, file.getParent().getFileName().toString());
-            return new SkillEntry(metadata.name(), metadata.description(), content);
+            return new SkillEntry(metadata.name(), file.getParent().getFileName().toString(), metadata.description(), content);
         } catch (IOException e) {
             log.warn("Unable to read ERP Skill file: {}", file);
-            return new SkillEntry(file.getParent().getFileName().toString(), "技能文件当前不可读取", "");
+            String folderName = file.getParent().getFileName().toString();
+            return new SkillEntry(folderName, folderName, "技能文件当前不可读取", "");
         }
     }
 
+    /** 解析 YAML 前置元数据中的名称和描述；没有描述时从正文提取一条短摘要。 / Parse the small supported front-matter subset and derive a short fallback description. */
     private Metadata parseMetadata(String content, String fallbackName) {
         String name = fallbackName;
         String description = "";
@@ -106,6 +115,7 @@ public class SnailAiSkillCatalog {
         return new Metadata(name, description);
     }
 
+    /** 去除 YAML 字符串外围的一层单引号或双引号。 / Remove one matching pair of surrounding YAML quotes. */
     private String unquote(String value) {
         if (value.length() >= 2 && ((value.startsWith("\"") && value.endsWith("\""))
             || (value.startsWith("'") && value.endsWith("'")))) {
@@ -114,9 +124,11 @@ public class SnailAiSkillCatalog {
         return value;
     }
 
-    public record SkillEntry(String name, String description, String content) {
+    /** Skill 的目录与正文元数据，供会话提示及按需读取工具共用。 / Shared Skill metadata for prompt discovery and on-demand reads. */
+    public record SkillEntry(String name, String folderName, String description, String content) {
     }
 
+    /** YAML 前置区解析结果。 / Parsed subset of a Skill file's YAML front matter. */
     private record Metadata(String name, String description) {
     }
 }

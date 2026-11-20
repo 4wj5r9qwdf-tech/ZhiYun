@@ -25,7 +25,7 @@ COMMENT ON COLUMN sys_snail_ai_chat_trace.trace_id IS 'ERP 本地随机诊断编
 COMMENT ON COLUMN sys_snail_ai_chat_trace.user_id IS '发起本轮对话的 ERP 员工ID';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.nickname IS '发起时的员工昵称快照';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.agent_id IS '本轮使用的 SnailAI 智能体ID';
-COMMENT ON COLUMN sys_snail_ai_chat_trace.conversation_id IS 'SnailAI 对话编号';
+COMMENT ON COLUMN sys_snail_ai_chat_trace.conversation_id IS 'SnailAI 对话编号；空白表示上游未提供，只能按本轮诊断编号查看，不与其他轮次合并';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.question IS '员工本轮提问，长度受应用限制';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.answer IS '本轮模型流式文本回复';
 COMMENT ON COLUMN sys_snail_ai_chat_trace.attachment_summary IS '附件名称、类型、大小和解析字符数，不保存原始文件或音频';
@@ -63,8 +63,8 @@ COMMENT ON COLUMN sys_snail_ai_tool_trace.event_id IS '工具调用事件随机�
 COMMENT ON COLUMN sys_snail_ai_tool_trace.trace_id IS '所属 ERP 员工对话诊断编号';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_name IS '实际调用的 MCP 或本地 Skill 工具名';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.tool_description IS '工具说明快照';
-COMMENT ON COLUMN sys_snail_ai_tool_trace.arguments_preview IS '脱敏并截断后的工具输入预览';
-COMMENT ON COLUMN sys_snail_ai_tool_trace.result_preview IS '脱敏并截断后的工具结果预览';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.arguments_preview IS '历史参数预览字段；当前写入未记录提示，不保存工具参数正文';
+COMMENT ON COLUMN sys_snail_ai_tool_trace.result_preview IS '历史结果预览字段；当前写入未记录提示，不保存工具结果正文';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.status IS '工具调用状态：RUNNING、SUCCEEDED、FAILED 或 NOT_APPROVED';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.error_message IS '工具失败或未获确认原因';
 COMMENT ON COLUMN sys_snail_ai_tool_trace.duration_ms IS '工具调用耗时，单位毫秒';

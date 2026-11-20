@@ -149,7 +149,7 @@ public class SysConfigController extends BaseController {
         return R.ok();
     }
 
-    /** 只更新尺码自动编码规则值，避免通用参数编辑接口的整行校验及更新逻辑。 */
+    /** 只更新尺码自动编码规则值，避免通用参数接口覆盖同一配置记录的其他字段。 / Update only the size-code rule so the generic config editor cannot overwrite unrelated fields. */
     @SaCheckPermission("system:config:edit")
     @Log(title = "尺码自动编码规则", businessType = BusinessType.UPDATE)
     @PostMapping("/size-code-rule")
@@ -178,7 +178,7 @@ public class SysConfigController extends BaseController {
         }
     }
 
-    /** 只更新尺码组自动编码规则值。 */
+    /** 只更新尺码组编码规则值，保留参数记录的其他业务元数据。 / Update only the size-group code rule and preserve the remaining config metadata. */
     @SaCheckPermission("system:config:edit")
     @Log(title = "尺码组自动编码规则", businessType = BusinessType.UPDATE)
     @Transactional(rollbackFor = Exception.class)
@@ -216,7 +216,7 @@ public class SysConfigController extends BaseController {
         }
     }
 
-    /** 保存仓库布局层级编码规则。 */
+    /** 保存库区、货架和货位的层级编码规则，并使参数缓存与业务审计保持同步。 / Save hierarchical location-code rules and synchronize config cache and audit. */
     @SaCheckPermission("system:config:edit")
     @Log(title = "仓库布局编码规则", businessType = BusinessType.UPDATE)
     @Transactional(rollbackFor = Exception.class)
@@ -274,7 +274,7 @@ public class SysConfigController extends BaseController {
         return audit;
     }
 
-    /** 保存仓库编码自动生成规则。 */
+    /** 保存仓库编码自动生成规则，并刷新后续新建时读取的系统参数。 / Save the warehouse-code generation rule used by subsequent warehouse creation. */
     @SaCheckPermission("system:config:edit")
     @Log(title = "仓库编码规则", businessType = BusinessType.UPDATE)
     @Transactional(rollbackFor = Exception.class)
@@ -380,7 +380,7 @@ public class SysConfigController extends BaseController {
         String key="inventory.material.defaultCategoryScheme";String value=schemeId==null?"":schemeId.toString();
         try{SysConfig previous=configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey,key));String previousValue=previous==null?"":previous.getConfigValue();if(previous==null||!Objects.equals(previousValue,value)){if(previous==null){SysConfig config=new SysConfig();config.setConfigName("物料默认分类类型");config.setConfigKey(key);config.setConfigValue(value);config.setConfigType("Y");config.setRemark("物料档案页面的默认分类类型；留空时展示当前员工全部分类授权范围");configMapper.insert(config);}else configMapper.lambdaUpdate().set(SysConfig::getConfigValue,value).eq(SysConfig::getConfigKey,key).update();String oldName=schemeName(previousValue),newName=schemeName(value);BusinessAudit.record(previous==null?"设置物料默认分类类型":"修改物料默认分类类型",key,"业务参数",Map.of("分类类型",oldName),Map.of("分类类型",newName));CacheUtils.evict(CacheNames.SYS_CONFIG,key);}return R.ok();}catch(Exception e){return R.fail("保存物料默认分类类型失败");}
     }
-    /** 设置订单下线建议提前天数，已保存订单的日期不随参数改变。 */
+    /** 设置下线日期相对默认交期的自然日提前量；既有订单日期保持不变。 / Set the calendar-day lead time before default due dates without changing existing orders. */
     @SaCheckPermission("system:config:edit")
     @Log(title="订单默认下线日期",businessType=BusinessType.UPDATE)
     @Transactional(rollbackFor=Exception.class)
@@ -399,7 +399,38 @@ public class SysConfigController extends BaseController {
         return R.ok();
     }
 
-    /** 设置款式页面的默认展示分类；权限仍由人员分类授权控制。 */
+    /** 保存全系统字段显示精度，不影响计价、结算或历史原值。 / Save presentation precision only. */
+    @SaCheckPermission("system:config:edit")
+    @Log(title="数字显示精度",businessType=BusinessType.UPDATE)
+    @Transactional(rollbackFor=Exception.class)
+    @PostMapping("/display-decimals")
+    public R<Void> updateDisplayDecimals(@RequestBody Map<String,Object> body) {
+        Set<String> fields = Set.of("bomUsage", "purchasePrice", "costPrice", "percentage");
+        if (body == null || !fields.equals(body.keySet()) || body.values().stream()
+                .anyMatch(v -> !(v instanceof Integer n) || n < 0 || n > 8)) {
+            return R.fail("四项显示位数均须为 0 至 8 的整数");
+        }
+        String key = "system.display.decimals";
+        SysConfig row = configMapper.selectOne(new LambdaQueryWrapper<SysConfig>().eq(SysConfig::getConfigKey, key));
+        String value = JsonUtils.toJsonString(body);
+        String old = row == null ? "" : row.getConfigValue();
+        if (row == null) {
+            row = new SysConfig();
+            row.setConfigName("数字显示精度");
+            row.setConfigKey(key);
+            row.setConfigType("Y");
+            row.setConfigValue(value);
+            configMapper.insert(row);
+        } else {
+            row.setConfigValue(value);
+            configMapper.updateById(row);
+        }
+        BusinessAudit.record("设置数字显示精度", key, "业务参数", Map.of("显示规则", old), body);
+        CacheUtils.evict(CacheNames.SYS_CONFIG, key);
+        return R.ok();
+    }
+
+    /** 设置款式页面的默认分类类型；该展示默认值不会扩大人员分类权限。 / Set the default style category type for display without widening employee category access. */
     @SaCheckPermission("system:config:edit")
     @Log(title="款式默认分类类型",businessType=BusinessType.UPDATE)
     @Transactional(rollbackFor=Exception.class)
@@ -430,7 +461,7 @@ public class SysConfigController extends BaseController {
         return R.ok();
     }
 
-    /** 设置客户页面的默认展示分类；权限仍由人员分类授权控制。 */
+    /** 设置客户页面的默认分类类型；该展示默认值不会扩大人员分类权限。 / Set the default customer category type for display without widening employee category access. */
     @SaCheckPermission("system:config:edit")
     @Log(title="客户默认分类类型",businessType=BusinessType.UPDATE)
     @Transactional(rollbackFor=Exception.class)

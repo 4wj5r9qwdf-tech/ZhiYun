@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { precisionKey, precisionLabels, readPrecision, displayDecimal } from "../utils/decimalDisplay"
 import { computed, reactive, ref, watch } from 'vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -211,6 +212,21 @@ const customerDefaultSchemeId = ref('')
 const savedCustomerDefaultSchemeId = ref('')
 const customerDefaultEditing = ref(false)
 const customerDefaultSaving = ref(false)
+const displayRules = ref(readPrecision())
+const editingDisplay = ref(false)
+const savingDisplay = ref(false)
+/** 保存只读数字显示精度；业务计算与已保存单据原值不随该设置改写。 / Save presentation precision without changing calculations or persisted document values. */
+async function saveDisplayRules() {
+  savingDisplay.value = true
+  try {
+    const result:any = await api.post('/system/config/display-decimals', displayRules.value)
+    if (result.code !== 200) throw Error(result.msg)
+    editingDisplay.value = false
+    message.success('数字显示精度已保存')
+    await load()
+  } catch (error:any) { message.error(error.message || '保存失败') }
+  finally { savingDisplay.value = false }
+}
 const offlineLeadDays = ref(0)
 const offlineLeadEditing = ref(false)
 const offlineLeadSaving = ref(false)
@@ -257,6 +273,7 @@ function readCodeRule(row: Record<string, any> | undefined, fallback: { enabled:
   return { ...fallback }
 }
 function syncCodeRules(configs: Record<string, any>[]) {
+  if (!editingDisplay.value) displayRules.value = readPrecision(configs.find(row=>row.configKey===precisionKey)?.configValue)
   if (!offlineLeadEditing.value) { const n=Number(configs.find(row=>row.configKey==='order.customer.offlineLeadDays')?.configValue ?? 0); offlineLeadDays.value=Number.isInteger(n) && n>=0 && n<=3650 ? n : 0 }
   const sizeRow = configs.find(row => row.configKey === 'system.code.size')
   const groupRow = configs.find(row => row.configKey === 'system.code.sizeGroup')
@@ -1063,6 +1080,18 @@ watch(kind, () => { rows.value = []; total.value = 0; selected.value = undefined
     </template>
     <section v-if="kind === 'parameters' && parameterView === 'business'" class="settings-page" :aria-busy="loading">
       <div class="settings-section-title">业务规则</div>
+      <a-card class="setting-card" :bordered="false">
+        <div class="setting-heading"><div><h3>数字显示精度</h3><p>数量跟随计量单位。下列位数控制只读显示，编辑与结算使用原值。</p></div></div>
+        <div class="setting-controls"><a-form-item v-for="(label,key) in precisionLabels" :key="key" :label="label">
+          <a-input-number v-model:value="displayRules[key]" :min="0" :max="8" :precision="0" :disabled="!editingDisplay"/>
+          <small> 示例 {{ displayDecimal('1.23456789',displayRules[key] ?? 0) }}</small>
+        </a-form-item></div>
+        <div class="setting-footer"><a-space v-if="can('system:config:edit')">
+          <a-button v-if="editingDisplay" @click="editingDisplay=false;syncCodeRules(rows)">取消</a-button>
+          <a-button v-if="editingDisplay" type="primary" :loading="savingDisplay" @click="saveDisplayRules">保存</a-button>
+          <a-button v-else type="primary" @click="editingDisplay=true">修改规则</a-button>
+        </a-space></div>
+      </a-card>
       <a-card class="setting-card" :bordered="false">
         <div class="setting-heading"><div><h3>客户订单默认下线日期</h3><p>根据 PO 默认交期提前自然日生成下线日期；订单中可自行修改，已保存日期不会因参数变化而改变。</p></div></div>
         <div class="setting-controls"><a-form-item label="比默认交期提前"><a-input-number v-model:value="offlineLeadDays" :min="0" :max="3650" :precision="0" :disabled="!offlineLeadEditing" /> 天</a-form-item></div>

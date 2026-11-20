@@ -41,7 +41,7 @@ function showTotalText(t: number) { return `共 ${t} 条` }
 function onSearch() { pageNum.value = 1; loadList() }
 function resetFilters() { keyword.value = ''; pageNum.value = 1; loadList() }
 
-// 数据范围映射（RuoYi sys_role.data_scope）
+// 本系统角色数据范围映射；自定义节点关系由 sys_role_org 保存。 / Map this application's role data scopes; custom node links are stored in sys_role_org.
 const DATA_SCOPE: Record<string, string> = {
   '1': '全部数据', '2': '自定义节点', '3': '本组织及以下', '5': '仅本人',
 }

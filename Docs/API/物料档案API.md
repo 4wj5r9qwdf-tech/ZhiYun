@@ -1,6 +1,6 @@
 # 物料档案 API
 
-> 功能键：`material`；表：`inv_material`、`inv_material_color`、`inv_material_aux_unit`、`inv_material_spec_template`；状态：一期用户验收通过（2026-11-08），REST 契约已登记，MCP 运行时 9/9 工具已发现；MCP 写调用未单独核验。
+> 功能键：`material`；表：`inv_material`、`inv_material_color`、`inv_material_aux_unit`、`inv_material_spec_template`；状态：一期（2026-11-08）、二期（2026-11-13）用户验收通过；MCP 运行时已发现 9/9 工具。2026-11-20 用开发环境管理员认证调用物料类别/属性模板读取及临时档案新增、列表、修改、停用/启用、删除；临时档案删除后按编码回查无记录。`material_options`、`material_next_code`、普通账号权限和 SnailAI 页面确认卡尚未实际核验；本次未查阅操作日志记录。
 > 根路径：`/inventory/material`。所有主键使用十进制字符串传输。
 
 ## REST 接口
@@ -90,7 +90,9 @@
 | `material_set_status` | 启用或停用物料 |
 | `material_delete` | 删除未被业务引用的物料 |
 
-工具均要求当前员工自身身份；写入前展示完整字段/影响并获得确认。2026-11-08 已对当前运行时执行 `tools/list`，发现上述 9 个工具；本轮未单独调用 MCP 写工具。REST 写入仍由服务端权限、分类范围、单位/颜色引用校验及业务审计保护。
+工具均要求当前员工自身身份；写入前展示完整字段/影响并获得确认。2026-11-08 当前运行时 `tools/list` 已发现 9 个工具，含 `material_create`、`material_update`、`material_set_status`、`material_delete` 写工具；当时实际调用仅覆盖 `material_list`、`material_options`、`material_spec_templates` 三个读取工具，写操作仍待实调。REST 写入仍由服务端权限、分类范围、单位/颜色引用校验及业务审计保护。
+
+`material_list` 的 `filter` 仅接受 `keyword`、`schemeId`、`categoryId`、`status`。未知字段、非字符串关键字/状态、非法状态或非正十进制字符串 ID 会返回参数错误，不会把错误筛选默认为“不过滤”。
 
 ### 多规格
 

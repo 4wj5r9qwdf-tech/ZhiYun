@@ -120,8 +120,7 @@ public class MaterialDemandPlanService {
         if (cleanReason.isEmpty() || cleanReason.length() > 500) throw new ServiceException("请填写计划数量调整原因（最多500字）");
 
         var existing = new LinkedHashMap<Long,Map<String,Object>>();
-        for (Object raw : (List<?>)before.get("items")) {
-            @SuppressWarnings("unchecked") var row = (Map<String,Object>)raw;
+        for (Map<String,Object> row : listOfMaps(before.get("items"))) {
             existing.put(Long.valueOf(row.get("itemId").toString()),row);
         }
         var seen = new HashSet<Long>();
@@ -131,9 +130,13 @@ public class MaterialDemandPlanService {
                 throw new ServiceException("需求计划明细参数重复或不完整，请刷新后重试");
             var row = existing.get(change.itemId());
             if (row == null) throw new ServiceException("需求明细已变化，请重新加载");
-            BigDecimal next = change.plannedQuantity();
-            if (next.signum() < 0 || next.scale() > 8 || next.precision() > 24)
-                throw new ServiceException("计划数量必须为0或正数，最多8位小数");
+            // numeric(24,8) 仅保留 16 位整数；去掉末尾零后校验数值能否无损存储。
+            // numeric(24,8) allows 16 integer digits; ignore trailing zeros before checking exact storage.
+            BigDecimal next = change.plannedQuantity().stripTrailingZeros();
+            long integerDigits = (long) next.precision() - next.scale();
+            if (next.signum() < 0 || next.scale() > 8 || integerDigits > 16) {
+                throw new ServiceException("计划数量必须为0或正数，整数最多16位，小数最多8位");
+            }
             BigDecimal previous = new BigDecimal(row.get("plannedQuantity").toString());
             if (previous.compareTo(next) == 0) continue;
             Long itemId = change.itemId();
@@ -190,6 +193,9 @@ public class MaterialDemandPlanService {
                    material_variant_id::text AS "materialVariantId",material_spec AS "materialSpec",material_color_id::text AS "materialColorId",
                    material_color_name AS "materialColorName",inventory_unit_id::text AS "inventoryUnitId",inventory_unit_name AS "inventoryUnitName",
                    per_unit_usage AS "perUnitUsage",original_quantity AS "originalQuantity",planned_quantity AS "plannedQuantity",
+                   trim_scale(per_unit_usage)::text AS "usageRaw",
+                   trim_scale(original_quantity)::text AS "originalRaw",trim_scale(planned_quantity)::text AS "plannedRaw",
+                   (SELECT decimal_places FROM base_unit WHERE unit_id=inventory_unit_id) AS "unitPlaces",
                    purchase_units::text AS "purchaseUnitsJson",adjustment_reason AS "adjustmentReason",sort_order AS "sortOrder"
             FROM biz_material_demand_plan_item WHERE plan_id=? ORDER BY sort_order,item_id
             """, planId);
@@ -254,6 +260,7 @@ public class MaterialDemandPlanService {
             try{items=buildItems(source,document);message="";}
             catch(ServiceException error){
                 // 历史订单快照可能未保存套装子款色码；订单审核不得因派生计划无法还原而失败。
+                // Older order snapshots may lack set-component color-size data; this derived-plan gap must not fail order approval.
                 // Legacy order snapshots may not preserve set-child color-size pairings; keep order approval successful and flag the plan for recalculation.
                 status="incomplete";
                 message=error.getMessage();
@@ -305,7 +312,9 @@ public class MaterialDemandPlanService {
 
     /** 将订单抬头信息保留为只读快照，供列表、审批和历史计划回查。 / Preserve order header and PO data as a read-only snapshot for list, approval and historical review. */
     private Map<String,Object> snapshot(Map<String,Object> order) {
-        var source=(Map<String,Object>)order.get("document");
+        // 来源查询将 JSONB 显式转为文本，统一通过项目 JSON 工具解析，避免未经校验的泛型强转。
+        // The source query selects JSONB as text; parse it with the shared JSON utility instead of an unchecked cast.
+        var source = JsonUtils.parseMap(Objects.toString(order.get("document"), "{}"));
         var result=new LinkedHashMap<String,Object>(source);
         result.put("orderId",Objects.toString(order.get("id"),""));
         result.put("orderNo",Objects.toString(order.get("order_no"),""));
@@ -434,8 +443,7 @@ public class MaterialDemandPlanService {
         return result;
     }
 
-    /** 防止非数组历史数据被强转；返回可遍历的对象列表。 / Safely convert a JSON array to maps without trusting historical payload shapes. */
-    /** 将可能为空的需求列表归一化为空集合，避免历史空值导致遍历失败。 / Normalize a missing demand collection to an empty list before iteration. */
+    /** 将可能为空的需求列表归一化为空集合，避免历史快照空值导致遍历失败。 / Normalize an absent demand collection so legacy snapshots remain safe to iterate. */
     private List<Map<String,Object>> demandListSafe(List<Map<String,Object>> source) { return source == null ? List.of() : source; }
 
     /** 从 JSON 数组中提取对象行并复制为可写 Map，忽略非对象值。 / Copy JSON object entries into mutable maps and ignore unexpected scalar entries. */
@@ -491,29 +499,56 @@ public class MaterialDemandPlanService {
         row.get("inventoryUnitId"),row.get("inventoryUnitName"),row.get("perUnitUsage"),row.get("originalQuantity"),row.get("plannedQuantity"),
         JsonUtils.toJsonString(row.get("purchaseUnits")),row.get("sortOrder"));}
 
+    /** 读取同步前的明细行数，用于审计计划重算前后的变化规模。 / Count existing lines before synchronization so the audit records the before-and-after scope. */
     private int activeItemsCount(Long planId){Integer count=jdbc.queryForObject("SELECT count(*) FROM biz_material_demand_plan_item WHERE plan_id=?",Integer.class,planId);return count==null?0:count;}
 
     /** 按物料档案/规格/颜色/供料方式汇总，同时保留订单 PO 色码来源子行。 / Aggregate by material variant, color, supply mode and unit while retaining each PO and style-color-size source. */
     private List<Map<String,Object>> summarize(List<Map<String,Object>> items){
-        var groups=new LinkedHashMap<String,Map<String,Object>>();
-        for(var item:items){
-            String key=String.join("|",Objects.toString(item.get("materialId"),""),Objects.toString(item.get("materialVariantId"),""),
-                Objects.toString(item.get("materialSpec"),""),Objects.toString(item.get("materialColorId"),""),Objects.toString(item.get("materialColorName"),""),
-                Objects.toString(item.get("supplyMode"),""),Objects.toString(item.get("inventoryUnitId"),""));
-            var group=groups.computeIfAbsent(key,ignored->{
-                var value=new LinkedHashMap<String,Object>();value.put("key",key);value.put("materialId",item.get("materialId"));
-                value.put("materialCode",item.get("materialCode"));value.put("materialName",item.get("materialName"));
-                value.put("categoryName",item.get("categoryName"));value.put("materialSpec",item.get("materialSpec"));
-                value.put("materialColorName",item.get("materialColorName"));value.put("supplyMode",item.get("supplyMode"));
-                value.put("inventoryUnitName",item.get("inventoryUnitName"));value.put("originalQuantity",BigDecimal.ZERO);
-                value.put("plannedQuantity",BigDecimal.ZERO);value.put("purchaseUnits",item.get("purchaseUnits"));
-                value.put("sources",new ArrayList<Map<String,Object>>());return value;
+        var groups = new LinkedHashMap<String,Map<String,Object>>();
+        var sourcesByGroup = new LinkedHashMap<String,List<Map<String,Object>>>();
+        for (var item : items) {
+            // 供料方式、单位、规格和物料颜色都影响可汇总库存口径；PO 与成衣色码留在来源子行中。
+            // Supply mode, unit, variant, and material color define a stock bucket; PO and garment pairs remain source details.
+            List<String> dimensions = List.of(
+                Objects.toString(item.get("materialId"), ""),
+                Objects.toString(item.get("materialVariantId"), ""),
+                Objects.toString(item.get("materialSpec"), ""),
+                Objects.toString(item.get("materialColorId"), ""),
+                Objects.toString(item.get("materialColorName"), ""),
+                Objects.toString(item.get("supplyMode"), ""),
+                Objects.toString(item.get("inventoryUnitId"), ""));
+            String key = compositeKey(dimensions);
+            var group = groups.computeIfAbsent(key, ignored -> {
+                var value = new LinkedHashMap<String,Object>();
+                value.put("key", key);
+                value.put("materialId", item.get("materialId"));
+                value.put("materialCode", item.get("materialCode"));
+                value.put("materialName", item.get("materialName"));
+                value.put("categoryName", item.get("categoryName"));
+                value.put("materialSpec", item.get("materialSpec"));
+                value.put("materialColorName", item.get("materialColorName"));
+                value.put("supplyMode", item.get("supplyMode"));
+                value.put("inventoryUnitName", item.get("inventoryUnitName"));
+                value.put("originalQuantity", BigDecimal.ZERO);
+                value.put("plannedQuantity", BigDecimal.ZERO);
+                value.put("purchaseUnits", item.get("purchaseUnits"));
+                return value;
             });
-            group.put("originalQuantity",((BigDecimal)group.get("originalQuantity")).add(new BigDecimal(item.get("originalQuantity").toString())));
-            group.put("plannedQuantity",((BigDecimal)group.get("plannedQuantity")).add(new BigDecimal(item.get("plannedQuantity").toString())));
-            ((List<Map<String,Object>>)group.get("sources")).add(item);
+            group.put("originalQuantity", ((BigDecimal) group.get("originalQuantity"))
+                .add(new BigDecimal(item.get("originalQuantity").toString())));
+            group.put("plannedQuantity", ((BigDecimal) group.get("plannedQuantity"))
+                .add(new BigDecimal(item.get("plannedQuantity").toString())));
+            sourcesByGroup.computeIfAbsent(key, ignored -> new ArrayList<>()).add(item);
         }
+        groups.forEach((key, group) -> group.put("sources", sourcesByGroup.getOrDefault(key, List.of())));
         return new ArrayList<>(groups.values());
+    }
+
+    /** 生成无分隔符碰撞的汇总维度键；该键仅供结果展开状态使用，不是业务主键。 / Build a collision-safe grouping key used only for UI expansion, never as a business ID. */
+    private String compositeKey(List<String> dimensions) {
+        var key = new StringBuilder();
+        for (String dimension : dimensions) key.append(dimension.length()).append(':').append(dimension);
+        return key.toString();
     }
 
     /** 按已保存的物料换算规则展示采购单位参考数量；实际换算不推测采购包装数量。 / Calculate fixed-conversion purchase references while leaving variable conversions explicitly uncalculated. */

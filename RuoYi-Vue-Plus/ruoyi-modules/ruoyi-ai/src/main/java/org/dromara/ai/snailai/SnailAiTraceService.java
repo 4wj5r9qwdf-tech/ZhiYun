@@ -12,9 +12,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
-/** Persists bounded, permission-protected diagnostics for ERP SnailAI turns. */
+/** 保存受权限保护且有长度上限的织云智能体诊断记录，不持久化工具参数和结果正文。 / Persist bounded, permission-protected diagnostics without storing tool arguments or result bodies. */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,6 +29,8 @@ public class SnailAiTraceService {
     private static final Pattern BEARER_VALUE = Pattern.compile("(?i)Bearer\\s+[A-Za-z0-9._~+/=-]+");
 
     private final JdbcTemplate jdbcTemplate;
+
+    /** 开始一轮对话并保存提问与附件摘要；文本及字段长度在持久化前统一截断。 / Start a chat turn and store bounded question text and attachment metadata. */
     public String start(Long userId, String nickname, Long agentId, String conversationId,
                        String question, List<Map<String, Object>> attachments) {
         String traceId = IdUtil.fastSimpleUUID();
@@ -42,6 +45,7 @@ public class SnailAiTraceService {
         return traceId;
     }
 
+    /** 更新对话中可见的工具目录，供授权诊断人员解释当轮工具范围。 / Update the tool catalog visible during this turn for authorized diagnostics. */
     public void updateVisibleTools(String traceId, List<Map<String, Object>> tools) {
         if (!StringUtils.hasText(traceId)) {
             return;
@@ -50,6 +54,7 @@ public class SnailAiTraceService {
             toJson(tools), traceId);
     }
 
+    /** 创建工具执行事件；参数正文始终以占位说明保存，避免敏感业务数据进入诊断库。 / Start a tool event while withholding potentially sensitive arguments. */
     public ToolTraceHandle startTool(String traceId, String toolName, String description, String arguments) {
         String eventId = IdUtil.fastSimpleUUID();
         long startedAt = System.currentTimeMillis();
@@ -62,6 +67,7 @@ public class SnailAiTraceService {
         return new ToolTraceHandle(eventId, startedAt);
     }
 
+    /** 完成工具事件；仅记录状态、脱敏错误和耗时，不持久化工具结果正文。 / Finish a tool event without persisting its result body. */
     public void finishTool(ToolTraceHandle handle, String status, String result, String error) {
         if (handle == null) {
             return;
@@ -76,6 +82,7 @@ public class SnailAiTraceService {
             Math.max(0L, System.currentTimeMillis() - handle.startedAtMillis()), handle.eventId());
     }
 
+    /** 完成对话诊断；保留截断后的回复并对错误内容做敏感信息脱敏。 / Complete a turn with bounded answer text and sanitized errors. */
     public void complete(String traceId, String answer, String status, String error, long durationMs) {
         if (!StringUtils.hasText(traceId)) {
             return;
@@ -89,6 +96,7 @@ public class SnailAiTraceService {
             Math.max(0L, durationMs), traceId);
     }
 
+    /** 按关键字和状态分页查询单轮诊断；页码和页大小在服务端限制范围。 / Search individual turns with bounded server-side pagination. */
     public Map<String, Object> list(int pageNum, int pageSize, String keyword, String status) {
         int safePage = Math.max(1, pageNum);
         int safeSize = Math.min(100, Math.max(1, pageSize));
@@ -119,6 +127,7 @@ public class SnailAiTraceService {
             "pageNum", safePage, "pageSize", safeSize);
     }
 
+    /** 查询单轮诊断及工具事件，不扩展到同一会话的其他轮次。 / Load one turn and its tool events without expanding to sibling turns. */
     public Map<String, Object> detail(String traceId) {
         Map<String, Object> trace = jdbcTemplate.queryForMap(
             "SELECT * FROM sys_snail_ai_chat_trace WHERE trace_id = ?", traceId);
@@ -134,7 +143,7 @@ public class SnailAiTraceService {
         return response;
     }
 
-    /** 按员工、智能体及对话编号分组，筛选命中任意轮但保留整段对话。 */
+    /** 按员工、智能体和上游会话编号归并；缺失会话编号时每轮独立显示。 / Group by employee, agent and upstream conversation ID; isolate turns without that ID. */
     public Map<String, Object> conversationList(int pageNum, int pageSize, String keyword, String status) {
         int page = Math.max(1, pageNum), size = Math.max(1, Math.min(100, pageSize));
         String search = StringUtils.hasText(keyword) ? keyword.trim() : "";
@@ -142,7 +151,8 @@ public class SnailAiTraceService {
         String matching = "%" + search + "%";
         String grouped = """
             FROM sys_snail_ai_chat_trace t
-            GROUP BY t.user_id, t.agent_id, t.conversation_id
+            GROUP BY t.user_id, t.agent_id, t.conversation_id,
+                     CASE WHEN NULLIF(btrim(t.conversation_id), '') IS NULL THEN t.trace_id END
             HAVING (? = '' OR bool_or(t.nickname ILIKE ? OR t.question ILIKE ? OR t.answer ILIKE ? OR t.conversation_id ILIKE ?))
                AND (? = '' OR bool_or(t.status = ?))
             """;
@@ -156,27 +166,51 @@ public class SnailAiTraceService {
                    (array_agg(t.status ORDER BY t.started_at DESC, t.trace_id DESC))[1] AS status,
                    min(t.started_at) AS started_at, max(t.started_at) AS last_at,
                    count(*) AS turn_count, count(*) FILTER (WHERE t.status = 'FAILED') AS failed_count
-            """ + grouped + " ORDER BY max(t.started_at) DESC LIMIT ? OFFSET ?",
+            """ + grouped + " ORDER BY max(t.started_at) DESC, max(t.trace_id) DESC LIMIT ? OFFSET ?",
             search, matching, matching, matching, matching, state, state, size, (long) (page - 1) * size);
         return Map.of("rows", rows, "total", total == null ? 0 : total, "pageNum", page, "pageSize", size);
     }
 
-    /** 使用受授权记录作为锚点，按同一员工和智能体读取整段对话。 */
+    /** 使用已授权的诊断记录作锚点；没有上游会话编号时只读取当前轮。 / Use an authorized trace as anchor and isolate it when no upstream conversation ID exists. */
     public Map<String, Object> conversationDetail(String traceId) {
         Map<String, Object> anchor = jdbcTemplate.queryForMap(
             "SELECT user_id, agent_id, conversation_id, nickname FROM sys_snail_ai_chat_trace WHERE trace_id = ?", traceId);
-        List<Map<String, Object>> records = jdbcTemplate.queryForList("""
-            SELECT * FROM sys_snail_ai_chat_trace
-             WHERE user_id = ? AND agent_id IS NOT DISTINCT FROM ? AND conversation_id = ?
-             ORDER BY started_at ASC, trace_id ASC
-            """, anchor.get("user_id"), anchor.get("agent_id"), anchor.get("conversation_id"));
-        List<Map<String, Object>> turns = new ArrayList<>();
-        for (Map<String, Object> record : records) turns.add(detail(String.valueOf(record.get("trace_id"))));
+        // 缺少上游对话编号时，本轮只能按自身诊断编号回查。
+        // Without an upstream conversation ID, load only the anchored turn.
+        String conversationId = Objects.toString(anchor.get("conversation_id"), "");
+        if (!StringUtils.hasText(conversationId)) {
+            Map<String, Object> response = new LinkedHashMap<>(anchor);
+            response.put("turns", List.of(detail(traceId)));
+            return response;
+        }
+
+        String scope = "user_id = ? AND agent_id IS NOT DISTINCT FROM ? AND conversation_id = ?";
+        Object[] args = {anchor.get("user_id"), anchor.get("agent_id"), conversationId};
+        var turns = jdbcTemplate.queryForList("SELECT * FROM sys_snail_ai_chat_trace WHERE " + scope
+            + " ORDER BY started_at, trace_id", args);
+
+        // 同一对话的工具事件一次查询，避免每轮重复读取诊断记录。
+        // Fetch all tool events for the conversation without reloading each turn.
+        var events = jdbcTemplate.queryForList("""
+            SELECT event_id, trace_id, tool_name, tool_description, arguments_preview, result_preview,
+                   status, error_message, duration_ms, started_at, finished_at
+            FROM sys_snail_ai_tool_trace
+            WHERE trace_id IN (SELECT trace_id FROM sys_snail_ai_chat_trace WHERE
+            """ + scope + ") ORDER BY started_at, event_id", args);
+        Map<String, List<Map<String, Object>>> toolsByTurn = new LinkedHashMap<>();
+        for (var event : events) {
+            String turnId = String.valueOf(event.remove("trace_id"));
+            toolsByTurn.computeIfAbsent(turnId, key -> new ArrayList<>()).add(event);
+        }
+        for (var turn : turns) {
+            turn.put("tools", toolsByTurn.getOrDefault(String.valueOf(turn.get("trace_id")), List.of()));
+        }
         Map<String, Object> response = new LinkedHashMap<>(anchor);
         response.put("turns", turns);
         return response;
     }
 
+    /** 脱敏错误及状态文本中的凭据类字段，再限制可写入诊断记录的字符数。 / Redact credential-like values before applying the storage limit. */
     private String sanitize(String value) {
         if (!StringUtils.hasText(value)) {
             return "";
@@ -186,6 +220,7 @@ public class SnailAiTraceService {
         return limit(safe, MAX_PREVIEW_CHARS);
     }
 
+    /** 使用项目统一 JSON 配置序列化诊断元数据；序列化异常时不阻断业务对话。 / Serialize diagnostic metadata with shared JSON rules without interrupting the chat on failure. */
     private String toJson(Object value) {
         try {
             // 与项目统一 JSON 工具共用 Jackson 3 配置，保留 bigint 字符串序列化等全局规则。
@@ -197,6 +232,7 @@ public class SnailAiTraceService {
         }
     }
 
+    /** 将可变文本限制在数据库列和诊断页面可承载的长度内。 / Bound text to the size supported by persistence and diagnostics. */
     private String limit(String value, int maxChars) {
         if (value == null) {
             return "";
@@ -204,6 +240,7 @@ public class SnailAiTraceService {
         return value.length() <= maxChars ? value : value.substring(0, maxChars) + "…";
     }
 
+    /** 保存单次工具事件的计时信息，不包含工具参数或结果正文。 / Carry only the event ID and start time between tool lifecycle callbacks. */
     public record ToolTraceHandle(String eventId, long startedAtMillis) {
     }
 }

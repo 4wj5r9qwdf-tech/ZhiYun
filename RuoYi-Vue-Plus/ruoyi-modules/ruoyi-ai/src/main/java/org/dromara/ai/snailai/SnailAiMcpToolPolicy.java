@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Fails closed for unknown tools and separates reads from writes requiring employee confirmation. */
+/** 对 MCP 工具执行失败关闭的权限筛选，并区分员工登录型查询与需确认的写操作。 / Apply fail-closed MCP permission filtering and classify employee-only reads. */
 public final class SnailAiMcpToolPolicy {
 
     private static final Pattern PERMISSION_CODE =
@@ -23,6 +23,8 @@ public final class SnailAiMcpToolPolicy {
         Map.entry("unit_create", Set.of("system:unit:add")),
         Map.entry("unit_update", Set.of("system:unit:edit")),
         Map.entry("unit_delete", Set.of("system:unit:remove")),
+        Map.entry("tag_group_list", Set.of()),
+        Map.entry("tag_options", Set.of()),
         Map.entry("category_schemes", Set.of("system:category:list")),
         Map.entry("category_scheme_options", Set.of()),
         Map.entry("category_list", Set.of("system:category:list")),
@@ -51,7 +53,7 @@ public final class SnailAiMcpToolPolicy {
     );
 
     private static final Set<String> EMPLOYEE_LOGIN_ONLY = Set.of(
-        "unit_options", "unit_convert", "category_scheme_options", "category_options",
+        "unit_options", "unit_convert", "tag_group_list", "tag_options", "category_scheme_options", "category_options",
         "material_category_options", "material_options", "material_spec_templates",
         "color_options", "warehouse_form_options", "warehouse_layout_options",
         "size_options", "size_get_code_rule", "size_group_options", "size_group_get_code_rule"
@@ -64,9 +66,17 @@ public final class SnailAiMcpToolPolicy {
         "_get_code_rule", "_schemes", "_manages_get"
     );
 
+    /** 语义不适合用后缀判断的只读工具，采用完整名称白名单。 / Exact names for read tools whose names do not use a safe read-only suffix. */
+    private static final Set<String> READ_ONLY_TOOLS = Set.of(
+        "approval_my_todo_document", "approval_my_done_document", "approval_my_initiated_document",
+        "approval_task_back_nodes"
+    );
+
+    /** 静态策略类不允许实例化。 / Prevent instances of this static policy utility. */
     private SnailAiMcpToolPolicy() {
     }
 
+    /** 判断当前员工是否满足工具描述或显式覆盖表声明的全部权限；未知工具一律拒绝。 / Require every declared permission and reject tools with no known policy. */
     public static boolean isAllowed(ToolCallback callback, Set<String> permissions) {
         ToolDefinition definition = callback.getToolDefinition();
         String name = normalizeName(definition.name());
@@ -80,11 +90,13 @@ public final class SnailAiMcpToolPolicy {
         return permissions.contains("*:*:*") || permissions.containsAll(required);
     }
 
+    /** 按明确白名单或约定的只读后缀分类；需要确认的写操作不能使用泛化详情后缀。 / Classify read tools by allowlist or read suffix; write actions must not rely on generic detail suffixes. */
     public static boolean isReadOnly(ToolCallback callback) {
         String name = normalizeName(callback.getToolDefinition().name());
-        return READ_ONLY_SUFFIXES.stream().anyMatch(name::endsWith);
+        return READ_ONLY_TOOLS.contains(name) || READ_ONLY_SUFFIXES.stream().anyMatch(name::endsWith);
     }
 
+    /** 去除 MCP 传输层可能附加的命名空间前缀，得到本地工具目录名。 / Normalize transport-qualified tool names to their local identifiers. */
     public static String normalizeName(String name) {
         if (name == null) {
             return "";
@@ -106,6 +118,7 @@ public final class SnailAiMcpToolPolicy {
         return result;
     }
 
+    /** 从工具描述提取权限码，并在描述缺失时读取显式覆盖；返回 null 表示未知且必须拒绝。 / Resolve required permissions from metadata or explicit overrides, failing closed when unknown. */
     private static Set<String> requiredPermissions(String name, String description) {
         Matcher matcher = PERMISSION_CODE.matcher(description == null ? "" : description);
         Set<String> parsed = new LinkedHashSet<>();

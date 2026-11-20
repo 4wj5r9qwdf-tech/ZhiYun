@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { sumDecimal } from "../utils/decimalDisplay"
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -26,6 +27,13 @@ const columns = [
   {key:'followerName',title:'跟单员'}, {key:'date',title:'订单日期'}, {key:'due',title:'最近交期'}, {key:'processingAmount',title:'加工金额'}, {key:'demandState',title:'算料状态'}, {key:'status',title:'状态'},
   {key:'updatedAt',title:'修改时间',defaultVisible:false},
 ]
+const listPage = ref(1), listPageSize = ref(20), listTotal = ref(0)
+/** 切换每页条数后从第一页重新查询。 / Reload from page one when the page size changes. */
+function changeListPage(page: number, size: number) {
+  listPage.value = size === listPageSize.value ? page : 1
+  listPageSize.value = size
+  void run(load)
+}
 const rows = ref<any[]>([])
 const options = ref<any>({})
 const form = ref<any>()
@@ -318,10 +326,13 @@ async function run(action: () => Promise<void>) {
   try { await action() } catch (error:any) { message.error(error.message || '操作失败') }
   finally { busy.value=false }
 }
-/** 读取订单、PO、人员和款式选择所需数据。 / Load the order and its PO, personnel and style reference data. */
+/** 修改筛选后从第一页查询。 / Restart paging when applying filters. */
+function queryList() { listPage.value = 1; void run(load) }
+/** 读取当前页并准备 PO 和款式悬浮信息。 / Load the current page and prepare PO and style popovers. */
 async function load() {
-  const data = await call('get','/list',{keyword:keyword.value,status:status.value})
-  rows.value = data.map((row:any)=>{
+  const data = await call('get','/list',{keyword:keyword.value,status:status.value,pageNum:listPage.value,pageSize:listPageSize.value})
+  listTotal.value = data.total
+  rows.value = data.rows.map((row:any)=>{
     const doc=row.document
     const pos=doc.pos || []
     const lines=pos.flatMap((p:any)=>p.lines)
@@ -458,16 +469,6 @@ function planLabel(plan:any) {
   const line=planLine(plan)
   return line ? `${line.styleName} · ${spec(line)}` : '订单规格已不可用'
 }
-// 试算数量由服务端以十进制字符串返回；按字符串精确相加，避免浮点汇总误差。
-function sumDecimal(values:unknown[]): string | null {
-  const parts=values.map(value=>String(value ?? '').trim())
-  if (parts.some(value=>!/^\d+(\.\d+)?$/.test(value))) return null
-  const scale=Math.max(0,...parts.map(value=>(value.split('.')[1] || '').length))
-  const total=parts.reduce((sum,value)=>{ const [whole,fraction='']=value.split('.'); return sum+BigInt(whole+fraction.padEnd(scale,'0')) },0n)
-  if (!scale) return total.toString()
-  const digits=total.toString().padStart(scale+1,'0')
-  return (digits.slice(0,-scale)+'.'+digits.slice(-scale)).replace(/\.?0+$/,'')
-}
 // 对汇总后的库存数量换算一次，避免累加逐行舍入的采购数量。
 function convertPurchaseQuantity(quantity:string, factor:string): { value:string; approximate:boolean } | null {
   if (!/^\d+(\.\d+)?$/.test(quantity) || !/^\d+(\.\d+)?$/.test(factor)) return null
@@ -493,10 +494,13 @@ function summarizePurchaseUnits(details:any[], quantity:string|null): string[] {
     return converted ? `${converted.approximate ? '约 ' : ''}${converted.value} ${unit.unitName}` : `${unit.unitName}：无法换算`
   })
 }
+// 物料汇总按物料、库存单位、规格、颜色及供料方式分组；所有数量通过十进制字符串精确合计。
+// Aggregate by material, unit, variant, color and supply mode using exact decimal-string sums.
 const materialSummary = computed(() => {
   const groups=new Map<string,any>()
   for (const plan of filteredPlans.value) for (const [index,detail] of (plan.details || []).entries()) {
     // 严格按物料和库存单位汇总；缺失标识的旧数据不与其他记录合并。
+    // Keep unidentifiable legacy lines separate instead of merging unrelated materials.
     const materialKey=detail.materialId ? String(detail.materialId) : `legacy:${plan.lineKey}:${index}`
     const unitKey=detail.unitId ? String(detail.unitId) : `name:${detail.unit || ''}`
     const key=JSON.stringify([materialKey,unitKey])
@@ -628,14 +632,14 @@ function close() {
 <template>
   <StandardListLayout v-if="!form">
     <template #filters>
-      <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" allow-clear placeholder="订单号、客户、PO 或款号" @press-enter="run(load)" /></label>
+      <label class="zy-filter-field"><span>关键词</span><a-input v-model:value="keyword" allow-clear placeholder="订单号、客户、PO 或款号" @press-enter="queryList()" /></label>
       <label class="zy-filter-field"><span>订单状态</span><a-select v-model:value="status" allow-clear style="width:130px" :options="Object.entries(statuses).map(([value,label])=>({value,label}))" /></label>
     </template>
-    <FoundationTable page-toolbar storage-key="customer_order_list" :columns="columns" :rows="rows" :loading="busy" :action-width="170">
+    <FoundationTable page-toolbar storage-key="customer_order_list" :server-total="listTotal" :server-page="listPage" :server-page-size="listPageSize" @page-change="changeListPage" :columns="columns" :rows="rows" :loading="busy" :action-width="170">
       <template #actions>
         <a-button v-if="permissions('edit')" type="primary" @click="open()">新增订单</a-button>
-        <a-button type="primary" @click="run(load)">查询</a-button>
-        <a-button @click="keyword=''; status=undefined; run(load)">重置</a-button>
+        <a-button type="primary" @click="queryList()">查询</a-button>
+        <a-button @click="keyword=''; status=undefined; queryList()">重置</a-button>
       </template>
       <template #cell="{column,row}">
         <a-tag v-if="column.key==='status'" :color="row.status==='approved'?'green':row.status==='submitted'?'gold':'default'">{{ statuses[row.status] }}</a-tag>

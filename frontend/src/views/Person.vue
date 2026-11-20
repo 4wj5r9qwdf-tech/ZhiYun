@@ -6,10 +6,10 @@ import '../assets/standard-list-fill.css'
  * - a-form + a-modal：表单校验/分组布局
  * - a-input/a-select/a-date-picker/a-checkbox-group：控件统一
  * - message/Modal.confirm：全局反馈（替代手写 msg/confirm）
- * - 建人员=建登录账号（工号6位，默认密码123456，可重置/自定义）
+ * - 建人员=建登录账号（工号6位，可设置独立密码）
  * - 后端 orderBy 白名单：job_no/name/org/group/emp_status/card_no/hire_date
  */
-import { ref, computed, onMounted, watch, reactive, nextTick, onBeforeUnmount } from 'vue'
+import { h, ref, computed, onMounted, watch, reactive, nextTick, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import message from 'ant-design-vue/es/message'
 import Modal from 'ant-design-vue/es/modal'
@@ -278,7 +278,7 @@ const saving = ref(false)
 const formRef = ref()
 
 const emptyForm = () => ({
-  userId: null as number | null,
+  userId: null as string | null,
   jobNo: '', name: '', gender: '1', email: '', phoneNumber: '', orgId: undefined as string | undefined,
   status: '0', remark: '',
   password: '',
@@ -439,11 +439,13 @@ async function openEdit(row: any) {
   await loadOptions()
   activeTab.value = 'base'
   isEdit.value = true
-  const res: any = await api.get(`/system/person/${row.user_id}`)
+  const res: any = await api.get(`/system/person/${row.user_id_text || row.user_id}`)
   if (res.code !== 200) { message.error('加载详情失败'); return }
   const d = res.data
   form.value = {
-    userId: d.user_id, jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
+    // 雪花 ID 使用服务端返回的文本，避免 JavaScript 舍入主键。
+    // Preserve the server’s text ID to avoid rounding a Snowflake ID in JavaScript.
+    userId: String(row.user_id_text || row.user_id), jobNo: d.user_name, name: d.nick_name, gender: d.gender || '1',
     email: d.email || '', phoneNumber: d.phone_number || '', orgId: d.org_id ? String(d.org_id) : undefined,
     status: d.status || '0', remark: d.remark || '', password: '',
     postIds: (d.postIds || []).map(String), roleIds: (d.roleIds || []).map(String),
@@ -552,15 +554,25 @@ async function save() {
   finally { saving.value = false }
 }
 
+/** 专用入口提交新密码，普通档案表单不携带密码。 / Submit the new password through the dedicated reset action. */
 function resetPwd(row: any) {
+  const password = ref('')
   Modal.confirm({
-    title: '重置密码',
-    content: `确认将「${row.nick_name || row.name}」密码重置为 123456？`,
+    title: `重置「${row.nick_name || row.name}」的密码`,
+    content: () => h('input', {
+      class: 'ant-input', type: 'password', autocomplete: 'new-password',
+      placeholder: '请输入新密码，至少 8 个字符', value: password.value,
+      onInput: (event: Event) => { password.value = (event.target as HTMLInputElement).value },
+    }),
     okText: '确定', cancelText: '取消',
     onOk: async () => {
-      const res: any = await api.put(`/system/person/${row.user_id}/reset-password`)
-      if (res.code === 200) message.success('密码已重置为 123456')
-      else message.error(res.msg || '重置失败')
+      if (password.value.trim().length < 8 || new TextEncoder().encode(password.value).length > 72) {
+        message.error('密码至少 8 个字符，且不得超过 72 字节')
+        throw new Error('密码格式无效')
+      }
+      const res: any = await api.put(`/system/person/${row.user_id_text || row.user_id}/reset-password`, { password: password.value })
+      if (res.code !== 200) { message.error(res.msg || '重置失败'); throw new Error(res.msg) }
+      message.success('密码已重置')
     },
   })
 }
@@ -572,7 +584,7 @@ function removePerson(row: any) {
     content: `确认删除「${row.nick_name || row.name}（工号 ${row.job_no}）」？删除后该账号将无法登录。`,
     okText: '删除', okType: 'danger', cancelText: '取消',
     onOk: async () => {
-      const res: any = await api.delete(`/system/person/${row.user_id}`)
+      const res: any = await api.delete(`/system/person/${row.user_id_text || row.user_id}`)
       if (res.code === 200) { message.success('已删除'); loadList() }
       else message.error(res.msg || '删除失败')
     },
@@ -586,7 +598,7 @@ function restorePerson(row: any) {
     content: `确认恢复「${row.nick_name || row.name}（工号 ${row.job_no}）」？恢复后可重新登录使用。`,
     okText: '恢复', cancelText: '取消',
     onOk: async () => {
-      const res: any = await api.put(`/system/person/${row.user_id}/restore`)
+      const res: any = await api.put(`/system/person/${row.user_id_text || row.user_id}/restore`)
       if (res.code === 200) { message.success('已恢复'); loadList() }
       else message.error(res.msg || '恢复失败')
     },
@@ -602,7 +614,7 @@ function permanentDeletePerson(row: any) {
       `其占用的角色将一并释放，之后可在角色管理里删除该角色。`,
     okText: '彻底删除', okType: 'danger', cancelText: '取消',
     onOk: async () => {
-      const res: any = await api.delete(`/system/person/${row.user_id}/permanent`)
+      const res: any = await api.delete(`/system/person/${row.user_id_text || row.user_id}/permanent`)
       if (res.code === 200) { message.success('已彻底删除'); loadList() }
       else message.error(res.msg || '彻底删除失败')
     },
@@ -719,7 +731,7 @@ function resetFilter() {
       :pagination="{ current: pageNum, pageSize, total, showSizeChanger: true, showTotal: showTotalText, onChange: onPageChange, showQuickJumper: true }"
       :scroll="{ x: autoScrollWidth, y: 'calc(100vh - 360px)' }"
       table-layout="fixed"
-      row-key="user_id"
+      :row-key="(row:any) => row.user_id_text || String(row.user_id)"
       size="middle"
       class="person-table zy-fill-table"
       @change="onTableChange"
@@ -745,7 +757,7 @@ function resetFilter() {
               <a-button type="primary" size="small" @click="openEdit(record)">编辑</a-button>
               <a-button v-if="can('system:person:categoryScope')" size="small"
                 @click="categoryScopePerson = { id: record.user_id_text, name: record.name }">分类权限</a-button>
-              <a-button size="small" @click="resetPwd(record)">重置密码</a-button>
+              <a-button v-if="can('system:person:resetPwd')" size="small" @click="resetPwd(record)">重置密码</a-button>
               <a-button danger size="small" @click="removePerson(record)">删除</a-button>
             </template>
           </div>
@@ -778,7 +790,7 @@ function resetFilter() {
         <a-row :gutter="12">
           <a-col :span="8"><a-form-item label="工号(6位)" name="jobNo"><a-input v-model:value="form.jobNo" :disabled="isEdit" :maxlength="6" placeholder="登录用户名" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="姓名" name="name"><a-input v-model:value="form.name" placeholder="请输入" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="登录密码"><a-input v-model:value="form.password" type="password" :placeholder="isEdit ? '留空则不修改' : '留空默认 123456'" autocomplete="new-password" /></a-form-item></a-col>
+          <a-col v-if="!isEdit" :span="8"><a-form-item label="登录密码"><a-input v-model:value="form.password" type="password" placeholder="留空需在创建后重置密码" autocomplete="new-password" /></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="性别"><a-select v-model:value="form.gender"><a-select-option value="1">男</a-select-option><a-select-option value="2">女</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="婚姻状况"><a-select v-model:value="form.ext.maritalStatus" allow-clear><a-select-option value="">请选择</a-select-option><a-select-option value="未婚">未婚</a-select-option><a-select-option value="已婚">已婚</a-select-option><a-select-option value="离异">离异</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="8"><a-form-item label="证件类型"><a-select v-model:value="form.ext.certType"><a-select-option value="身份证">身份证</a-select-option><a-select-option value="护照">护照</a-select-option><a-select-option value="其他">其他</a-select-option></a-select></a-form-item></a-col>
@@ -817,9 +829,10 @@ function resetFilter() {
           <a-col :span="12">
             <a-form-item label="角色（可多选）">
               <div class="pick-box">
-                <a-tag v-for="rid in form.roleIds" :key="rid" closable @close="removePick('role', rid)">{{ roleNameById(rid) }}</a-tag>
+                <a-tag v-for="rid in form.roleIds" :key="rid" :closable="can('system:user:edit')" @close="removePick('role', rid)">{{ roleNameById(rid) }}</a-tag>
                 <a-tag v-if="!form.roleIds.length" class="pick-empty">未选择</a-tag>
-                <a class="pick-btn" @click="openPick('role')">选择角色</a>
+                <a v-if="can('system:user:edit')" class="pick-btn" @click="openPick('role')">选择角色</a>
+                <span v-else class="pick-empty">角色由有用户授权权限的人员维护</span>
               </div>
             </a-form-item>
           </a-col>

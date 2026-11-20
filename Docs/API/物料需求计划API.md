@@ -36,9 +36,9 @@
 |---|---|
 | 方法 + 路径 | `GET /order/material-demand-plans/list` |
 | 读/写类型 | 只读 |
-| 参数 | `keyword` string 可选，匹配计划号/订单号/客户；`status` string 可选；`calculationStatus` string 可选；`poNumber` string 可选。 |
-| 返回 | 计划列表，含 `id`、`planNo`、`orderId`、`sourceOrderNo`、`customerName`、`poNumbers`、`lineCount`、`materialCount`、两种状态、`calculationMessage`、制单人及时间。 |
-| 权限 | `order:material-demand-plan:list`；服务端逐张计划检查所有物料分类范围，越权时整张请求报错，不静默漏行。 |
+| 参数 | `keyword` string 可选，匹配计划号/订单号/客户；`status` string 可选；`calculationStatus` string 可选；`poNumber` string 可选；`pageNum` 默认 1，`pageSize` 默认 20、最多 100。 |
+| 返回 | `{rows, total}`，每行含 `id`、`planNo`、`orderId`、`sourceOrderNo`、`customerName`、`poNumbers`、`lineCount`、`materialCount`、两种状态、`calculationMessage`、制单人及时间。 |
+| 权限 | `order:material-demand-plan:list`；服务端分页前排除包含不可见物料分类的整张计划，总数仅统计可见计划。通过单据链接打开无权限的计划时，详情仍明确提示。 |
 | 幂等/副作用/前置/审批 | 幂等只读；无副作用；无业务前置；不触发审批。 |
 
 `keyword`、`status`、`calculationStatus`、`poNumber` 可省略或传空值；REST 参数缺失及内部调用传入 `null`、空白文本时均按不增加筛选条件处理。
@@ -50,7 +50,7 @@
 | 方法 + 路径 | `GET /order/material-demand-plans/{id}` |
 | 读/写类型 | 只读 |
 | 参数 | 路径 `id` string，物料需求计划主键。 |
-| 返回 | 主单、来源订单/PO 快照、`items` 明细、`summary` 按物料/规格/颜色/供料方式/单位汇总、`adjustments` 数量调整历史、`reversalHistory` 反审核申请记录和当前 `reverseApprovalPending` 状态。 |
+| 返回 | 主单、来源订单/PO 快照、`items` 明细、`summary` 按物料/规格/颜色/供料方式/单位汇总、`adjustments` 数量调整历史、`reversalHistory` 反审核申请记录和当前 `reverseApprovalPending` 状态。`summary[].key` 是避免维度分隔符碰撞的界面展开键，不是业务主键。 |
 | 权限 | `order:material-demand-plan:list`；任一明细分类不可见则整个详情拒绝，并提示调整人员分类范围。历史明细缺分类时仅超管可见以便修复。 |
 | 幂等/副作用/前置/审批 | 幂等只读；无副作用；无业务前置；不触发审批。 |
 
@@ -122,4 +122,8 @@
 
 ## 四、增量 SQL
 
-当前开发迁移为 `sql/物料需求计划_20261117.sql`，含计划主单兼容列、需求明细、调整历史、中文表/字段注释及菜单/操作权限种子。按项目规范，用户验收前不合并入 `sql/主建表.sql`，也不清理增量脚本。
+当前开发迁移为 `sql/物料需求计划_20261117.sql`，含计划主单兼容列、需求明细、调整历史、中文表/字段注释及菜单/操作权限种子。已同步到 `sql/主建表.sql`，增量脚本保留供已有环境升级。
+
+计划需求量以库存单位填写，必须为零或正数，整数最多 16 位、小数最多 8 位。末尾补零不影响校验。超出范围时整次调整失败，不保存任何行或调整历史。
+
+明细同时返回十进制字符串 `usageRaw`、`originalRaw`、`plannedRaw` 和库存单位显示位数 `unitPlaces`。编辑使用原值。历史采购快照缺少显示位数时直接展示已有参考值。

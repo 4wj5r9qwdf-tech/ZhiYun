@@ -393,9 +393,10 @@ public class SysRoleServiceImpl implements ISysRoleService, RoleService {
     }
 
     /**
-     * 新增角色部门信息(数据权限)
+     * 保存角色自定义组织节点数据范围关联。
+     * Persist the organization-node links used by a role's custom data scope.
      *
-     * @param role 角色对象
+     * @param role 角色对象 / role definition
      */
     private int insertRoleOrg(SysRoleBo role) {
         int rows = 1;

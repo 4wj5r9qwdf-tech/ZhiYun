@@ -19,7 +19,7 @@
 | `org_update` | `system:org:edit` | 写；员工确认后修改 |
 | `org_delete` | `system:org:remove` | 写；员工确认后删除合格叶节点 |
 | `org_manages_get` | `system:org:query` | 只读查询管辖关系 |
-| `org_manages_set` | `system:org:edit` | 全量替换关系；空列表会清空，必须确认 |
+| `org_manages_set` | `system:org:edit` | 全量替换关系；必须显式传入数组，空数组清空，缺失/null 拒绝；必须确认 |
 | `org_manage_counts` | `system:org:query` | 只读管辖统计 |
 
 ## REST 接口
@@ -59,7 +59,7 @@
 
 页面中的“部门电话”和“部门邮箱”分别对应现有字段 `phone` 和 `email`，用于登记部门联系方式；`leader` 是负责人用户 ID。部门邮箱目前不自动接收审批通知，选择部门审批时匹配部门人员，不等同于只选择部门负责人。
 
-成功响应示例：`{"code":200,"msg":"操作成功","data":null}`。管辖关系请求体是最终 ID 数组，例如 `["10002","10003"]`；空数组代表清空全部。
+成功响应示例：`{"code":200,"msg":"操作成功","data":null}`。MCP `org_manages_set` 必须显式传入最终 ID 数组，例如 `["10002","10003"]`；空数组代表清空全部，缺失或 `null` 会被拒绝，避免调用方漏传参数时误清关系。所有 ID 必须是有效的正十进制字符串。
 
 ### 错误与边界
 

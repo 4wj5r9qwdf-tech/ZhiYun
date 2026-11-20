@@ -39,15 +39,17 @@ public class MaterialDemandPlanController {
 
     /** 按单号、来源订单、客户、PO 和单据状态筛选计划。 / Filter plans by plan number, source order, customer, PO and document state. */
     @GetMapping("/list")
-    public R<List<Map<String,Object>>> list(@RequestParam(defaultValue="") String keyword,
+    public R<Map<String,Object>> list(@RequestParam(defaultValue="") String keyword,
                                             @RequestParam(defaultValue="") String status,
                                             @RequestParam(defaultValue="") String calculationStatus,
-                                            @RequestParam(defaultValue="") String poNumber) {
+                                            @RequestParam(defaultValue="") String poNumber,
+                                            @RequestParam(defaultValue="1") int pageNum,
+                                            @RequestParam(defaultValue="20") int pageSize) {
         // HTTP 参数默认值无法覆盖内部 Java 调用传入的 null；所有可选文本筛选在入口统一归一化。
         // HTTP defaults do not protect direct Java callers from null; normalize every optional text filter here.
         String text=optionalFilter(keyword),statusFilter=optionalFilter(status),
             calculationFilter=optionalFilter(calculationStatus),po=optionalFilter(poNumber);
-        var result=jdbc.queryForList("""
+        String projection = """
             SELECT p.id::text AS id,p.plan_no AS "planNo",p.order_id::text AS "orderId",p.source_order_no AS "sourceOrderNo",
                    COALESCE(p.document->>'customerName','') AS "customerName",p.document->>'date' AS "orderDate",
                    p.status,p.calculation_status AS "calculationStatus",p.calculation_message AS "calculationMessage",p.revision,p.created_by::text AS "createdBy",
@@ -55,18 +57,38 @@ public class MaterialDemandPlanController {
                    (SELECT string_agg(DISTINCT i.po_number,'、' ORDER BY i.po_number) FROM biz_material_demand_plan_item i WHERE i.plan_id=p.id) AS "poNumbers",
                    (SELECT count(*) FROM biz_material_demand_plan_item i WHERE i.plan_id=p.id) AS "lineCount",
                    (SELECT count(DISTINCT (i.material_id,i.material_variant_id,i.material_color_id)) FROM biz_material_demand_plan_item i WHERE i.plan_id=p.id) AS "materialCount"
+            """;
+        StringBuilder from = new StringBuilder("""
             FROM biz_material_demand_plan p LEFT JOIN sys_user u ON u.user_id=p.created_by
             WHERE (?='' OR p.plan_no ILIKE ? OR p.source_order_no ILIKE ? OR COALESCE(p.document->>'customerName','') ILIKE ?
                    OR p.document::text ILIKE ?)
               AND (?='' OR p.status=?) AND (?='' OR p.calculation_status=?)
               AND (?='' OR EXISTS(SELECT 1 FROM biz_material_demand_plan_item i WHERE i.plan_id=p.id AND i.po_number ILIKE ?))
-            ORDER BY p.updated_at DESC,p.id DESC
-            """,text,"%"+text+"%","%"+text+"%","%"+text+"%","%"+text+"%",statusFilter,statusFilter,
-            calculationFilter,calculationFilter,po,"%"+po+"%");
-        // 列表也按整张计划校验分类范围，避免汇总数字泄露受限物料需求。
-        // Check whole-plan category access even for list totals so restricted material demand is not disclosed through aggregates.
-        for(var row:result)assertCategories(plans.detail(Long.valueOf(row.get("id").toString()),false));
-        return R.ok(result);
+            """);
+        String pattern = "%" + text + "%";
+        List<Object> args = new ArrayList<>(List.of(text, pattern, pattern, pattern, pattern,
+            statusFilter, statusFilter, calculationFilter, calculationFilter, po, "%" + po + "%"));
+        // 分页前排除含越权明细的整张计划，列表与总数使用同一范围。
+        // Exclude entire restricted plans before counting or paging.
+        Long userId = LoginHelper.getUserId();
+        boolean superAdmin = userId != null && LoginHelper.isSuperAdmin(userId);
+        from.append("""
+            AND NOT EXISTS (SELECT 1 FROM biz_material_demand_plan_item i
+              WHERE i.plan_id=p.id AND NOT (
+                (i.category_id IS NULL AND ?) OR EXISTS (
+                  SELECT 1 FROM base_category c WHERE c.category_id=i.category_id AND
+            """);
+        // 旧明细缺分类时沿用详情规则，仅超管可见，便于核对历史分类。
+        // As in detail views, only super admins can inspect historical lines without a category.
+        args.add(superAdmin);
+        categoryAccess.appendScope(from, args, "c.category_id", categoryAccess.scope());
+        from.append(")))");
+        Long total = jdbc.queryForObject("SELECT count(*) " + from, Long.class, args.toArray());
+        int size = Math.clamp(pageSize, 1, 100);
+        args.add(size);
+        args.add((Math.max(1L, pageNum) - 1) * size);
+        var rows = jdbc.queryForList(projection + from + " ORDER BY p.updated_at DESC,p.id DESC LIMIT ? OFFSET ?", args.toArray());
+        return R.ok(Map.of("rows", rows, "total", total));
     }
 
     /** 查询详情并拒绝静默隐藏人员无权查看的物料分类。 / Load details and explicitly reject plans containing materials outside the caller's category scope. */

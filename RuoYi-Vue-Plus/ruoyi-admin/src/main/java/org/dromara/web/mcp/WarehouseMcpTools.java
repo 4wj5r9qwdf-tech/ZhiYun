@@ -15,10 +15,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * 已验收仓储资料的 MCP 工具。权限在工具入口显式校验，因为直接调用
- * Controller Java 方法不会触发 Spring MVC 的 Sa-Token 注解拦截。
+ * 已验收仓储资料的 MCP 适配器；所有业务写入继续委托现有 Controller。
+ * MCP entry points explicitly check permissions because direct Java calls bypass Spring MVC's Sa-Token interception.
  */
 @Component
 @RequiredArgsConstructor
@@ -35,14 +36,16 @@ public class WarehouseMcpTools {
         @McpToolParam(description = "可选，0启用、1停用；省略表示全部状态", required = false) String status,
         @McpToolParam(description = "可选，仓库类型标签ID十进制字符串；省略表示不按类型筛选", required = false) String tagId) {
         StpUtil.checkPermission("inventory:warehouse:list");
-        return warehouseController.list(keyword, status, tagId);
+        String statusFilter = McpInputValidator.optionalBinaryFlag(status, "仓库状态");
+        Long parsedTagId = McpInputValidator.optionalPositiveId(tagId, "仓库类型标签ID");
+        return warehouseController.list(keyword, statusFilter, parsedTagId == null ? null : parsedTagId.toString());
     }
     /** 读取指定仓库的档案详情和类型标签。 / Load one warehouse record with its type tags. */
 
     @McpTool(name = "warehouse_get", description = "按仓库ID查询仓库档案详情和类型标签；需要 inventory:warehouse:query 权限")
     public R<?> warehouseGet(@McpToolParam(description = "仓库ID，十进制字符串") String warehouseId) {
         StpUtil.checkPermission("inventory:warehouse:query");
-        return warehouseController.detail(Long.valueOf(warehouseId));
+        return warehouseController.detail(McpInputValidator.requirePositiveId(warehouseId, "仓库ID"));
     }
     /** 读取仓库表单可选建筑和负责人。 / Load selectable buildings and managers for the warehouse form. */
 
@@ -79,14 +82,15 @@ public class WarehouseMcpTools {
         @McpToolParam(description = "仓库ID，十进制字符串") String warehouseId,
         @McpToolParam(description = "0启用、1停用") String status) {
         StpUtil.checkPermission("inventory:warehouse:edit");
-        return warehouseController.changeStatus(Long.valueOf(warehouseId), Map.of("status", status));
+        return warehouseController.changeStatus(McpInputValidator.requirePositiveId(warehouseId, "仓库ID"),
+            Map.of("status", McpInputValidator.requireBinaryFlag(status, "仓库状态")));
     }
     /** 删除仓库并由后端校验其业务引用约束。 / Delete a warehouse after server-side reference checks. */
 
     @McpTool(name = "warehouse_delete", description = "逻辑删除仓库；不可逆业务动作，必须展示仓库身份并取得员工本次确认，需要 inventory:warehouse:remove 权限")
     public R<?> warehouseDelete(@McpToolParam(description = "仓库ID，十进制字符串") String warehouseId) {
         StpUtil.checkPermission("inventory:warehouse:remove");
-        return warehouseController.remove(Long.valueOf(warehouseId));
+        return warehouseController.remove(McpInputValidator.requirePositiveId(warehouseId, "仓库ID"));
     }
     /** 更新仓库自动编码建议规则。 / Update the editable warehouse-code suggestion rule. */
 
@@ -108,7 +112,7 @@ public class WarehouseMcpTools {
     public R<?> warehouseLayoutTree(
         @McpToolParam(description = "可选，仓库ID十进制字符串；省略查询全部仓库", required = false) String warehouseId) {
         StpUtil.checkPermission("inventory:location:list");
-        return locationController.tree(warehouseId == null || warehouseId.isBlank() ? null : Long.valueOf(warehouseId));
+        return locationController.tree(McpInputValidator.optionalPositiveId(warehouseId, "仓库ID"));
     }
     /** 按仓库、上级、层级和状态筛选仓储位置。 / Filter locations by warehouse, parent, level and status. */
 
@@ -120,15 +124,20 @@ public class WarehouseMcpTools {
         @McpToolParam(description = "可选，位置编码或名称关键词；省略或空白表示不筛选", required = false) String keyword,
         @McpToolParam(description = "可选，active启用、disabled停用、maintenance维护；省略表示全部状态", required = false) String status) {
         StpUtil.checkPermission("inventory:location:list");
-        return locationController.list(Long.valueOf(warehouseId),
-            parentId == null || parentId.isBlank() ? null : Long.valueOf(parentId), level, keyword, status);
+        if (level != null && (level < 1 || level > 3)) return R.fail("位置层级只能是1（库区）、2（货架）或3（货位）");
+        String statusFilter = status == null || status.isBlank() ? null : status.trim();
+        if (statusFilter != null && !Set.of("active", "disabled", "maintenance").contains(statusFilter)) {
+            return R.fail("位置状态只能是active、disabled或maintenance");
+        }
+        return locationController.list(McpInputValidator.requirePositiveId(warehouseId, "仓库ID"),
+            McpInputValidator.optionalPositiveId(parentId, "上级位置ID"), level, keyword, statusFilter);
     }
     /** 读取一个仓储位置及其父级路径详情。 / Load a location record and its parent path. */
 
     @McpTool(name = "warehouse_layout_get", description = "按位置ID查询仓储位置详情及父级信息；需要 inventory:location:query 权限")
     public R<?> warehouseLayoutGet(@McpToolParam(description = "仓储位置ID，十进制字符串") String locationId) {
         StpUtil.checkPermission("inventory:location:query");
-        return locationController.detail(Long.valueOf(locationId));
+        return locationController.detail(McpInputValidator.requirePositiveId(locationId, "位置ID"));
     }
     /** 按仓库与父级层级计算可编辑的位置编码建议。 / Suggest an editable location code for the selected warehouse level and parent. */
 
@@ -138,8 +147,8 @@ public class WarehouseMcpTools {
         @McpToolParam(description = "可选，父级位置ID十进制字符串；新增库区时省略，新增货架/货位时按所属层级传父级ID", required = false) String parentLocationId,
         @McpToolParam(description = "层级：1库区、2货架、3货位") Integer locationLevel) {
         StpUtil.checkPermission("inventory:location:add");
-        return locationController.nextCode(Long.valueOf(warehouseId),
-            parentLocationId == null || parentLocationId.isBlank() ? null : Long.valueOf(parentLocationId), locationLevel);
+        return locationController.nextCode(McpInputValidator.requirePositiveId(warehouseId, "仓库ID"),
+            McpInputValidator.optionalPositiveId(parentLocationId, "父级位置ID"), locationLevel);
     }
     /** 复用仓储位置控制器新增一条库区、货架或货位。 / Create one zone, rack or bin through the existing location controller. */
 
@@ -215,14 +224,14 @@ public class WarehouseMcpTools {
         @McpToolParam(description = "位置ID，十进制字符串") String locationId,
         @McpToolParam(description = "active启用、disabled停用、maintenance维护") String locationStatus) {
         StpUtil.checkPermission("inventory:location:edit");
-        return locationController.changeStatus(Long.valueOf(locationId), Map.of("locationStatus", locationStatus));
+        return locationController.changeStatus(McpInputValidator.requirePositiveId(locationId, "位置ID"), Map.of("locationStatus", locationStatus));
     }
     /** 删除仓储位置并由服务端校验子级和库存引用。 / Delete a location after server-side child and inventory reference checks. */
 
     @McpTool(name = "warehouse_layout_delete", description = "逻辑删除无子级且未被业务引用的位置；必须展示完整层级路径并取得员工本次确认，需要 inventory:location:remove 权限")
     public R<?> warehouseLayoutDelete(@McpToolParam(description = "位置ID，十进制字符串") String locationId) {
         StpUtil.checkPermission("inventory:location:remove");
-        return locationController.remove(Long.valueOf(locationId));
+        return locationController.remove(McpInputValidator.requirePositiveId(locationId, "位置ID"));
     }
     /** 更新库区、货架、货位各层级的编码建议规则。 / Update editable code-suggestion rules for zones, racks and bins. */
 

@@ -24,9 +24,12 @@ import java.util.regex.Pattern;
 
 /**
  * 仓库管理接口，维护库存业务使用的仓库档案。
- * 仓库是独立的仓储地点，不是组织节点或建筑档案；所属建筑直接作为仓库归属，具体楼层按建筑档案维护的层数选择。
- * 仓库类型复用通用标签（module_key=warehouse_master），以 sys_tag_relation 保存仓库与类型标签的关联。
- * 列表以仓库主档为粒度聚合位置、负责人和类型标签，避免一个仓库因多个标签重复显示。
+ * 仓库是独立仓储地点而非组织节点或建筑；建筑归属和楼层选择依赖建筑档案。
+ * 仓库类型复用通用标签（module_key=warehouse_master），关联保存在 sys_tag_relation。
+ * 列表以仓库主档为粒度聚合信息，避免多标签造成重复行。
+ * Warehouse master-data API for inventory operations. A warehouse is a storage location, not an organization or building record.
+ * Building ownership and floor choices come from the building catalog; warehouse types reuse feature-scoped tags.
+ * List results stay at warehouse-record granularity to avoid duplicate rows from multiple tags.
  */
 @RestController
 @RequiredArgsConstructor
@@ -40,12 +43,26 @@ public class WarehouseController {
     private static final Pattern FLOOR_COUNT = Pattern.compile("(\\d+|单|一|双|两|二|三|四|五|六|七|八|九|十)\\s*(?:层|楼)?");
     private final JdbcTemplate jdbc;
 
-    /** 查询仓库档案，支持按编码/名称/位置、启停状态和仓库类型标签筛选。 */
+    /** 查询仓库档案；状态限定0/1，标签筛选必须使用有效正 ID。 / Query warehouses with strict 0/1 status and positive tag-ID filters. */
     @SaCheckPermission("inventory:warehouse:list")
     @GetMapping("/list")
     public R<List<Map<String, Object>>> list(@RequestParam(required = false) String keyword,
                                               @RequestParam(required = false) String status,
                                               @RequestParam(required = false) String tagId) {
+        String statusFilter = status == null ? "" : status.trim();
+        if (!statusFilter.isEmpty() && !Set.of("0", "1").contains(statusFilter)) {
+            return R.fail("仓库状态筛选只能是0（启用）或1（停用）");
+        }
+        String tagFilter = tagId == null ? "" : tagId.trim();
+        Long parsedTagId = null;
+        if (!tagFilter.isEmpty()) {
+            try {
+                parsedTagId = Long.valueOf(tagFilter);
+            } catch (NumberFormatException error) {
+                return R.fail("仓库类型标签ID必须是正十进制字符串");
+            }
+            if (parsedTagId <= 0) return R.fail("仓库类型标签ID必须大于0");
+        }
         StringBuilder sql = new StringBuilder("SELECT w.warehouse_id,w.warehouse_code,w.warehouse_name,w.building_id,b.plant_name AS building_name,w.floor_name,w.area_name,w.manager_user_id,w.inbound_location_level,COALESCE(NULLIF(u.nick_name,''),u.user_name) AS manager_name,w.status,w.remark,COALESCE((SELECT string_agg(DISTINCT t.tag_name,', ' ORDER BY t.tag_name) FROM sys_tag_relation tr JOIN sys_tag t ON t.tag_id=tr.tag_id WHERE tr.module_key=? AND tr.record_id=w.warehouse_id),'') AS tag_names FROM inv_warehouse w LEFT JOIN sys_building b ON b.plant_id=w.building_id LEFT JOIN sys_user u ON u.user_id=w.manager_user_id WHERE w.del_flag='0'");
         List<Object> args = new ArrayList<>();
         args.add(TAG_MODULE);
@@ -54,19 +71,16 @@ public class WarehouseController {
             String pattern = "%" + keyword.trim() + "%";
             for (int i = 0; i < 4; i++) args.add(pattern);
         }
-        if (status != null && !status.isBlank()) { sql.append(" AND w.status=?"); args.add(status); }
-        if (tagId != null && !tagId.isBlank()) {
+        if (!statusFilter.isEmpty()) { sql.append(" AND w.status=?"); args.add(statusFilter); }
+        if (parsedTagId != null) {
             sql.append(" AND EXISTS (SELECT 1 FROM sys_tag_relation x WHERE x.module_key=? AND x.record_id=w.warehouse_id AND x.tag_id=?::bigint)");
-            args.add(TAG_MODULE); args.add(tagId);
+            args.add(TAG_MODULE); args.add(parsedTagId);
         }
         sql.append(" ORDER BY w.warehouse_code,w.warehouse_id");
         return R.ok(jdbc.queryForList(sql.toString(), args.toArray()));
     }
 
-    /**
-     * 查询仓库表单所需的建筑楼层数和负责人选项。
-     * 只要求登录，不要求同时拥有建筑或人员管理权限；仅返回在用记录。
-     */
+    /** 查询仓库表单需要的在用建筑和负责人；只要求登录，不借此授予建筑或人员管理权限。 / Return active buildings and managers for warehouse forms without granting their management permissions. */
     @SaCheckLogin
     @GetMapping("/options")
     public R<Map<String, Object>> options() {
@@ -76,7 +90,7 @@ public class WarehouseController {
         ));
     }
 
-    /** 返回仓库自动编码建议值；新增时仍在事务锁内重新分配未修改的建议值。 */
+    /** 返回可编辑的仓库编码建议；保存时仍会在事务锁内重新分配未修改的建议值。 / Return an editable warehouse-code suggestion and reallocate unchanged suggestions under the save lock. */
     @SaCheckPermission("inventory:warehouse:add")
     @GetMapping("/next-code")
     public R<String> nextCode() {
@@ -85,7 +99,7 @@ public class WarehouseController {
         return R.data(nextWarehouseCode(rule));
     }
 
-    /** 查询单个仓库主档及其已关联的类型标签，用于编辑表单回填。 */
+    /** 查询仓库主档和关联类型标签，用于回填编辑表单。 / Read a warehouse and its type tags to populate the edit form. */
     @SaCheckPermission("inventory:warehouse:query")
     @GetMapping("/{id}")
     public R<Map<String, Object>> detail(@PathVariable Long id) {
@@ -97,7 +111,7 @@ public class WarehouseController {
         return R.ok(data);
     }
 
-    /** 校验仓库主档、关联基础资料和类型标签后新增仓库，并写入业务审计记录。 */
+    /** 校验仓库主档及其基础资料和标签关联后新增，并记录业务审计。 / Validate the warehouse and references before creating it and recording business audit. */
     @SaCheckPermission("inventory:warehouse:add")
     @Log(title="仓库管理", businessType=BusinessType.INSERT)
     @Transactional
@@ -124,6 +138,10 @@ public class WarehouseController {
         return R.data(code);
     }
 
+    /**
+     * 读取仓库编码自动生成参数并校验前缀、序号长度；配置缺失时采用 WH 加四位序号。
+     * Load and validate the warehouse-code rule; use the WH prefix and four digits when no setting exists.
+     */
     private WarehouseCodeRule warehouseCodeRule() {
         boolean enabled = true;
         String prefix = "WH";
@@ -141,6 +159,10 @@ public class WarehouseController {
         return new WarehouseCodeRule(enabled, prefix.toUpperCase(java.util.Locale.ROOT), digits);
     }
 
+    /**
+     * 根据规则扫描已用编码并生成一个可编辑的下一个编码建议。
+     * Scan existing codes and return the next editable suggestion for the configured rule.
+     */
     private String nextWarehouseCode(WarehouseCodeRule rule) {
         long max = 0;
         for (String existing : jdbc.queryForList("SELECT warehouse_code FROM inv_warehouse", String.class)) {
@@ -154,9 +176,13 @@ public class WarehouseController {
         return code;
     }
 
+    /**
+     * 仓库编码生成规则的不可变快照，避免同一次请求中参数被重复读取。
+     * Immutable snapshot of warehouse-code settings so one request uses a consistent rule.
+     */
     private record WarehouseCodeRule(boolean enabled, String prefix, int digits) {}
 
-    /** 修改仓库主档和类型标签；保留修改前后快照用于业务审计。 */
+    /** 修改仓库主档及完整标签集合，并保留前后快照用于业务审计。 / Update the warehouse and final tag set while preserving audit snapshots. */
     @SaCheckPermission("inventory:warehouse:edit")
     @Log(title="仓库管理", businessType=BusinessType.UPDATE)
     @Transactional
@@ -183,7 +209,7 @@ public class WarehouseController {
         return R.ok();
     }
 
-    /** 启用或停用仓库；停用状态由后续业务选项查询排除。 */
+    /** 启停仓库；停用后从新业务选择项中排除，但保留历史档案。 / Change warehouse availability while retaining historical records. */
     @SaCheckPermission("inventory:warehouse:edit")
     @Log(title="仓库状态", businessType=BusinessType.UPDATE)
     @Transactional
@@ -197,7 +223,7 @@ public class WarehouseController {
         return R.ok();
     }
 
-    /** 逻辑删除仓库并清除其类型标签关联，保留主档供审计追溯。 */
+    /** 软删除仓库并清除标签关联，保留主档字段以支持审计追溯。 / Soft-delete a warehouse, clear its tag links and retain the master row for audit history. */
     @SaCheckPermission("inventory:warehouse:remove")
     @Log(title="仓库管理", businessType=BusinessType.DELETE)
     @Transactional
@@ -239,7 +265,10 @@ public class WarehouseController {
         return null;
     }
 
-    /** 校验所属建筑、所在楼层和负责人引用仍然有效；楼层上限以建筑档案为准。 */
+    /**
+     * 校验建筑、楼层和负责人引用仍然有效，并使用建筑档案的楼层数限制仓库楼层。
+     * Validate building, floor and manager references, using the building profile as the floor-count authority.
+     */
     private String validateReferences(Map<String,Object> body) {
         Long buildingId = longValue(body.get("buildingId"));
         String floorName = value(body, "floorName");
@@ -261,7 +290,10 @@ public class WarehouseController {
         return null;
     }
 
-    /** 校验提交的标签均属于仓库类型命名空间；编辑时允许保留已停用但已关联的标签。 */
+    /**
+     * 确认标签属于仓库类型命名空间；编辑时允许保留已经关联但后来停用的标签。
+     * Ensure tags belong to the warehouse namespace; edits may retain previously linked tags that were later disabled.
+     */
     private String validateTags(Object raw, Long warehouseId) {
         Set<Long> ids = new LinkedHashSet<>();
         if (raw instanceof Collection<?> items) for (Object item : items) { Long id = longValue(item); if (id != null) ids.add(id); }
@@ -272,7 +304,10 @@ public class WarehouseController {
         return null;
     }
 
-    /** 按本次提交的标签集合整体替换仓库的类型标签关系。 */
+    /**
+     * 将仓库类型标签关系整体替换为本次提交的集合，避免旧关系残留。
+     * Replace the warehouse tag relations with the submitted set so stale links cannot remain.
+     */
     private void saveTags(Long warehouseId, Object raw) {
         Set<Long> ids = new LinkedHashSet<>();
         if (raw instanceof Collection<?> items) for (Object item : items) { Long id = longValue(item); if (id != null) ids.add(id); }
@@ -280,13 +315,19 @@ public class WarehouseController {
         for (Long tagId : ids) jdbc.update("INSERT INTO sys_tag_relation(module_key,record_id,tag_id,create_by,create_time) VALUES(?,?,?,?,now())", TAG_MODULE, warehouseId, tagId, LoginHelper.getUserId());
     }
 
-    /** 生成业务审计使用的仓库前后快照。 */
+    /**
+     * 读取仓库及其关联展示值，生成业务审计使用的前后状态快照。
+     * Read warehouse fields and related display values for before-and-after business audit snapshots.
+     */
     private Map<String,Object> snapshot(Long id) {
         List<Map<String,Object>> rows = jdbc.queryForList("SELECT w.warehouse_code AS \"仓库编码\",w.warehouse_name AS \"仓库名称\",w.status AS \"状态\",w.inbound_location_level AS \"入库定位层级\",w.floor_name AS \"所在楼层\",w.area_name AS \"区域\",b.plant_name AS \"所属建筑\",u.user_name AS \"负责人\",(SELECT string_agg(DISTINCT t.tag_name,', ' ORDER BY t.tag_name) FROM sys_tag_relation tr JOIN sys_tag t ON t.tag_id=tr.tag_id WHERE tr.module_key=? AND tr.record_id=w.warehouse_id) AS \"仓库类型\",w.remark AS \"备注\",w.del_flag AS \"删除标记\" FROM inv_warehouse w LEFT JOIN sys_building b ON b.plant_id=w.building_id LEFT JOIN sys_user u ON u.user_id=w.manager_user_id WHERE w.warehouse_id=?", TAG_MODULE, id);
         return rows.isEmpty() ? Map.of("仓库ID", id) : rows.get(0);
     }
 
-    /** 从建筑档案的楼层情况中解析总层数，兼容数字、单层/双层/三层和“3层”等既有写法。 */
+    /**
+     * 从建筑档案解析总层数，兼容数字、中文数字、单层/双层及“3层”等既有写法。
+     * Parse the building floor count from numeric, Chinese-numeric, single/double-floor and suffixed forms.
+     */
     private static int floorCount(Object raw) {
         if (raw == null) return 0;
         Matcher matcher = FLOOR_COUNT.matcher(raw.toString().trim());
@@ -294,13 +335,19 @@ public class WarehouseController {
         return floorTokenNumber(matcher.group(1));
     }
 
-    /** 解析仓库所在楼层，接受“1楼/1层/1”及中文数字楼层。 */
+    /**
+     * 解析仓库所在楼层，接受“1楼”“1层”“1”及受支持的中文数字。
+     * Parse a warehouse floor from forms such as "1楼", "1层", "1" or a supported Chinese numeral.
+     */
     private static int floorNumber(String raw) {
         Matcher matcher = FLOOR_COUNT.matcher(raw.trim());
         return matcher.matches() ? floorTokenNumber(matcher.group(1)) : 0;
     }
 
-    /** 转换单字楼层数字；当前建筑档案词库覆盖一至十层。 */
+    /**
+     * 将楼层数字词转换为整数；当前兼容范围为一至十层。
+     * Convert a floor-number token to an integer; supported legacy forms cover floors one through ten.
+     */
     private static int floorTokenNumber(String token) {
         try { return Integer.parseInt(token); } catch (NumberFormatException ignored) { }
         return switch (token) {
@@ -318,12 +365,24 @@ public class WarehouseController {
         };
     }
 
-    /** 将请求中的可空ID安全转换为 Long；缺失或格式非法时返回 null，由业务校验给出中文提示。 */
+    /**
+     * 将请求中的可空 ID 安全转换为 Long；缺失或格式非法时返回 null，由业务校验给出明确提示。
+     * Safely convert an optional request ID; return null for missing or malformed values for business validation.
+     */
     private static Long longValue(Object value) { if (value == null || value.toString().isBlank()) return null; try { return Long.valueOf(value.toString()); } catch (NumberFormatException e) { return null; } }
-    /** 读取并清理请求文本字段；空白文本统一转换为 null，避免保存无意义空串。 */
+    /**
+     * 读取并清理请求文本；空白内容统一转换为 null，避免保存无意义空字符串。
+     * Read and trim request text, normalizing blank values to null instead of persisting meaningless empty strings.
+     */
     private static String value(Map<String,Object> body, String key) { Object value=body.get(key); return value==null || value.toString().isBlank() ? null : value.toString().trim(); }
-    /** 入库定位深度默认货架级；仅接受仓库、区域、货架、货位四档。 */
+    /**
+     * 解析入库定位深度；默认到货架级，并将具体档位交由业务校验限定。
+     * Parse inbound location depth, defaulting to rack level and leaving accepted levels to business validation.
+     */
     private static Integer inboundLevel(Object value) { if (value == null || value.toString().isBlank()) return 2; try { return Integer.valueOf(value.toString()); } catch (NumberFormatException e) { return null; } }
-    /** 默认仓库状态为启用，并由 validate 校验合法状态值。 */
+    /**
+     * 解析仓库状态；缺省为启用，最终合法性由仓库业务校验统一判断。
+     * Resolve warehouse status, defaulting to enabled and delegating final validation to warehouse rules.
+     */
     private static String status(Object value) { return value == null || value.toString().isBlank() ? "0" : value.toString(); }
 }

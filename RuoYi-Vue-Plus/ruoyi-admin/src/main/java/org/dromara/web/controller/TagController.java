@@ -16,26 +16,25 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 通用属性标签档案接口。
- *
- * <p>标签按 {@code module_key} 功能命名空间隔离，同名标签可分别属于不同业务功能。
- * 导航模块由前端功能目录映射，数据库目录只动态登记实际使用标签的功能；
- * 功能首次自动收录标签时，同时创建功能归属、默认分组和标签档案。具体业务记录关联由各业务保存接口负责。
-     * 停用只修改状态，不删除标签及其历史关联；未被业务记录引用的标签允许显式删除。
+ * 通用属性标签档案接口，标签按 {@code module_key} 功能命名空间隔离。
+ * 导航模块由前端功能目录映射；数据库目录只登记实际使用标签的功能，并为每个功能保留默认分组。
+ * 停用只修改状态并保留历史关联；只有未被业务记录引用的标签允许显式删除。
+ * Generic tag catalog API scoped by the {@code module_key} business-feature namespace.
+ * Navigation modules are mapped by the frontend; the catalog stores used features and maintains one default group per feature.
+ * Disabling preserves historical links, while deletion is limited to tags with no business references.
  */
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/system/tag")
 public class TagController {
 
-    /** 使用 JDBC 执行本控制器的轻量 PostgreSQL 查询与写入。 */
+    /** 执行本控制器的 PostgreSQL 查询和写入。 / Execute this controller's PostgreSQL queries and updates. */
     private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 查询已登记的功能归属，允许在新增首个标签前维护分组。
-     * 功能可通过业务接入登记，也可在首次收录标签时自动登记。
-     *
-     * @return 模块标识、显示名称及当前标签数量
+     * 查询已登记的标签功能，供管理端选择目标命名空间并维护其分组。
+     * List registered tag features so administrators can choose a namespace and maintain its groups.
+     * @return 功能标识、显示名称和标签数量 / Feature key, display name and tag count.
      */
     @SaCheckPermission("system:tag:list")
     @GetMapping("/modules")
@@ -47,7 +46,7 @@ public class TagController {
             "GROUP BY m.module_key, m.module_name ORDER BY m.module_name, m.module_key"));
     }
 
-    /** 查询指定业务功能的标签分组及数量；每个功能至少有一个不可删除的默认分组。 */
+    /** 查询功能内标签分组及数量；每个功能均保留不可删除的默认分组。 / List feature-local groups and counts; each feature retains a protected default group. */
     @SaCheckLogin
     @GetMapping("/groups")
     public R<List<Map<String, Object>>> groups(@RequestParam String moduleKey) {
@@ -60,12 +59,13 @@ public class TagController {
     }
 
     /**
-     * 查询一个业务功能下的标签档案，可进一步按分组筛选。
-     *
-     * @param moduleKey 功能标签命名空间；不允许跨功能查询
-     * @param keyword 可选标签名模糊查询词
-     * @param status 可选状态，0 为启用、1 为停用
-     * @return 包含分组的标签行，分组顺序优先、常用标签随后，字段别名与前端类型保持 camelCase 一致
+     * 查询单个功能命名空间内的标签，可选按名称、状态和分组筛选。
+     * List tags from one feature namespace with optional name, status and group filters.
+     * @param moduleKey 功能标签命名空间 / Feature tag namespace; cross-feature reads are rejected.
+     * @param keyword 可选名称关键词 / Optional tag-name keyword.
+     * @param status 可选状态：0 启用、1 停用 / Optional status: 0 enabled, 1 disabled.
+     * @param groupId 可选功能内分组 ID / Optional group ID within the feature.
+     * @return 按分组和常用标记排序的标签行 / Tag rows ordered by group and common marker.
      */
     @SaCheckPermission("system:tag:list")
     @GetMapping("/list")
@@ -103,11 +103,10 @@ public class TagController {
     }
 
     /**
-     * 供业务表单读取一个功能内的启用标签。
-     * 该接口要求登录；调用方业务接口仍须按自身规则校验业务记录的访问权限。
-     *
-     * @param moduleKey 标签命名空间
-     * @return 启用标签选项，常用标签排在前面
+     * 为业务表单返回某功能可新选的启用标签；业务保存接口仍须校验记录访问权限。
+     * Return active tag options for a business form; the caller must still enforce access to its business record.
+     * @param moduleKey 标签命名空间 / Tag namespace.
+     * @return 启用标签选项，常用项优先 / Active tag options with common entries first.
      */
     @SaCheckLogin
     @GetMapping("/options")
@@ -124,13 +123,10 @@ public class TagController {
     }
 
     /**
-     * 在业务表单录入标签时幂等登记功能归属并收录标签目录项。
-     * 功能元数据只在首次出现时创建；同一功能默认分组内按不区分大小写的名称去重；
-     * 新标签默认归入“默认分组”；如果命中该分组内已停用的同名项，则恢复启用并返回规范记录。
-     * 此接口只维护目录，不写业务记录与标签的关联。
-     *
-     * @param body 包含 moduleKey、moduleName 与 tagName 的请求体
-     * @return 已存在或新建的规范标签行，包含标签归属模块信息
+     * 在业务录入标签时幂等登记功能及默认分组中的标签；只维护目录，不建立业务记录关联。
+     * Idempotently register the feature and its default-group tag during business entry; this does not link a business record.
+     * @param body 包含 moduleKey、moduleName、tagName 的对象 / Object containing moduleKey, moduleName and tagName.
+     * @return 已存在或新建的规范标签行 / Canonical existing or newly created tag row.
      */
     @SaCheckLogin
     @Transactional
@@ -147,7 +143,8 @@ public class TagController {
         tagName = tagName.trim();
         if (tagName.length() > 100) return R.fail("标签名不能超过100个字符");
 
-        // 模块标识稳定地对应一个业务归属；重试时同步最新显示名称，不创建重复模块。
+        // 稳定 moduleKey 唯一对应一个功能；重试只更新显示名，不重复创建功能目录。
+        // A stable moduleKey identifies one feature; retries update its label without creating duplicate catalog rows.
         jdbcTemplate.update(
             "INSERT INTO sys_tag_module (module_key, module_name, create_time) VALUES (?, ?, now()) " +
             "ON CONFLICT (module_key) DO UPDATE SET module_name=EXCLUDED.module_name, update_time=now()",
@@ -158,7 +155,8 @@ public class TagController {
             "SELECT tag_id FROM sys_tag WHERE module_key=? AND tag_group_id=? AND lower(tag_name)=lower(?) FOR UPDATE",
             rs -> rs.next() ? rs.getLong(1) : null,moduleKey,defaultGroupId,tagName);
         Map<String,Object> before = oldId == null ? Map.of() : auditSnapshot(oldId,false);
-        // 标签主键由 PostgreSQL 序列生成；冲突时复用原记录并恢复启用状态。
+        // PostgreSQL 唯一约束负责并发去重；冲突时复用规范记录并恢复启用状态。
+        // The PostgreSQL unique constraint handles races; conflicts reuse the canonical row and reactivate it.
         Map<String, Object> row = jdbcTemplate.queryForMap(
             "INSERT INTO sys_tag (module_key, tag_group_id, tag_name, is_common, status, create_time) " +
             "VALUES (?, ?, ?, '0', '0', now()) " +
@@ -173,7 +171,7 @@ public class TagController {
         return R.ok(row);
     }
 
-    /** 创建启用状态的标签；正式管理操作必须具备标签新增权限。 */
+    /** 创建启用标签并校验功能、分组和名称唯一性；管理端调用须有新增权限。 / Create an enabled tag after validating its feature, group and unique name. */
     @SaCheckPermission("system:tag:add")
     @Log(title = "标签管理", businessType = BusinessType.INSERT)
     @org.springframework.transaction.annotation.Transactional
@@ -189,6 +187,8 @@ public class TagController {
         if (tagName == null || tagName.isBlank()) return R.fail("标签名不能为空");
         tagName = tagName.trim();
         if (tagName.length() > 100) return R.fail("标签名不能超过100个字符");
+        Object commonValue = body.get("isCommon");
+        if (commonValue != null && !isBinaryFlag(commonValue)) return R.fail("常用标记只能是字符串0或1");
         if (moduleExists(moduleKey)) {
             if (groupId == null) groupId = ensureDefaultGroup(moduleKey);
             if (!groupBelongsToModule(groupId, moduleKey)) return R.fail("标签分组无效");
@@ -211,7 +211,7 @@ public class TagController {
         return R.ok();
     }
 
-    /** 修改标签名称、所属分组、常用提示或状态；只允许功能内改组，不在编辑接口中迁移功能归属。 */
+    /** 修改标签名称、所属分组、常用提示或状态；只允许功能内改组，不在编辑接口中迁移功能归属。 / Update a tag within its existing feature namespace and require explicit binary flag values. */
     @SaCheckPermission("system:tag:edit")
     @Log(title = "标签管理", businessType = BusinessType.UPDATE)
     @org.springframework.transaction.annotation.Transactional
@@ -224,10 +224,14 @@ public class TagController {
         if (tagId == null || !validModuleKey(moduleKey) || !moduleExists(moduleKey)) return R.fail("标签信息无效");
         if (groupId == null || !groupBelongsToModule(groupId, moduleKey)) return R.fail("标签分组无效");
         if (tagName == null || tagName.isBlank()) return R.fail("标签名不能为空");
+        if (!isBinaryFlag(body.get("isCommon")) || !isBinaryFlag(body.get("status"))) {
+            return R.fail("常用标记和标签状态均只能是字符串0或1");
+        }
         tagName = tagName.trim();
         if (tagName.length() > 100) return R.fail("标签名不能超过100个字符");
         if (existsOther(moduleKey, groupId, tagName, tagId)) return R.fail("该分组中已存在同名标签");
         var auditBefore = auditSnapshot(tagId,true);
+        if (auditBefore.isEmpty()) return R.fail("标签不存在");
         jdbcTemplate.update(
             "UPDATE sys_tag SET tag_group_id=?, tag_name=?, is_common=?, status=?, update_time=now() " +
             "WHERE tag_id=? AND module_key=?",
@@ -236,19 +240,20 @@ public class TagController {
         return R.ok();
     }
 
-    /** 软停用标签，保留历史关系；停用后 options 接口不再返回该标签。 */
+    /** 软停用标签，保留历史关系；停用后 options 接口不再返回该标签。 / Disable a tag while preserving history and hiding it from new-use options. */
     @SaCheckPermission("system:tag:remove")
     @Log(title = "标签管理", businessType = BusinessType.UPDATE)
     @org.springframework.transaction.annotation.Transactional
     @PutMapping("/{tagId}/disable")
     public R<Void> disable(@PathVariable Long tagId) {
         var auditBefore = auditSnapshot(tagId,true);
+        if (auditBefore.isEmpty()) return R.fail("标签不存在");
         jdbcTemplate.update("UPDATE sys_tag SET status='1', update_time=now() WHERE tag_id=?", tagId);
         BusinessAudit.record("停用标签",tagId,"名称",auditBefore,auditSnapshot(tagId,false));
         return R.ok();
     }
 
-    /** 删除从未被业务记录使用的标签；已被引用时保留目录并要求软停用。 */
+    /** 仅删除没有业务引用的标签；已被使用时保留历史目录并改为软停用。 / Delete only unreferenced tags; preserve referenced history and use soft disable. */
     @SaCheckPermission("system:tag:remove")
     @Log(title = "标签管理", businessType = BusinessType.DELETE)
     @Transactional
@@ -264,7 +269,7 @@ public class TagController {
         return R.ok();
     }
 
-    /** 新增功能内的自定义标签分组；每个功能的默认分组由系统自动维护。 */
+    /** 在已登记功能中新增自定义分组；默认分组由系统自动维护且不可重复命名。 / Add a custom group to a registered feature while preserving the managed default group. */
     @SaCheckPermission("system:tag:add")
     @Log(title = "标签分组", businessType = BusinessType.INSERT)
     @Transactional
@@ -285,7 +290,7 @@ public class TagController {
         return R.ok(group);
     }
 
-    /** 修改分组名称；默认分组保留固定名称，避免失去兜底归属。 */
+    /** 修改自定义分组名称；默认分组名称固定，用于接收未指定分组的新标签。 / Rename a custom group; the fixed default group remains the fallback for new tags. */
     @SaCheckPermission("system:tag:edit")
     @Log(title = "标签分组", businessType = BusinessType.UPDATE)
     @Transactional
@@ -305,7 +310,7 @@ public class TagController {
         return R.ok();
     }
 
-    /** 只允许删除空的自定义分组；先将标签移至其他分组，默认分组不可删除。 */
+    /** 删除空的自定义分组；非空分组必须先迁出标签，默认分组始终保留。 / Delete an empty custom group; move tags first and always retain the default group. */
     @SaCheckPermission("system:tag:remove")
     @Log(title = "标签分组", businessType = BusinessType.DELETE)
     @Transactional
@@ -321,19 +326,19 @@ public class TagController {
         return R.ok();
     }
 
-    /** 校验业务侧提供的稳定模块键格式；具体模块集合不硬编码，由首次收录动态建立。 */
+    /** 校验稳定的业务功能键格式；允许集合由业务接入动态登记，不在控制器中硬编码。 / Validate the feature-key format while allowing the catalog to grow dynamically. */
     private boolean validModuleKey(String moduleKey) {
         return moduleKey != null && moduleKey.matches("[a-z][a-z0-9_]{0,49}");
     }
 
-    /** 管理端只能给已经由业务标签自动登记的模块手工补充标签。 */
+    /** 检查目标功能已登记，避免管理端创建没有业务归属的空目录。 / Check registration before allowing administrators to add tags to a feature. */
     private boolean moduleExists(String moduleKey) {
         Long count = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_tag_module WHERE module_key=?", Long.class, moduleKey);
         return count != null && count > 0;
     }
 
-    /** 按模块和大小写不敏感的名称检查重复，配合数据库唯一索引进行业务层提示。 */
+    /** 按功能、分组和大小写不敏感名称检查重复；数据库唯一约束仍负责并发兜底。 / Check case-insensitive duplicates before relying on the database constraint for race safety. */
     private boolean exists(String moduleKey, Long groupId, String tagName) {
         Long count = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_tag WHERE module_key=? AND tag_group_id=? AND lower(tag_name)=lower(?)",
@@ -341,7 +346,7 @@ public class TagController {
         return count != null && count > 0;
     }
 
-    /** 编辑时排除当前记录后检查同模块是否已有同名标签。 */
+    /** 编辑时排除当前标签后检查目标功能和分组内的重名项。 / Check duplicate names in the target feature and group while excluding the edited row. */
     private boolean existsOther(String moduleKey, Long groupId, String tagName, Long tagId) {
         Long count = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_tag WHERE module_key=? AND tag_group_id=? AND lower(tag_name)=lower(?) AND tag_id<>?",
@@ -349,6 +354,7 @@ public class TagController {
         return count != null && count > 0;
     }
 
+    /** 并发安全地确保功能默认分组存在并返回其数据库 ID。 / Ensure the feature's default group exists under concurrency and return its ID. */
     private long ensureDefaultGroup(String moduleKey) {
         return jdbcTemplate.queryForObject(
             "INSERT INTO sys_tag_group(module_key,group_name,is_default,sort_order,create_time) VALUES(?,'默认分组','1',0,now()) " +
@@ -356,36 +362,46 @@ public class TagController {
             Long.class,moduleKey);
     }
 
+    /** 检查分组 ID 是否属于指定功能，阻止跨功能移动标签。 / Verify group ownership to prevent cross-feature tag moves. */
     private boolean groupBelongsToModule(Long groupId,String moduleKey) {
         Long count=jdbcTemplate.queryForObject("SELECT count(*) FROM sys_tag_group WHERE group_id=? AND module_key=?",Long.class,groupId,moduleKey);
         return count!=null && count>0;
     }
 
+    /** 按功能检查大小写不敏感的分组名重复。 / Check case-insensitive group-name uniqueness within a feature. */
     private boolean groupExists(String moduleKey,String name) {
         Long count=jdbcTemplate.queryForObject("SELECT count(*) FROM sys_tag_group WHERE module_key=? AND lower(group_name)=lower(?)",Long.class,moduleKey,name);
         return count!=null && count>0;
     }
 
+    /** 编辑分组时排除自身后检查重名。 / Check group-name uniqueness while excluding the current group. */
     private boolean groupExistsOther(String moduleKey,String name,Long groupId) {
         Long count=jdbcTemplate.queryForObject("SELECT count(*) FROM sys_tag_group WHERE module_key=? AND lower(group_name)=lower(?) AND group_id<>?",Long.class,moduleKey,name,groupId);
         return count!=null && count>0;
     }
 
+    /** 读取审计用的分组快照；写操作可选择对记录加锁。 / Read a group audit snapshot and optionally lock it for writes. */
     private Map<String,Object> groupSnapshot(Long groupId,boolean lock) {
         var rows=jdbcTemplate.queryForList("SELECT group_id,module_key,group_name AS \"分组名称\",is_default,sort_order FROM sys_tag_group WHERE group_id=?"+(lock?" FOR UPDATE":""),groupId);
         return rows.isEmpty()?Map.of():rows.get(0);
     }
 
+    /** 将可选字段规范化为去除首尾空白的文本。 / Normalize an optional value to trimmed text. */
     private String str(Object value) {
         return value == null ? null : value.toString().trim();
     }
 
-    /** 将前端开关值归一为数据库约定的字符标志 0/1。 */
+    /** 将已校验的开关值写成数据库约定的字符标志。 / Return a validated database flag in its canonical string form. */
     private String flag(Object value) {
         return "1".equals(value == null ? null : value.toString()) ? "1" : "0";
     }
 
-    /** 安全解析 JSON 中的 bigint 主键；格式不合法时返回 null 交由接口参数校验处理。 */
+    /** 检查标签开关是否以契约规定的字符串0或1传入。 / Check that tag flags use the documented string values. */
+    private boolean isBinaryFlag(Object value) {
+        return value instanceof String flag && ("0".equals(flag) || "1".equals(flag));
+    }
+
+    /** 安全解析接口主键；格式不合法时返回 null，由上层按接口语义拒绝。 / Parse an identifier safely and let the caller reject invalid values. */
     private Long longValue(Object value) {
         if (value == null) return null;
         try {
@@ -394,6 +410,7 @@ public class TagController {
             return null;
         }
     }
+    /** 读取标签审计前后快照；锁定前态时避免并发修改导致日志内容失真。 / Read tag audit state and optionally lock the row to keep concurrent changes out of the snapshot. */
     private java.util.Map<String,Object> auditSnapshot(Object id,boolean lock) {
         var row = BusinessAudit.snapshot(jdbcTemplate,"SELECT t.tag_name AS \"名称\", t.module_key AS \"归属模块\", g.group_name AS \"标签分组\", t.is_common AS \"常用\", t.status AS \"状态\" FROM sys_tag t JOIN sys_tag_group g ON g.group_id=t.tag_group_id WHERE t.tag_id=?"+(lock ? " FOR UPDATE OF t" : ""),id);
         return row;

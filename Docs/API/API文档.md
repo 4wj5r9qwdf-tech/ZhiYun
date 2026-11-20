@@ -1,7 +1,20 @@
+<!--
+文件用途：API/MCP 接口和运行时状态总索引
+文件版本：v1
+初始开发人员：待追溯
+初始开发时间：待追溯
+当前责任人：API 文档维护人（按任务/模块分工登记）
+最近修改人员：Codex（智能体）
+最近修改时间：2026-11-20
+修改标记：规划文档目录调整及相关路径更新
+最近测试时间：2026-11-20
+测试人员：Codex（智能体）
+测试状态：内部文档路径核对；未执行相关业务代码测试
+-->
 # API 文档（总索引）
 
 > 版本：v1
-> 更新日期：2026-11-18
+> 更新日期：2026-11-20
 > 说明：功能 API/MCP 契约总索引。先在此定位功能分组与接口，再进分组文档看完整契约。普通 REST 已实现不等于 MCP 已注册；每组需明确运行时状态。**分组文档一律放 `Docs/API/` 目录。**
 
 > MCP 调用方请先阅读[智能体 Skill 索引](../Skills/README.md)及[通用 MCP 调用指南](../Skills/MCP调用指南.md)。每个功能 Skill 包含工具名和可复制的 `arguments` 示例；运行时 `tools/list` 的 `inputSchema` 是参数必填规则的最终依据。
@@ -52,15 +65,17 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 功能分组 | 英文键 | 分组文档 | 状态 | 验收日期 |
 |---|---|---|---|---|
-| 标签管理 | `tag` | [标签管理API.md](标签管理API.md) | 导航模块→功能→分组已实现，开发库及前后端构建完成，待用户验收；暂无独立 MCP 管理工具 | — |
+| 标签管理 | `tag` | [标签管理API.md](标签管理API.md) | 2026-11-20 用户验收通过；REST、权限、主建表、Skill 已接入；开发服务 `tools/list` 已发现 11 个工具，普通员工权限和读写审计待核 | 2026-11-20 |
 | 计量单位 | `unit` | [计量单位API.md](计量单位API.md) | REST/MCP已实现；工具发现、单位读写及低权限拒绝已验证 | 用户验收通过（2026-11-05） |
 | 分类管理 | `category` | [分类管理API.md](分类管理API.md) | 体系与节点 REST/MCP 已实现，已有发现及读写验证记录 | 2026-11-06 用户验收通过 |
 | 颜色管理 | `color` | [颜色管理API.md](颜色管理API.md) | 用户验收通过（2026-11-07）；8个MCP工具发现，目录/选项/编码建议及颜色CRUD/启停真实调用通过 | 2026-11-07 |
-| 物料档案 | `material` | [物料档案API.md](物料档案API.md) | 一期、二期用户验收通过；运行时发现 9/9 MCP 工具，物料列表、业务选项、属性模板已实调，写工具未实调 | 2026-11-13 |
+| 物料档案 | `material` | [物料档案API.md](物料档案API.md) | 一期、二期用户验收通过；运行时发现 9/9 MCP 工具；临时档案新增、列表、修改、启停、删除均已实调；普通账号权限与 SnailAI 确认卡待核 | 2026-11-20 |
 | 物料需求计划 | `material_demand_plan` | [物料需求计划API.md](物料需求计划API.md) | REST 与审批业务联动已实现；前后端构建通过、开发库迁移已应用；待用户验收；MCP/Skill 尚未接入 | — |
 | 尺码管理 | `size` | [尺码管理API.md](尺码管理API.md) | REST/MCP 已实现；本轮补齐 9 个工具，运行时验证见测试清单 | 2026-11-04 |
 | 尺码组管理 | `size_group` | [尺码组管理API.md](尺码组管理API.md) | REST/MCP 已实现；本轮补齐 8 个工具，运行时验证见测试清单 | 2026-11-04 |
-| 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
+| 客户档案 | `customer_master` | [客户档案API.md](客户档案API.md) | 本轮客户分类/默认类型/重置、联系人与地址详情及原主流程用户验收通过；REST/Skill/MCP 契约已更新；开发服务 `tools/list` 已发现 11 个客户工具（含分类选项），账号级权限过滤待核 | 2026-11-20 |
+| 人员信息 | `person` | [人员信息API.md](人员信息API.md) | 人员档案 MCP 7/7 已在开发服务发现；列表、详情、职责选项、新增、补丁修改、软删除、恢复；敏感扩展字段拒绝；普通账号读写权限待核，模块整体待验收 | 2026-11-20 |
+| 人员分类权限设置 | `person_category_scope` | [人员分类权限API.md](人员分类权限API.md) | 用户验收通过（2026-11-20）；REST、主建表、Skill 已补，开发服务 `tools/list` 已发现 2 个 MCP 工具；不同账号的授权和数据范围待核 | 2026-11-20 |
 | 公司档案 | `company` | [公司档案API.md](公司档案API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
 | 组织架构 | `org` | [组织架构API.md](组织架构API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
 | 岗位管理 | `post` | [岗位管理API.md](岗位管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；详见分组契约 | 2026-11-05 |
@@ -68,7 +83,8 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 | 仓库管理 | `warehouse` | [仓库管理API.md](仓库管理API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；CSV 导入没有独立批量 API | 2026-11-05 |
 | 仓库布局 | `warehouse_layout` | [仓库布局API.md](仓库布局API.md) | REST/MCP 已实现；本轮 `tools/list` 已发现；MCP 批量新增按行提交并返回部分成功结果 | 2026-11-05 |
 | 框架原生能力接入 | `framework_native` | [框架原生能力接入API.md](框架原生能力接入API.md) | 系统管理、审批监控、代码生成、独立控制台和 Swagger 已接入；角色权限记录已核对；MCP 不开放高权限系统维护操作 | 2026-11-17 |
-| SnailAI 员工侧入口 | snail_ai_employee | [../织云AI集成总体规划.md](../织云AI集成总体规划.md) | ERP 右上角入口、员工 OpenAPI 身份、短时会话关联、MCP 权限过滤、写操作确认与本地 Skill 读取代码已完成；实时工具发现与员工验收待验证 | — |
+| 审批中心 | `approval_center` | [审批中心API.md](审批中心API.md) | 用户验收上述页面；REST/MCP/Skill 已补齐，开发服务发现 13/13 审批工具并可读取 Skill；员工业务调用与普通账号权限边界待实调 | 2026-11-20 |
+| SnailAI 员工侧入口 | snail_ai_employee | [../织云AI集成总体规划.md](../AI/织云AI集成总体规划.md) | ERP 右上角入口、员工 OpenAPI 身份、短时会话关联、MCP 权限过滤、写操作确认与本地 Skill 读取代码已完成；实时工具发现与员工验收待验证 | — |
 
 ---
 
@@ -184,22 +200,23 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 > 权限码：位置查询 `inventory:location:list/query`，维护 `inventory:location:add/edit/remove`；规则设置 `system:config:edit`。MCP 支持单条及逐行部分成功的批量新增；见[完整仓库布局契约](仓库布局API.md)。
 
-> 2026-11-17 认证 MCP 会话 `tools/list` 实际发现 125 个工具，其中 123 个属于织云业务工具，另有 2 个 `ruoyi-demo` 框架示例工具。REST/OpenAPI 与 MCP 并非逐接口一一映射：框架系统维护、代码生成和独立控制台仍通过受权限保护的 REST/前端入口使用；MCP 不提供通用 HTTP、SQL 或系统配置写入能力。标签、人员、客户订单及审批的业务 MCP 工具尚未接入，不能据此宣称所有 ERP REST 接口都有 MCP。当前工具发现与权限记录核对见[测试与验收清单](../测试与验收清单.md)。
+> 2026-11-17 认证 MCP 会话曾实际发现 125 个工具，其中 123 个属于织云业务工具，另有 2 个 `ruoyi-demo` 框架示例工具。2026-11-20 人员档案 MCP 加入并重启后，认证 `tools/list` 最新共发现 158 个工具：人员档案 7/7、人员分类权限 2/2、物料档案 9/9、审批中心 13/13。普通账号业务调用和权限边界仍需单独实调；物料写工具尚无实际调用记录。REST/OpenAPI 与 MCP 并非逐接口一一映射；MCP 不提供通用 HTTP、SQL 或高权限系统维护写入能力。
 
 ### 客户档案 customer_master（`/system/customer`）
 
 | 方法 + 路径 | 说明 | 读/写 |
 |---|---|---|
-| `GET /system/customer/list` | 客户档案分页查询 | 只读 |
-| `GET /system/customer/category-counts` | 客户分类数量 | 只读 |
-| `GET /system/customer/{id}` | 客户主档、联系人、地址和标签 | 只读 |
+| `GET /system/customer/category-options` | 当前人员可见分类树、默认分类类型和受限标识 | 只读 |
+| `GET /system/customer/list` | 客户档案分页查询；支持分类节点和分类类型筛选 | 只读 |
+| `GET /system/customer/category-counts` | 当前人员可见客户总数及标签统计 | 只读 |
+| `GET /system/customer/{id}` | 当前人员可见的客户主档、联系人、地址和标签 | 只读 |
 | `GET /system/customer/duplicates`、`/sales-options`、`/options` | 同名提示、业务员筛选、启用客户选项 | 只读 |
 | `POST /system/customer`、`PUT /system/customer/{id}` | 新增、修改 | 写 |
 | `PUT /system/customer/{id}/status`、`DELETE /system/customer/{id}` | 启停、删除未被引用档案 | 写 |
 
-> 权限及联系人脱敏规则见[客户档案 API 契约](客户档案API.md)。本轮 MCP `tools/list` 已发现客户档案工具；写操作仍须按员工权限及确认要求执行。
+> 分类筛选、默认类型/重置、人员分类范围及联系人脱敏规则见[客户档案 API 契约](客户档案API.md)。2026-11-20 开发服务 `tools/list` 已发现 11 个客户工具，包含 `customer_category_options` 和分类筛选参数；不同员工分类范围下的实际过滤仍须账号级核验，写操作按员工权限及确认要求执行。
 
-### 人员业务职责（`/system/person`）
+### 人员信息与业务职责（`/system/person`）
 
 | 方法 + 路径 | 说明 | 读/写 |
 |---|---|---|
@@ -209,7 +226,9 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 一期职责代码：`SALES` 业务员、`FOLLOWER` 跟单员、`PURCHASER` 采购员、`PLANNER` 计划员、`WAREHOUSE` 仓管员、`QUALITY` 质检员。职责仅用于单据责任人候选过滤和服务端引用校验，不授予菜单/操作/数据权限。客户订单业务员、跟单员候选分别按 `SALES`、`FOLLOWER` 过滤；采购单实现时按 `PURCHASER` 过滤，采购操作权限仍单独校验。
 
-人员钉钉号：列表和详情返回 `dingtalk_account`；新增及修改通过 `ext.dingTalkAccount` 传入，选填，去除首尾空白，最长 128 字符，空字符串清空；未提供该字段时保留旧值。详情需要 `system:person:query` 并受人员数据范围约束，新增和修改分别需要 `system:person:add` 和 `system:person:edit`，变更纳入人员业务审计。该字段仅登记钉钉号，尚未完成钉钉企业身份校验、绑定或消息推送。人员档案 MCP 工具尚未接入，不应声称可通过 MCP 查询或修改此字段。
+人员档案 MCP 工具及字段隐私、补丁更新、软删除和恢复契约见[人员信息 API 与 MCP 契约](人员信息API.md)。2026-11-20 新增并在开发服务发现 7 个工具；列表/详情仅输出工作必需字段，新增/修改拒绝证件、银行卡、家庭住址、出生信息、保险及社保金额等敏感扩展字段；密码重置、彻底删除和全量导出不开放 MCP。
+
+人员钉钉号：列表和详情返回 `dingtalk_account`；新增及修改通过 `ext.dingTalkAccount` 传入，选填，去除首尾空白，最长 128 字符，空字符串清空；未提供该字段时保留旧值。详情需要 `system:person:query` 并受人员数据范围约束，新增和修改分别需要 `system:person:add` 和 `system:person:edit`，变更纳入人员业务审计。该字段仅登记钉钉号，尚未完成钉钉企业身份校验、绑定或消息推送。
 
 客户订单 PO 支持 `offlineDate` 默认下线日期；`GET /order/customer-orders/options` 返回 `offlineLeadDays`，由系统参数 `order.customer.offlineLeadDays` 设置，未设置时为 0 个自然日。前端按 PO 默认交期计算建议日期，允许手动修改，保存后作为订单快照。`POST /system/config/order-offline-lead-days` 接收整数 `days`（0–3650），需要系统参数编辑权限。款式规格行支持 `unitPrice` 加工单价（可空、非负、最多两位小数），服务端以精确十进制计算 `processingAmount`；空单价代表待填写，不等同零。单款单价按件，套装单价按套。订单总额按各规格金额汇总，缺失单价时标记金额未完整。
 
@@ -221,7 +240,8 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 
 | 方法 + 路径 | 说明 | 读/写 |
 |---|---|---|
-| `GET /order/material-demand-plans/list` | 按计划号、来源订单、客户、PO、单据状态和算料状态查询 | 只读 |
+| `GET /order/customer-orders/list` | 按关键词、状态及可见范围分页查询，接受 `pageNum`、`pageSize`，返回 `{rows,total}` | 只读 |
+| `GET /order/material-demand-plans/list` | 按计划号、来源订单、客户、PO、单据状态和算料状态分页查询，接受 `pageNum`、`pageSize`，返回 `{rows,total}` | 只读 |
 | `GET /order/material-demand-plans/{id}` | 查询计划主单、来源明细、物料汇总及数量调整历史 | 只读 |
 | `GET /order/material-demand-plans/eligible-orders` | 查询可补生成计划的已审核订单 | 只读 |
 | `POST /order/material-demand-plans/generate/{orderId}` | 从已审核订单幂等补生成需求计划草稿 | 写 |
@@ -282,4 +302,12 @@ clientid: e5cd7e4891bf95d1d19206ce24a7b32e
 - [款式档案 API](款式档案API.md)：单款、套装、规格、附件及 MCP 契约。
 - [款式 BOM API](款式BOMAPI.md)：BOM 版本、用料规则、覆盖核对、试算及 MCP。
 
-人员分类权限配置：`GET /system/person/{userId}/category-scope` 获取配置与分类目录，`PUT /system/person/{userId}/category-scope` 保存 `mode`（`ALL`、`NONE`、`SELECTED`）和 `grants`。两个接口均需要 `system:person:categoryScope`，目标人员必须在操作人的人员数据范围内；超级管理员账号不适用此配置，非超管不能修改本人的分类权限。变更记录人员、授权模式与分类范围的前后值。
+人员分类权限设置的 REST、MCP 和授权结构详见[人员分类权限 API](人员分类权限API.md)。该设置需单独授予 `system:person:categoryScope`，不能通过普通角色并集隐式获得。
+
+### 智能体对话诊断
+
+`GET /snail-ai/admin/traces/conversations` 和 `GET /snail-ai/admin/traces/conversations/{traceId}` 需要 `system:snailai:trace:list`。有上游对话编号时按员工、智能体和对话编号归组；未取得编号时独立显示本轮。`GET /snail-ai/admin/traces/{traceId}/images` 使用同一权限，缺少可确认图片归属的上游标识时返回空列表。这些诊断接口供 ERP 管理页面使用。
+
+### 数字显示精度
+
+登录后通过 `GET /system/config/configKey/system.display.decimals` 读取 JSON 字符串。保存使用 `POST /system/config/display-decimals`，需要 `system:config:edit`，示例请求为 `{"bomUsage":4,"purchasePrice":4,"costPrice":6,"percentage":2}`。四项必填，均为 0～8 的整数。数量优先读取所用单位的显示位数。显示参数供只读展示使用，单据计算及保存使用原始数值。

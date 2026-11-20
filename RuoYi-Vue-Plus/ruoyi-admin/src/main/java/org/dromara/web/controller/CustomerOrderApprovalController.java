@@ -141,6 +141,25 @@ public class CustomerOrderApprovalController {
         return R.ok(Map.of("history",history,"copies",copies,"business",business));
     }
 
+    /** 仅允许发起人穿透查看本人审批关联的业务单据，并复用单据自身的数据权限。 / Allow initiators to open only their linked business document and reuse its own data-scope checks. */
+    @SaCheckPermission("approval:initiated:list")
+    @GetMapping("/initiated/{instanceId}/document")
+    public R<Map<String,Object>> initiatedDocument(@PathVariable Long instanceId) {
+        var rows=jdbc.queryForList(businessDocumentsCte()+"""
+            SELECT a.business_type AS "businessType",a.business_id::text AS "businessId",
+                   d.document_no AS "orderNo",d.document,i.id::text AS "instanceId",
+                   COALESCE((SELECT t.node_code FROM flow_task t WHERE t.instance_id=i.id AND t.del_flag='0' ORDER BY t.id LIMIT 1),'') AS "nodeCode",
+                   COALESCE((SELECT t.node_name FROM flow_task t WHERE t.instance_id=i.id AND t.del_flag='0' ORDER BY t.id LIMIT 1),'') AS "nodeName"
+            FROM sys_approval_business_instance a
+            JOIN flow_instance i ON i.id=a.instance_id
+            JOIN business_documents d ON d.id=a.business_id AND d.business_type=a.business_type
+            WHERE a.instance_id=? AND a.initiator_id=?
+              AND a.business_type IN ('customer_order','material_demand_plan','customer_order_unapprove','material_demand_plan_unapprove')
+            """,instanceId,LoginHelper.getUserId());
+        if(rows.isEmpty())throw new ServiceException("审批不存在或您不是发起人");
+        return R.ok(enrichBusinessDocument(rows.getFirst()));
+    }
+
     /** 仅当前待办办理人可通过任务入口查看对应订单。 / Allow only the current task assignee to open its linked order through the task endpoint. */
     @SaCheckPermission("approval:waiting:list")
     @GetMapping("/tasks/{taskId}")

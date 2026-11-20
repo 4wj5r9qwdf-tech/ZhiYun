@@ -17,6 +17,10 @@ import java.util.Map;
 public class StyleMcpTools {
     private final StyleController controller;
 
+    /**
+     * 在复用款式控制器前校验款式列表权限，避免 MCP 调用绕过页面权限边界。
+     * Check style-list permission before delegating to the controller so MCP cannot bypass the UI authorization boundary.
+     */
     private void requireList() {
         StpUtil.checkPermission("rd:style:list");
     }
@@ -46,14 +50,14 @@ public class StyleMcpTools {
     @McpTool(name = "style_configuration", description = "查询款式颜色、尺码和套装子款，受人员分类权限约束，需要 rd:style:list 权限")
     public R<?> configuration(@McpToolParam(description = "款式ID，十进制字符串") String id) {
         requireList();
-        return controller.configuration(Long.valueOf(id));
+        return controller.configuration(McpInputValidator.requirePositiveId(id, "款式ID"));
     }
     /** 查询款式功能可用的标签及分组。 / List tags and groups available to the style feature. */
 
     @McpTool(name = "style_tags", description = "查询款式已关联的标签及分组，需要 rd:style:list 权限")
     public R<?> tags(@McpToolParam(description = "款式ID，十进制字符串") String id) {
         requireList();
-        return controller.tags(Long.valueOf(id));
+        return controller.tags(McpInputValidator.requirePositiveId(id, "款式ID"));
     }
     /** 通过 MCP 创建款式并保留服务端分类与字段校验。 / Create a style through MCP while retaining server-side authorization and validation. */
 
@@ -70,7 +74,7 @@ public class StyleMcpTools {
                        @McpToolParam(description = "完整款式资料及最终关联集合，ID使用十进制字符串") Map<String, Object> body) {
         requireList();
         StpUtil.checkPermission("rd:style:edit");
-        return controller.update(Long.valueOf(id), JsonUtils.parseObject(JsonUtils.toJsonString(body), StyleController.StyleInput.class));
+        return controller.update(McpInputValidator.requirePositiveId(id, "款式ID"), JsonUtils.parseObject(JsonUtils.toJsonString(body), StyleController.StyleInput.class));
     }
     /** 通过 MCP 调整款式状态并保护历史业务引用。 / Change style status through MCP while protecting historical references. */
 
@@ -79,7 +83,8 @@ public class StyleMcpTools {
                        @McpToolParam(description = "目标状态，0启用、1停用") String status) {
         requireList();
         StpUtil.checkPermission("rd:style:edit");
-        return controller.status(Long.valueOf(id), Map.of("status", status));
+        return controller.status(McpInputValidator.requirePositiveId(id, "款式ID"),
+            Map.of("status", McpInputValidator.requireBinaryFlag(status, "款式状态")));
     }
     /** 通过 MCP 删除未被引用的款式，引用存在时说明拒绝原因。 / Delete an unreferenced style through MCP and explain reference-based rejection. */
 
@@ -87,6 +92,6 @@ public class StyleMcpTools {
     public R<?> delete(@McpToolParam(description = "款式ID，十进制字符串") String id) {
         requireList();
         StpUtil.checkPermission("rd:style:remove");
-        return controller.delete(Long.valueOf(id));
+        return controller.delete(McpInputValidator.requirePositiveId(id, "款式ID"));
     }
 }

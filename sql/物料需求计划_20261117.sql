@@ -154,7 +154,7 @@ COMMENT ON COLUMN biz_material_demand_plan_item.inventory_unit_id IS '需求数�
 COMMENT ON COLUMN biz_material_demand_plan_item.inventory_unit_name IS '需求数量使用的库存单位名称快照';
 COMMENT ON COLUMN biz_material_demand_plan_item.per_unit_usage IS '每件订单成衣对应的物料用量；单位为 inventory_unit_name，套装子款按展开件数计算';
 COMMENT ON COLUMN biz_material_demand_plan_item.original_quantity IS '订单算料产生的原始需求数量，按库存单位计；保存后不因计划调整而改变';
-COMMENT ON COLUMN biz_material_demand_plan_item.planned_quantity IS '计划人员确认的需求数量，按库存单位计；公式基数为原始需求量，允许调整但不得小于0';
+COMMENT ON COLUMN biz_material_demand_plan_item.planned_quantity IS '计划人员确认的需求数量，按库存单位计；公式基数为原始需求量，允许调整但不得小于0，整数最多16位、小数最多8位';
 COMMENT ON COLUMN biz_material_demand_plan_item.purchase_units IS '采购单位换算参考快照，保存单位、固定/实际换算模式、系数和建议数量；实际换算模式不虚构数量';
 COMMENT ON COLUMN biz_material_demand_plan_item.adjustment_reason IS '本行最近一次计划数量调整原因；每次前后值另记 biz_material_demand_plan_adjustment';
 COMMENT ON COLUMN biz_material_demand_plan_item.sort_order IS '计划内显示顺序，按来源 PO、订单款式色码、BOM 明细顺序生成';

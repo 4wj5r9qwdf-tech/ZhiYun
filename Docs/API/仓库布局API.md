@@ -41,7 +41,7 @@
 
 ### 位置列表 — `GET /system/warehouse-location/list`
 
-必填 `warehouseId`；可选 `parentId`、`level`（1–3）、`keyword`（编码/名称/外部映射码）、`status`。机器契约：幂等只读；无副作用；仓库和父级必须有效且同属该仓；需要 `inventory:location:list`；无需审批。
+必填 `warehouseId`；可选 `parentId`、`level`（1–3）、`keyword`（编码/名称/外部映射码）、`status`（`active`、`disabled`、`maintenance`）。层级或状态不符合枚举时返回参数错误。机器契约：幂等只读；无副作用；仓库和父级必须有效且同属该仓；需要 `inventory:location:list`；无需审批。
 
 成功数据项示例：
 

@@ -3,6 +3,9 @@ package org.dromara.web.controller;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.hutool.crypto.digest.BCrypt;
 import lombok.RequiredArgsConstructor;
+import cn.dev33.satoken.stp.StpUtil;
+import org.dromara.system.service.ISysRoleService;
+import org.dromara.system.service.ISysUserService;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.utils.SpringUtils;
 import org.dromara.common.log.annotation.Log;
@@ -21,12 +24,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 人员信息管理（人员模块）。
- * 口径（2026-10-24 定稿）：建人员=建登录账号；工号(6位)=登录名；默认密码123456(BCrypt)；
- *   支持手机号(11位)登录；角色/岗位在人员信息里直接选；内置仅"管理员"角色。
- * 表：sys_user（登录账号+基础身份/联系方式）+ sys_person_ext（任职/合同/社保/证件/住宿登记）
- *   + 关系 sys_user_post（岗位多选）/ sys_user_role（角色多选）。
- * 住宿只登记 is_dorm，床位在宿舍模块。敏感字段（证件号/手机号/银行卡）脱敏。
+ * 维护人员登录身份、任职信息、岗位与角色，并提供职责资格及分类数据范围管理。
+ * Personnel identity, employment data, posts, roles, business-duty eligibility, and category data scope.
+ *
+ * 登录凭证由系统账号策略生成和验证；本类不应将默认密码或敏感凭证写入注释、日志或返回值。
+ * Credentials follow the system account policy; never expose default passwords or sensitive credentials in comments, logs, or responses.
  *
  * @author 织云ERP
  */
@@ -36,12 +38,15 @@ import java.util.Map;
 public class PersonController {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ISysRoleService roleService;
+    private final ISysUserService userService;
 
-    /** 业务职责是单据责任人资格，不等同于岗位、系统角色或权限。 */
+    /** 业务职责仅标识单据责任人资格，不等同于岗位、系统角色或功能权限。 / Business duties identify document-owner eligibility, not posts, roles, or permissions. */
     private static final Map<String, String> BUSINESS_DUTIES = Map.of(
         "SALES", "业务员", "FOLLOWER", "跟单员", "PURCHASER", "采购员",
         "PLANNER", "计划员", "WAREHOUSE", "仓管员", "QUALITY", "质检员");
 
+    /** 返回人员维护界面可选的业务职责枚举，不授予任何单据操作权限。 / Return selectable business duties without granting document permissions. */
     @SaCheckPermission("system:person:list")
     @GetMapping("/business-duty-options")
     public R<List<Map<String, String>>> businessDutyOptions() {
@@ -160,7 +165,6 @@ public class PersonController {
         return Map.of("人员", scope.get("name"), "授权模式", scope.get("mode"), "分类授权", scope.get("grants"));
     }
 
-    private static final String DEFAULT_PASSWORD = "123456";
 
     /**
      * 人员列表（分页，join 扩展表+车间+岗位+角色；敏感字段脱敏）。
@@ -270,13 +274,15 @@ public class PersonController {
     }
 
     /**
-     * 数据范围过滤（统一双线模型，2026-10-26 定版）：
-     * 档位：1=全部数据；2=自定义节点(sys_role_org 勾选部门/小组)；3=本部门及以下；5=仅本人；6=本小组及下级。
-     * 生效语义（部门与小组统一为组织树节点）：
-     *   员工可见 = (其部门 ∈ 勾选节点及下级) OR (其小组 ∈ 勾选节点及下级) OR (恒含自己)
+     * 人员信息的角色数据范围过滤：
+     * 档位：1=全部数据；2=自定义组织节点(sys_role_org)；3=本组织及以下；5=仅本人。
+     * 生效语义（部门与小组统一为组织树节点）：员工可见 = (其组织节点 ∈ 所选节点及下级) OR (恒含自己)
      * - admin 豁免；任一启用角色=全部则放行；多角色并集。
-     * - 本部门及以下=自定义{本人部门}；本小组及下级=自定义{本人小组}——同一套展开逻辑。
+     * - 本组织及以下按人员当前所属组织节点展开，与部门、小组无关；二者是同一组织树模型。
      * - 自己永远可见（列表里没自己反直觉）；无任何角色 → 仅自己可见。
+     *
+     * Apply the combined role data scope: admin and any active all-data role bypass filtering,
+     * custom scopes are unioned, descendants are included, and the current user always remains visible.
      */
     private void applyDataScope(StringBuilder where, java.util.List<Object> args) {
         Long userId = LoginHelper.getUserId();
@@ -329,7 +335,10 @@ public class PersonController {
         where.append(" AND (").append(cond).append(')');
     }
 
-    /** 树节点筛选：所选组织节点及全部下级。展开 id 为库内 bigint，字面量拼接无注入。 */
+    /**
+     * 为组织树筛选添加所选节点及全部下级；展开 ID 来自数据库 bigint，不含用户文本。
+     * Add the selected organization node and all descendants to the tree filter; IDs are trusted database bigints, not user text.
+     */
     private void appendSubtreeFilter(StringBuilder where, Long orgId) {
         java.util.Set<Long> expanded = expandOrgWithChildren(java.util.Set.of(orgId));
         String ids = expanded.stream().map(String::valueOf).reduce((a, b) -> a + "," + b).orElse(String.valueOf(orgId));
@@ -371,8 +380,11 @@ public class PersonController {
         return R.ok(out);
     }
 
-    /** 人员归属节点：自身即节点，或其所在链（ancestors）包含节点。 */
-    private boolean belongTo(Long personNodeId, long nodeId, java.util.Map<Long, String> ancMap) {
+    /**
+     * 判断人员是否属于指定组织节点：人员所在节点相同，或祖先链中存在该节点。
+     * Check whether a person belongs to a node by matching the person's node or an exact ID in its ancestor chain.
+     */
+    private static boolean belongTo(Long personNodeId, long nodeId, java.util.Map<Long, String> ancMap) {
         if (personNodeId == null) {
             return false;
         }
@@ -380,10 +392,13 @@ public class PersonController {
             return true;
         }
         String anc = ancMap.get(personNodeId);
-        return anc != null && anc.contains(String.valueOf(nodeId));
+        return containsAncestorId(anc, nodeId);
     }
 
-    /** 部门集合展开：所选部门 + 祖先链包含任一所选部门的所有下级。 */
+    /**
+     * 组织节点集合展开：保留所选节点并加入祖先链中包含所选节点的所有下级。
+     * Expand selected organization nodes to include every descendant whose ancestor chain contains a selected node.
+     */
     private java.util.Set<Long> expandOrgWithChildren(java.util.Set<Long> roots) {
         java.util.Set<Long> out = new java.util.LinkedHashSet<>(roots);
         if (roots.isEmpty()) {
@@ -393,7 +408,7 @@ public class PersonController {
         for (Map<String, Object> d : all) {
             String anc = String.valueOf(d.get("ancestors") == null ? "" : d.get("ancestors"));
             for (Long r : roots) {
-                if (anc.contains(String.valueOf(r))) {
+                if (containsAncestorId(anc, r)) {
                     out.add(((Number) d.get("org_id")).longValue());
                     break;
                 }
@@ -402,7 +417,23 @@ public class PersonController {
         return out;
     }
 
-    /** 组装筛选条件（列表/导出共用）。 */
+    /**
+     * 按逗号分隔的祖先 ID 列表做整项匹配，防止组织 ID 的数字前缀互相误命中。
+     * Match a comma-separated ancestor list by complete token to prevent IDs sharing a numeric prefix from matching.
+     */
+    private static boolean containsAncestorId(String ancestors, long candidateId) {
+        if (ancestors == null || ancestors.isBlank()) return false;
+        String expected = Long.toString(candidateId);
+        for (String ancestorId : ancestors.split(",")) {
+            if (expected.equals(ancestorId.trim())) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 组装人员列表与导出共用的 SQL 筛选条件和参数。
+     * Build the shared SQL filters and bind parameters used by personnel listing and export.
+     */
     private void applyFilters(StringBuilder where, java.util.List<Object> args,
                               String keyword, String empStatus, Long orgId, String gender, String posts, String roles, String businessDuty) {
         if (keyword != null && !keyword.isBlank()) {
@@ -427,7 +458,10 @@ public class PersonController {
         }
     }
 
-    /** 排序白名单（防注入）。 */
+    /**
+     * 将前端排序字段映射到固定 SQL 白名单，避免将用户输入拼入 SQL 标识符。
+     * Map client sort keys to a fixed SQL allowlist so user input cannot become an SQL identifier.
+     */
     private String safeOrderBy(String orderBy) {
         java.util.Map<String, String> allow = java.util.Map.of(
             "job_no", "u.user_name", "name", "u.nick_name", "org", "d.org_name",
@@ -440,14 +474,18 @@ public class PersonController {
         return col + " " + dir;
     }
 
-    /** CSV 字段转义。 */
+    /**
+     * 按 CSV 规则转义字段内容，避免逗号、引号和换行破坏导出列结构。
+     * Escape a CSV field so commas, quotes and line breaks do not corrupt exported columns.
+     */
     private String csv(String v) {
         if (v == null) return "";
         return "\"" + v.replace("\"", "\"\"") + "\"";
     }
 
     /**
-     * 人员详情（含扩展表全字段 + 岗位/角色ID列表，敏感字段给全值供编辑）。
+     * 读取当前人员数据范围内的完整档案及岗位、角色、业务职责；移除密码散列，保留授权编辑所需的档案字段。
+     * Read a full in-scope personnel profile with post, role and duty links; omit password hashes while retaining fields needed by authorized editors.
      */
     @SaCheckPermission("system:person:query")
     @GetMapping("/{userId}")
@@ -474,9 +512,10 @@ public class PersonController {
     }
 
     /**
-     * 新增人员（建人员=建登录账号）：写 sys_user + sys_person_ext + 岗位/角色关系。
-     * body: jobNo(工号6位)、name、gender、phoneNumber、orgId、password(可空=默认123456)、
-     *   postIds[]、roleIds[]、ext{...}。
+     * 新增人员账号和档案关系；未提供密码时写入随机散列值，必须由授权人员设置新密码后才能登录。
+     * Create the account and profile relations; an omitted password becomes a random hash and requires an authorized reset before login.
+     * body 包含 jobNo、name、gender、phoneNumber、orgId、可选 password、postIds、roleIds 和 ext。
+     * The body contains jobNo, name, gender, phoneNumber, orgId, optional password, postIds, roleIds, and ext.
      */
     @SaCheckPermission("system:person:add")
     @Log(title = "人员信息", businessType = BusinessType.INSERT, isSaveRequestData = false)
@@ -493,9 +532,14 @@ public class PersonController {
         if (exists != null && exists > 0) {
             return R.fail("工号已存在：" + jobNo);
         }
-        Long userId = System.currentTimeMillis();
+        // 新增人员可能并发，使用统一雪花 ID，避免毫秒时间戳主键冲突。
+        // Use the shared Snowflake generator to avoid collisions during concurrent creation.
+        Long userId = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+        // 未指定密码时生成仅供散列的随机值，账号须经授权设置密码后才能使用。
+        // Hash a random value when no password is supplied; an authorized reset is required before use.
         String password = body.get("password") == null || str(body.get("password")).isBlank()
-            ? DEFAULT_PASSWORD : str(body.get("password"));
+            ? java.util.UUID.randomUUID().toString() : str(body.get("password"));
+        validatePassword(password);
         jdbcTemplate.update(
             "INSERT INTO sys_user (user_id, org_id, user_name, nick_name, user_type, email, phone_number, gender, password, status, del_flag, create_time, remark) " +
             "VALUES (?,?,?,?,?,?,?,?,?,?,'0',now(),?)",
@@ -519,53 +563,63 @@ public class PersonController {
     @PutMapping
     public R<Void> edit(@RequestBody Map<String, Object> body) {
         Long userId = Long.valueOf(str(body.get("userId")));
+        StringBuilder editWhere = new StringBuilder(" WHERE u.user_id=? AND u.del_flag='0'");
+        java.util.List<Object> editArgs = new java.util.ArrayList<>();
+        editArgs.add(userId);
+        applyDataScope(editWhere, editArgs);
         var auditRows = jdbcTemplate.queryForList(
-            "SELECT u.nick_name, e.emp_status FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id WHERE u.user_id=? FOR UPDATE OF u", userId);
-        if (auditRows.isEmpty()) return R.fail("人员不存在");
+            "SELECT u.nick_name, e.emp_status FROM sys_user u LEFT JOIN sys_person_ext e ON e.user_id=u.user_id" + editWhere + " FOR UPDATE OF u",
+            editArgs.toArray());
+        if (auditRows.isEmpty()) return R.fail("人员不存在、已删除或不在当前人员数据范围内");
         Map<String,Object> before = personAuditSnapshot(userId);
-        String pwd = str(body.get("password"));
-        // 密码：填了就重置（BCrypt），不填不动
-        if (pwd != null && !pwd.isBlank()) {
-            jdbcTemplate.update(
-                "UPDATE sys_user SET org_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, password=?, update_time=now() WHERE user_id=?",
-                orgIdOrNull(body.get("orgId")), str(body.get("name")), str(body.get("email")),
-                str(body.get("phoneNumber")), str(body.get("gender")),
-                str(body.getOrDefault("status", "0")), str(body.get("remark")),
-                BCrypt.hashpw(pwd), userId);
-        } else {
-            jdbcTemplate.update(
-                "UPDATE sys_user SET org_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
-                orgIdOrNull(body.get("orgId")), str(body.get("name")), str(body.get("email")),
-                str(body.get("phoneNumber")), str(body.get("gender")),
-                str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
-        }
+        // 档案编辑与账号改密分别授权，防止通用编辑入口绕过密码权限。
+        // Keep profile editing and password changes behind separate permissions.
+        if (body.containsKey("password")) return R.fail("请使用专用的重置密码功能");
+        jdbcTemplate.update(
+            "UPDATE sys_user SET org_id=?, nick_name=?, email=?, phone_number=?, gender=?, status=?, remark=?, update_time=now() WHERE user_id=?",
+            orgIdOrNull(body.get("orgId")), str(body.get("name")), str(body.get("email")),
+            str(body.get("phoneNumber")), str(body.get("gender")),
+            str(body.getOrDefault("status", "0")), str(body.get("remark")), userId);
         saveExt(userId, body);
         saveDingTalkAccount(userId, body);
         saveRelations(userId, body);
-        recordPersonAudit(userId, "修改人员", before, personAuditSnapshot(userId), pwd != null && !pwd.isBlank());
+        recordPersonAudit(userId, "修改人员", before, personAuditSnapshot(userId), false);
         return R.ok();
     }
 
     /**
-     * 将人员登录密码重置为系统默认初始密码，并写入人员变更审计。
-     * Reset the employee login password to the default initial password and record the personnel audit event.
+     * 由持有重置权限的人员设置新密码，并写入人员变更审计。
+     * Set a new employee password with the dedicated permission and record the personnel audit event.
      */
     @SaCheckPermission("system:person:resetPwd")
     @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
     @org.springframework.transaction.annotation.Transactional
     @PutMapping("/{userId}/reset-password")
-    public R<Void> resetPassword(@PathVariable Long userId) {
+    public R<Void> resetPassword(@PathVariable Long userId, @RequestBody Map<String, Object> body) {
+        String password = str(body.get("password"));
+        validatePassword(password);
+        if (LoginHelper.isSuperAdmin(userId) && !LoginHelper.isSuperAdmin()) {
+            return R.fail("只有超级管理员可以重置该账号的密码");
+        }
         if (!lockPersonForAudit(userId)) return R.fail("人员不存在");
         Map<String,Object> before = personAuditSnapshot(userId);
         jdbcTemplate.update("UPDATE sys_user SET password=?, update_time=now() WHERE user_id=?",
-            BCrypt.hashpw(DEFAULT_PASSWORD), userId);
+            BCrypt.hashpw(password), userId);
         recordPersonAudit(userId, "重置密码", before, personAuditSnapshot(userId), true);
         return R.ok();
     }
 
+    /** 校验密码长度，避免 BCrypt 的字节上限截断长密码。 / Honor BCrypt’s byte limit without truncation. */
+    private void validatePassword(String password) {
+        if (password == null || password.isBlank() || password.length() < 8
+                || password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
+            throw new ServiceException("密码至少 8 个字符，且不得超过 72 字节");
+        }
+    }
+
     /**
-     * 删除人员（软删）：置 del_flag='1' + status='1'停用（不能再登录）。
-     * 人员是登录账号，软删保留历史关联、可恢复，不做物理删。
+     * 软删除人员账号并停用登录；保留人员及历史关联以支持追溯和恢复，不在此接口物理删除。
+     * Soft-delete and disable login while retaining profile links for history and recovery; this endpoint never physically deletes the account.
      */
     @SaCheckPermission("system:person:remove")
     @Log(title = "人员信息", businessType = BusinessType.DELETE, isSaveRequestData = false)
@@ -585,8 +639,8 @@ public class PersonController {
     }
 
     /**
-     * 恢复已删除人员：del_flag 置回 '0'（status 恢复为在职，可重新登录/使用）。
-     * 已删人员工号不占用，恢复前需确认该工号未被新人占用。
+     * 恢复软删除人员；仅当原工号未被其他在职人员占用时恢复账号状态。
+     * Restore a soft-deleted employee only when the original job number is not used by another active account.
      */
     @SaCheckPermission("system:person:edit")
     @Log(title = "人员信息", businessType = BusinessType.UPDATE, isSaveRequestData = false)
@@ -615,10 +669,8 @@ public class PersonController {
     }
 
     /**
-     * 彻底删除人员（物理删除）：仅限已软删（del_flag='1'）的人员。
-     * 清掉账号与全部关联（角色/岗位/工作台配置/菜单配置/待办/社会登录/扩展表），
-     * 释放"角色已分配"占用——人员彻底删除后，其占用的角色即可在角色管理里删除。
-     * 超管账号禁止；审计留痕（各表 create_by）与登录日志不清理。
+     * 永久删除仅允许已软删除人员；清理账号关联数据，超管账号禁止删除，历史审计与登录日志保留。
+     * Permanently delete only a soft-deleted employee and its account links; protect super admins and retain audit and login logs.
      */
     @SaCheckPermission("system:person:remove")
     @Log(title = "人员信息", businessType = BusinessType.DELETE, isSaveRequestData = false)
@@ -657,17 +709,23 @@ public class PersonController {
 
     // ===== 内部 =====
 
-    /** 保存扩展表（upsert）。 */
+    /** 锁定人员记录并应用人员数据范围，避免越权变更及审计快照并发错位。 / Lock the in-scope employee row to prevent unauthorized writes and mismatched audit snapshots. */
     private boolean lockPersonForAudit(Long userId) {
-        return !jdbcTemplate.queryForList("SELECT user_id FROM sys_user WHERE user_id=? FOR UPDATE",Long.class,userId).isEmpty();
+        StringBuilder where = new StringBuilder(" WHERE u.user_id=?");
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        args.add(userId);
+        applyDataScope(where, args);
+        return !jdbcTemplate.queryForList("SELECT u.user_id FROM sys_user u" + where + " FOR UPDATE OF u",
+            Long.class, args.toArray()).isEmpty();
     }
 
+    /** 对比前后人员快照并脱敏审计；凭证正文及敏感字段原值不进入审计记录。 / Compare employee snapshots and redact sensitive fields before auditing; never store credentials or raw private values. */
     private void recordPersonAudit(Long userId,String action,Map<String,Object> before,
                                    Map<String,Object> after,boolean passwordReset) {
         var changes = new java.util.LinkedHashMap<String,Object>();
         var fields = new java.util.LinkedHashSet<String>(before.keySet());
         fields.addAll(after.keySet());
-        var privateFields = java.util.Set.of("电话","邮箱","证件号码","银行卡号","卡号","住址","社保金额","社保补贴");
+        var privateFields = java.util.Set.of("电话","邮箱","证件号码","银行卡号","卡号","住址","社保金额","社保补贴","钉钉号","出生日期");
         for (String field : fields) {
             Object oldValue = before.get(field);
             Object newValue = after.get(field);
@@ -764,18 +822,13 @@ public class PersonController {
     /** 保存岗位、角色和业务职责关联；先清理旧集合，再整体写入防止重复关系。 / Replace post, role and business-duty links as complete sets to prevent stale or duplicate relations. */
     private void saveRelations(Long userId, Map<String, Object> body) {
         jdbcTemplate.update("DELETE FROM sys_user_post WHERE user_id=?", userId);
-        jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
+        saveRoleChanges(userId, body.get("roleIds"));
         // 职责也是人员的多值关联，必须先清理旧值再重建，避免编辑未变更职责时触发联合主键冲突。
         // Business duties are multi-value person relations; clear them before rebuilding to avoid duplicate keys.
         jdbcTemplate.update("DELETE FROM sys_user_business_duty WHERE user_id=?", userId);
         if (body.get("postIds") instanceof List<?> posts) {
             for (Object p : posts) {
                 jdbcTemplate.update("INSERT INTO sys_user_post (user_id, post_id) VALUES (?,?)", userId, Long.valueOf(p.toString()));
-            }
-        }
-        if (body.get("roleIds") instanceof List<?> roles) {
-            for (Object r : roles) {
-                jdbcTemplate.update("INSERT INTO sys_user_role (user_id, role_id) VALUES (?,?)", userId, Long.valueOf(r.toString()));
             }
         }
         Object rawDuties = body.get("businessDuties");
@@ -790,22 +843,77 @@ public class PersonController {
         }
     }
 
-    /** 手机号脱敏：138****8000。 */
-    private String mask(String phone) {
-        // 供 SQL mask() 用不到，占位（列表 SQL 里直接调用本方法不可行，故 SQL 侧不调用）
-        if (phone == null || phone.length() < 7) return phone;
-        return phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4);
+    /**
+     * 人员档案权限只允许维护资料。角色增加或撤销复用系统用户授权权限及角色数据范围。
+     * Profile permissions cover employee data. Role changes reuse user authorization and role data scope.
+     */
+    private void saveRoleChanges(Long userId, Object rawRoles) {
+        if (rawRoles == null) return;
+        if (!(rawRoles instanceof List<?> roles)) throw new ServiceException("角色列表格式无效");
+        Set<Long> requested = new HashSet<>();
+        for (Object role : roles) {
+            if (role == null || !requested.add(Long.valueOf(role.toString()))) {
+                throw new ServiceException("角色不能为空或重复");
+            }
+        }
+        Set<Long> current = new HashSet<>(jdbcTemplate.queryForList(
+            "SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, userId));
+        // 页面和 MCP 都可能回传未修改的角色，保持原样时无需额外授权。
+        // Forms and MCP may echo existing roles; unchanged assignments require no extra permission.
+        if (current.equals(requested)) return;
+        StpUtil.checkPermission("system:user:edit");
+        if (LoginHelper.isSuperAdmin(userId) && !LoginHelper.isSuperAdmin()) {
+            throw new ServiceException("只有超级管理员可以调整该账号的角色");
+        }
+        if (!LoginHelper.isSuperAdmin(userId) && requested.contains(
+                org.dromara.common.core.constant.SystemConstants.SUPER_ADMIN_ROLE_ID)) {
+            throw new ServiceException("普通账号不能分配超级管理员角色");
+        }
+        Set<Long> removed = new HashSet<>(current);
+        removed.removeAll(requested);
+        roleService.checkRoleDataScope(removed);
+        if (requested.isEmpty()) {
+            jdbcTemplate.update("DELETE FROM sys_user_role WHERE user_id=?", userId);
+        } else {
+            userService.insertUserAuth(userId, requested.toArray(Long[]::new));
+        }
     }
 
+    /** 列表与导出统一脱敏手机号，短号也不返回完整值。 / Mask phone numbers consistently in lists and exports, including short values. */
+    private String mask(String phone) {
+        if (phone == null) return null;
+        int length = phone.length();
+        if (length <= 2) return "*".repeat(length);
+        if (length <= 7) return "*".repeat(length - 2) + phone.substring(length - 2);
+        return phone.substring(0, 3) + "*".repeat(length - 7) + phone.substring(length - 4);
+    }
+
+    /**
+     * 将可空请求值安全转换为字符串，不对数字 ID 做精度转换。
+     * Convert a nullable request value to text without numerically coercing bigint identifiers.
+     */
     private String str(Object o) { return o == null ? null : o.toString(); }
 
-    /** 部门ID：前端 bigint 以字符串传输（防 JS 精度丢失），落库前转 Long；空→null。 */
+    /**
+     * 解析可空的组织节点 ID；前端以字符串传输 bigint，避免 JavaScript 精度丢失。
+     * Parse an optional organization-node ID sent as a string to avoid JavaScript bigint precision loss.
+     */
     private Long orgIdOrNull(Object o) {
         String s = str(o);
-        return (s == null || s.isBlank()) ? null : Long.valueOf(s);
+        if (s == null || s.isBlank()) return null;
+        try {
+            long id = Long.parseLong(s.trim());
+            if (id > 0) return id;
+        } catch (NumberFormatException ignored) {
+            // Convert malformed IDs into a clear business error instead of leaking a parsing exception.
+        }
+        throw new org.dromara.common.core.exception.ServiceException("组织机构ID格式无效");
     }
 
-    /** 日期字段：空串/null 一律转 null（PG date 不接受 ''），非空转字符串。 */
+    /**
+     * 将空日期值统一转换为 null，避免 PostgreSQL date 列收到空字符串。
+     * Normalize blank date values to null so PostgreSQL date columns never receive an empty string.
+     */
     private String dateOrNull(Object o) {
         String s = str(o);
         return (s == null || s.isBlank()) ? null : s;

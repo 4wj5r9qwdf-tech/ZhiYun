@@ -68,7 +68,8 @@ import java.util.*;
 import static org.dromara.workflow.common.constant.FlowConstant.*;
 
 /**
- * 任务 服务层实现
+ * 任务服务层实现，包含流程待办、已办及任务退回节点解析。
+ * Task service implementation for workflow tasks, completed work, and return-node resolution.
  *
  * @author may
  */
@@ -274,6 +275,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
 
     /**
      * 解析查询条件中的分类及其子分类编码集合。
+     * Resolve the selected workflow category and its descendant category IDs for query filtering.
      *
      * @param flowTaskBo 任务筛选条件
      * @return 分类 id 字符串集合，未指定分类时返回 {@code null}
@@ -288,6 +290,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
 
     /**
      * 驳回任务
+     * Reject the current task and route the workflow according to the requested return node.
      *
      * @param bo 参数
      * @return 驳回成功返回 {@code true}
@@ -331,7 +334,8 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
     }
 
     /**
-     * 获取可驳回的前置节点
+     * 获取可驳回的前置节点，并结合历史任务与当前流程变量排除未实际经过的条件分支。
+     * Find returnable prior nodes and filter out conditional branches not reachable in this instance.
      *
      * @param taskId      任务id
      * @param nowNodeCode 当前节点
@@ -343,6 +347,12 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
         if (ObjectUtil.isNull(task)) {
             throw new ServiceException("任务不存在！");
         }
+        // 复用任务详情的数据范围，并拒绝过期或不匹配的节点编码。
+        // Reuse task detail access rules and reject a stale or mismatched node code.
+        checkTaskReadAccess(task);
+        if (!Objects.equals(task.getNodeCode(), nowNodeCode)) {
+            throw new ServiceException("审批节点已变化，请刷新待办后重试");
+        }
         List<Node> nodeCodes = nodeService.getByNodeCodes(Collections.singletonList(nowNodeCode), task.getDefinitionId());
         if (!CollUtil.isNotEmpty(nodeCodes)) {
             return nodeCodes;
@@ -352,12 +362,14 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
         if (CollUtil.isNotEmpty(userList)) {
             return nodeCodes;
         }
-        //判断是否配置了固定驳回节点
+        // 判断是否配置了固定驳回节点。
+        // Honor a configured fixed return target before calculating dynamic prior nodes.
         Node node = nodeCodes.getFirst();
         if (StringUtils.isNotBlank(node.getAnyNodeSkip())) {
             return nodeService.getByNodeCodes(Collections.singletonList(node.getAnyNodeSkip()), task.getDefinitionId());
         }
-        //获取可驳回的前置节点
+        // 获取可驳回的前置节点。
+        // Build candidate earlier nodes from the flow graph, then intersect with the instance path below.
         Long definitionId = task.getDefinitionId();
         FlowCombine flowCombine = defService.getFlowCombineNoDef(definitionId);
         Map<String, Node> nodeMap = getPreviousNodeMap(nowNodeCode, flowCombine);
@@ -396,6 +408,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
         return StreamUtils.filter(nodeMap.values(), e -> NodeType.BETWEEN.getKey().equals(e.getNodeType()));
     }
 
+    /** 反向遍历流程连线，构造当前节点所有图结构前驱，之后再由实际历史记录过滤。 / Walk flow edges backward to build graph predecessors before filtering by the executed history. */
     private Map<String, Node> getPreviousNodeMap(String nodeCode, FlowCombine flowCombine) {
         if (ObjectUtil.isNull(flowCombine) || CollUtil.isEmpty(flowCombine.getAllNodes()) || CollUtil.isEmpty(flowCombine.getAllSkips())) {
             return Collections.emptyMap();
@@ -433,6 +446,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
         return previousNodeMap;
     }
 
+    /** 用本流程实例变量正向求值条件分支，得到实际可达节点供退回选项过滤。 / Evaluate conditional edges with this instance's variables to identify valid return targets. */
     private void collectReachableNodeCodes(Set<String> nodeCodes, Instance instance, FlowCombine flowCombine) {
         if (ObjectUtil.isNull(flowCombine) || CollUtil.isEmpty(flowCombine.getAllNodes())) {
             return;
@@ -457,6 +471,7 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
                 }
             } catch (FlowException e) {
                 // 条件变量缺失时跳过当前分支，其他引擎异常继续抛出。
+                // Skip only the branch whose condition data is missing; propagate unrelated engine failures.
                 if (!StringUtils.containsAny(e.getMessage(), ExceptionCons.NULL_CONDITION_VALUE, ExceptionCons.NULL_SKIP_TYPE)) {
                     throw e;
                 }
@@ -741,6 +756,9 @@ public class FlwTaskServiceImpl implements IFlwTaskService {
      * <p>任务读取接口同时服务于普通审批和流程监控，不能只依赖管理菜单权限。
      * 普通用户必须是任务办理关系人、流程发起人或抄送接收人；监控/管理角色
      * 通过任务列表或编辑权限进入管理读取范围。</p>
+     * <p>Task reads serve both regular approval and workflow monitoring, so menu access alone is insufficient.
+     * A regular user must be an assignee, initiator or copy recipient; monitoring managers must hold task-list
+     * or task-edit permission.</p>
      *
      * @param task 当前任务
      */

@@ -31,16 +31,23 @@ public class CustomerOrderController {
     private final StyleController styles;
     private final StyleBomController boms;
 
+    /** 一行款式或子款的颜色尺码数量及供料/加工单价，key 用于 PO 内关联交付分配。 / One style or set-component color-size line; its UUID links delivery allocations. */
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown=true)
     public record Line(UUID key, Long styleId, Long colorId, Long sizeId, Long setSpecId, Integer quantity, String supply, BigDecimal unitPrice) {}
+    /** 一次分批交付安排；allocations 按订单行 UUID 记录本次交付数量。 / One partial-delivery schedule with quantities keyed by order-line UUID. */
     public record Delivery(LocalDate date, String destination, Map<UUID,Integer> allocations) {}
+    /** 一个 PO 的日期、交期、生产下线日、供料覆盖及款式明细。 / One purchase order with schedule, supply override, and style lines. */
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown=true)
     public record Po(String number, LocalDate date, LocalDate due, LocalDate offlineDate, String destination, String remark, String supply, List<Line> lines, List<Delivery> deliveries) {}
+    /** 客户订单主单请求；revision 用于并发保护，sources 保存来源快照。 / Customer-order request; revision protects concurrent edits and sources retain provenance. */
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown=true)
     public record Input(Long id, Integer revision, String orderNo, String suggestedCode, Long customerId, Long companyId,
                         Long salesId, Long followerId, LocalDate date, String reference, String destination, String remark, String supply, List<Po> pos, Map<String,String> sources) {}
+    /** 提交、审核或反审核等订单状态操作的版本与原因。 / Order state action with the expected revision and a business reason. */
     public record Action(int revision, String action, String reason) {}
+    /** 反审核申请参数；审核流完成前不会直接撤销已审核状态。 / Reversal request; approval must finish before the approved state is reversed. */
     public record ReverseApprovalRequest(Integer revision, String reason) {}
+    /** 重新试算需求计划时携带的版本及是否重算标记。 / Version and recalculation flag for a material-demand-plan refresh. */
     public record DemandRequest(Integer revision, Boolean recalculate) {}
 
     /** 订单角色可检索基础资料，款式选择继续执行人员分类限制。 / Provide order-entry reference data while keeping style choices within the employee category scope. */
@@ -81,6 +88,10 @@ public class CustomerOrderController {
     @SaCheckPermission({"order:customer-order:list","order:customer-order:edit"})
     public R<String> next() { return R.ok(null,nextCode()); }
 
+    /**
+     * 生成客户订单号建议；该值可由用户编辑，持久化时仍需执行唯一性校验。
+     * Generate an editable customer-order number suggestion; persistence must still enforce uniqueness.
+     */
     private String nextCode() {
         String prefix = "ORD" + LocalDate.now(ZoneId.of("Asia/Shanghai")).toString().replace("-","");
         var used = new HashSet<>(jdbc.queryForList("SELECT upper(order_no) FROM biz_customer_order WHERE upper(order_no) LIKE ?",String.class,prefix+"%"));
@@ -110,19 +121,32 @@ public class CustomerOrderController {
 
     /** 查询当前员工参与的订单，订单审核权限允许查看全部订单。 / List orders involving the current employee; reviewers may inspect the full order set. */
     @GetMapping("/list")
-    public R<List<Map<String,Object>>> list(@RequestParam(defaultValue="") String keyword,
-                                             @RequestParam(defaultValue="") String status) {
+    public R<Map<String,Object>> list(@RequestParam(defaultValue="") String keyword,
+                                      @RequestParam(defaultValue="") String status,
+                                      @RequestParam(defaultValue="1") int pageNum,
+                                      @RequestParam(defaultValue="20") int pageSize) {
+        int size = Math.clamp(pageSize, 1, 100);
         Long user = LoginHelper.getUserId();
-        var rows=jdbc.queryForList(SELECT + """
+        String filter = """
             WHERE (created_by=? OR sales_id=? OR follower_id=? OR ?)
-            AND (?='' OR status=?) AND (order_no ILIKE ? OR document::text ILIKE ?) ORDER BY updated_at DESC,id DESC
-            """,user,user,user,reviewer(),status,status,"%"+keyword+"%","%"+keyword+"%")
+              AND (?='' OR status=?) AND (order_no ILIKE ? OR document::text ILIKE ?)
+            """;
+        String pattern = "%" + keyword + "%";
+        Object[] args = {user, user, user, reviewer(), status, status, pattern, pattern};
+        // 总数和当前页复用筛选及人员范围，避免分页器统计不可见订单。
+        // Apply identical filters and employee scope to totals and rows so pagination reveals no hidden orders.
+        // Apply the same filters and employee scope to the total and the page.
+        Long total = jdbc.queryForObject("SELECT count(*) FROM biz_customer_order " + filter, Long.class, args);
+        var pageArgs = new ArrayList<>(Arrays.asList(args));
+        pageArgs.add(size);
+        pageArgs.add((Math.max(1L, pageNum) - 1) * size);
+        var rows = jdbc.queryForList(SELECT + filter + " ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?", pageArgs.toArray())
             .stream().map(this::decode).toList();
         enrichListDisplayNames(rows);
         var newest=new HashMap<String,String>();
         for (var bom : jdbc.queryForList("SELECT DISTINCT ON (style_id) style_id::text AS style, id::text AS id FROM rd_style_bom WHERE status='released' ORDER BY style_id, version DESC")) newest.put(bom.get("style").toString(),bom.get("id").toString());
         for (var row : rows) row.put("demandState",demandState(row,newest));
-        return R.ok(rows);
+        return R.ok(Map.of("rows", rows, "total", total));
     }
 
     /** 比较已保存的 BOM 快照和当前可用版本，状态仅作为提示，不改变已算出的数量。 / Compare the saved BOM snapshot with the current released version for notice only; never rewrite calculated quantities. */
@@ -342,9 +366,14 @@ public class CustomerOrderController {
         return jdbc.queryForList("SELECT u.user_id::text AS value,COALESCE(NULLIF(u.nick_name,''),u.user_name) AS label FROM sys_user u JOIN sys_user_business_duty d ON d.user_id=u.user_id WHERE d.duty_code=? AND u.status='0' AND u.del_flag='0' AND u.user_name<>'admin' ORDER BY label", duty);
     }
 
+    /**
+     * 校验订单责任人具备对应业务职责，同时允许原负责人职责变更后继续编辑旧单。
+     * Validate the assignee's business duty while allowing an unchanged historical assignee to remain on an existing order.
+     */
     private String person(Long id, String duty, Object previousId) {
         if (id == null) throw new ServiceException("请选择有效人员");
         // 兼容已保存的历史关联：职责后来被撤销时，允许未变更该责任人继续编辑其他订单字段。
+        // Preserve an existing owner after their duty is revoked, but do not allow assigning them to another order.
         if (previousId != null && id.toString().equals(previousId.toString())) {
             return label("SELECT COALESCE(NULLIF(nick_name,''),user_name) FROM sys_user WHERE user_id=? AND del_flag='0'",id,"人员");
         }
@@ -457,7 +486,8 @@ public class CustomerOrderController {
                     @SuppressWarnings("unchecked")
                     var material = (Map<String,Object>) detail;
                     String key = line.key()+":"+versions.getFirst()+":"+material.get("slotId");
-                    // 混合供料是允许的入库来源范围，实际收货时再确认，不能提前假定为客供。
+        // 混合供料是允许的入库来源范围，实际收货时再确认，不能提前假定为客供。
+        // Mixed supply permits both receipt sources; the receiving transaction decides each actual source.
                     // Mixed supply permits both receipt sources; determine the actual source at receipt.
                     String supply = "mixed".equals(defaultSupply) ? "mixed" : input.sources()==null ? null : input.sources().get(key);
                     if (supply==null) supply=defaultSupply;
@@ -465,11 +495,12 @@ public class CustomerOrderController {
                         throw new ServiceException("PO "+po.number()+" 有物料尚未安排供料方式");
                     material.put("sourceKey",key);
                     material.put("supply",Objects.toString(supply,""));
-                    // 采购单位为物料独立配置；变动换算不能根据库存数量推算卷数。
+        // 采购单位为物料独立配置；变动换算不能根据库存数量推算卷数。
+        // Purchase units belong to the material; variable conversions cannot be inferred from inventory quantity.
                     // Purchase units are material-specific; variable conversions cannot be inferred.
                     String materialId=Objects.toString(material.get("materialId"),"");
                     var units=purchaseUnits.computeIfAbsent(materialId, ignored -> jdbc.queryForList("""
-                        SELECT a.unit_id::text AS "unitId",u.unit_name AS "unitName",a.conversion_mode AS mode,
+                        SELECT a.unit_id::text AS "unitId",u.unit_name AS "unitName",u.decimal_places AS "unitPlaces",a.conversion_mode AS mode,
                                trim_scale(a.inventory_factor)::text AS "inventoryFactor"
                         FROM inv_material_aux_unit a JOIN base_unit u ON u.unit_id=a.unit_id
                         WHERE a.material_id=? AND a.purchase_enabled=true AND u.status='0' AND u.del_flag='0'
@@ -482,7 +513,8 @@ public class CustomerOrderController {
                         if ("FIXED".equals(unit.get("mode")) && factor!=null && new BigDecimal(factor.toString()).signum()>0) {
                             var inventoryQty=new BigDecimal(material.get("quantity").toString());
                             var unitFactor=new BigDecimal(factor.toString());
-                            // 保留高精度参考值；不是采购单的最终数量，也不提前按整包装取整。
+        // 保留高精度参考值；不是采购单的最终数量，也不提前按整包装取整。
+        // Keep the high-precision reference only; it is not a purchase quantity and must not be rounded to packs here.
                             var converted=inventoryQty.divide(unitFactor,8,RoundingMode.HALF_UP);
                             suggestion.put("quantity",converted.stripTrailingZeros().toPlainString());
                             suggestion.put("approximate",converted.multiply(unitFactor).compareTo(inventoryQty)!=0);
@@ -527,6 +559,7 @@ public class CustomerOrderController {
         boolean hasExisting=before.get("demand") instanceof Collection<?> existing && !existing.isEmpty();
         if (hasExisting && !Boolean.TRUE.equals(request.recalculate())) throw new ServiceException("该订单已有用料快照，请明确选择重新算料");
         // 未调整的计划草稿可随订单算料快照同步；已调整或已流转的计划必须先处理，避免覆盖计划部门的工作。
+        // Sync only untouched drafts; preserve planner edits and any plan that has entered workflow.
         // An untouched draft may follow the refreshed order snapshot; adjusted or progressed plans must be handled first.
         var linkedPlans=jdbc.queryForList("SELECT id,status FROM biz_material_demand_plan WHERE order_id=? AND status<>'cancelled' FOR UPDATE",id);
         for(var plan:linkedPlans){
@@ -619,7 +652,8 @@ public class CustomerOrderController {
             case "unsubmit" -> {
                 StpUtil.checkPermission("order:customer-order:edit");
                 if (!state.equals("submitted")) throw new ServiceException("仅待审核订单可以反提交");
-                // 草稿允许修改，旧需求快照不再代表当前订单；再次提交时重新计算。
+        // 草稿允许修改，旧需求快照不再代表当前订单；再次提交时重新计算。
+        // Editing a draft invalidates its old demand snapshot; submission recalculates from the edited order.
                 // The draft may change, so rebuild its demand snapshot on the next submission.
                 target="draft";
                 demand=List.of();

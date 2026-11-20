@@ -13,7 +13,7 @@
 | 登录日志 | 系统管理 / 登录日志 | `monitor:logininfo:list`；导出、删除、解锁分别校验对应操作码 | 系统管理组；`/monitor/logininfor/**` | 不接入 |
 | 操作日志、在线用户、缓存监控 | 系统管理 / 系统日志、在线用户、缓存监控 | `monitor:operlog:*`、`monitor:online:*`、`monitor:cache:list` | 系统管理组；`/monitor/**` | 不接入系统运维操作工具 |
 | 菜单、字典、参数、文件、存储配置、客户端 | 系统管理 / 对应维护功能 | `system:menu:*`、`system:dict:*`、`system:config:*`、`system:oss:*`、`system:ossConfig:*`、`system:client:*` | 系统管理组；`/system/**`、`/resource/oss/**` | 不开放系统权限、密钥、客户端及配置写入工具 |
-| 流程类别、流程定义、流程实例、任务监控、流程表达式、请假示例 | 审批 / 对应功能 | `workflow:category:*`、`workflow:definition:*`、`workflow:instance:*`、`workflow:task:*`、`workflow:spel:*`、`workflow:leave:*` | 审批与工作流组；`/workflow/**` | 审批办理和流程配置没有 MCP 工具；流程操作仍需走 ERP 权限和审批界面 |
+| 流程类别、流程定义、流程实例、任务监控、流程表达式、请假示例 | 审批 / 对应功能 | `workflow:category:*`、`workflow:definition:*`、`workflow:instance:*`、`workflow:task:*`、`workflow:spel:*`、`workflow:leave:*` | 审批与工作流组；`/workflow/**` | 框架管理端全量维护能力不开放 MCP；织云员工审批中心待办/已办/发起进度及业务绑定通过独立工具接入，见[审批中心 API](审批中心API.md) |
 | 代码生成 | 系统管理 / 代码生成 | `tool:gen:*` | 代码生成组；`/tool/gen/**` | 不开放可生成/下载/删除代码的 MCP 工具 |
 | Spring Boot Admin | 系统管理 / Admin 监控 | `monitor:admin:list` 控制 ERP 入口 | Admin 独立控制台，不属于 ERP REST 控制器 | 无 MCP；独立登录 |
 | SnailJob | 系统管理 / SnailJob 任务调度 | `system:snailjob:list` 控制 ERP 入口 | SnailJob 独立控制台 | 无 MCP；独立登录 |
@@ -76,8 +76,9 @@
 
 - 当前接口文档按织云业务基础资料、系统管理、审批工作流、代码生成、框架示例分组。框架 REST 路由由 Swagger 展示，逐接口权限以控制器实现为准。
 - 2026-11-17 的认证 MCP `tools/list` 实际发现 125 个工具：123 个织云业务工具及 2 个 `ruoyi-demo` 示例工具。工具发现不代表每个 REST 端点都有 MCP 映射或每个写工具都完成了调用验证。
+- 2026-11-20 审批中心接入后曾发现 151 个工具；随后人员档案 MCP 新增 7 个工具并重启开发后端，最新认证 `tools/list` 共发现 158 个工具，其中人员档案 7/7、人员分类权限 2/2、物料档案 9/9、审批中心 13/13。工具目录发现不代替普通员工的业务权限和读写调用核验。
 - MCP 主要服务于有明确员工权限、业务校验和审计路径的织云资料操作。系统菜单/角色、客户端、对象存储凭据、系统参数、代码生成、独立运维控制台等高权限操作保留在 ERP/独立控制台中，不通过 MCP 暴露通用写入口。
-- 标签、人员、客户订单和审批业务的独立 MCP 工具尚未接入；这些属于各业务功能的后续 MCP 工作，不属于本次框架原生页面挂载范围。
+- 框架管理端流程定义和全量任务监控不开放 MCP。织云业务审批的已验收页面和业务单据穿透已由审批中心独立提供 MCP 工具；不将该业务入口扩展为流程定义、运维或管理员代办能力。
 
 ## 尚待后续处理
 
