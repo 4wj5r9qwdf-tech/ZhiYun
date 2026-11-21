@@ -1,6 +1,6 @@
 # Spring AI Alibaba 织云补丁包
 
-版本：`zhiyun-20261120-v1`
+版本：`zhiyun-20261121-v2`
 
 适用上游仓库：`https://github.com/alibaba/spring-ai-alibaba.git`
 
@@ -13,6 +13,7 @@
 - 修正 PostgreSQL 下工作区状态字段的数值比较。
 - 将 Agent Studio 管理端 Mapper 中的 MySQL 分页语法改为 PostgreSQL 语法。
 - 组件配置的输入参数或输出参数为空时按空列表处理，避免创建/发布组件时页面报错。
+- PostgreSQL 初始化和前端依赖兼容辅助脚本 `spring-ai-alibaba-postgresql.py`。
 
 补丁不包含业务数据迁移，也不修改数据库内容。部署前仍需按环境备份数据库和当前应用制品。
 
@@ -35,10 +36,13 @@ cd /path/to/spring-ai-alibaba/spring-ai-alibaba-admin
 mvn -pl spring-ai-alibaba-admin-server-start -am -DskipTests package
 
 cd frontend
-npm ci
+npm ci --ignore-scripts
 npm run build:flow
+python3 /path/to/unpacked-patch/spring-ai-alibaba-postgresql.py prepare-frontend /path/to/spring-ai-alibaba/spring-ai-alibaba-admin
 BACK_END=java npm run build:app
 ```
+
+`prepare-frontend` 应在依赖安装和流程编辑器构建后、应用前端构建前执行。它会修正已安装的 Umi HTTPS 依赖对 Node.js 内部 `http_parser` 模块的提前加载问题；该脚本已包含在补丁包中。
 
 若使用容器部署，应使用补丁后的源码重新构建并发布镜像，再按部署平台的滚动更新流程替换容器。直接修改运行中容器的文件不会进入新镜像，容器重建后会丢失。
 
