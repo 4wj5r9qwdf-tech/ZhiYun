@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-昨日功能回归；统一审批 MCP 可选参数描述
+ * 最近测试时间：2026-11-21
+ * 测试人员：JY
+ * 测试状态：通过（全量后端测试覆盖 MCP 工具契约）
+ * 测试范围与记录位置：审批中心 MCP 参数可选元数据契约；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -53,8 +53,8 @@ public class ApprovalCenterMcpTools {
     @McpTool(name = "approval_my_todo_list", description = "查询当前员工的审批待办分页；仅返回本人待办，需 approval:waiting:list 权限")
     public R<?> todoList(
         @McpToolParam(description = "可选流程名称关键字；省略表示不按流程名称筛选", required = false) String flowName,
-        @McpToolParam(description = "页码，从1开始；省略默认为1", required = false) Integer pageNum,
-        @McpToolParam(description = "每页条数，1到100；省略默认为20", required = false) Integer pageSize) {
+        @McpToolParam(description = "可选页码，从1开始；省略默认为1", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数，1到100；省略默认为20", required = false) Integer pageSize) {
         StpUtil.checkPermission("approval:waiting:list");
         return taskController.pageByTaskWait(taskFilter(flowName), page(pageNum, pageSize));
     }
@@ -63,8 +63,8 @@ public class ApprovalCenterMcpTools {
     @McpTool(name = "approval_my_done_list", description = "查询当前员工已办理的审批任务分页；仅返回本人已办，需 approval:finished:list 权限")
     public R<?> doneList(
         @McpToolParam(description = "可选流程名称关键字；省略表示不按流程名称筛选", required = false) String flowName,
-        @McpToolParam(description = "页码，从1开始；省略默认为1", required = false) Integer pageNum,
-        @McpToolParam(description = "每页条数，1到100；省略默认为20", required = false) Integer pageSize) {
+        @McpToolParam(description = "可选页码，从1开始；省略默认为1", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数，1到100；省略默认为20", required = false) Integer pageSize) {
         StpUtil.checkPermission("approval:finished:list");
         return taskController.pageByTaskFinish(taskFilter(flowName), page(pageNum, pageSize));
     }
@@ -122,7 +122,7 @@ public class ApprovalCenterMcpTools {
     @McpTool(name = "approval_task_approve", description = "通过当前审批待办；调用前必须先读取待办和业务单据，向员工展示单据编号、单据类型、当前节点及审批意见，并取得本次明确确认；办理人由当前登录员工确定，需 approval:waiting:handle 权限")
     public R<?> approve(
         @McpToolParam(description = "待办任务ID，十进制字符串") String taskId,
-        @McpToolParam(description = "审批意见；可省略，建议填写", required = false) String opinion) {
+        @McpToolParam(description = "可选审批意见；省略时不填写，建议填写", required = false) String opinion) {
         StpUtil.checkPermission("approval:waiting:handle");
         CompleteTaskBo request = new CompleteTaskBo();
         request.setTaskId(id(taskId, "待办任务ID"));

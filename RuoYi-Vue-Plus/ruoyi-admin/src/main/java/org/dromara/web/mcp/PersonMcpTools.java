@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-昨日功能回归；统一人员 MCP 可选参数描述
+ * 最近测试时间：2026-11-21
+ * 测试人员：JY
+ * 测试状态：通过（全量后端测试覆盖 MCP 工具契约）
+ * 测试范围与记录位置：人员 MCP 参数可选元数据契约；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -66,9 +66,9 @@ public class PersonMcpTools {
         @McpToolParam(description = "可选角色名称关键字", required = false) String roles,
         @McpToolParam(description = "可选业务职责代码：SALES、FOLLOWER、PURCHASER、PLANNER、WAREHOUSE、QUALITY", required = false) String businessDuty,
         @McpToolParam(description = "可选排序：job_no、name、org、status、card、hire，可加 :asc 或 :desc", required = false) String orderBy,
-        @McpToolParam(description = "是否包含所选组织的全部下级，默认false", required = false) Boolean subtree,
-        @McpToolParam(description = "页码，默认1", required = false) Integer pageNum,
-        @McpToolParam(description = "每页条数，默认20，最大100", required = false) Integer pageSize) {
+        @McpToolParam(description = "可选是否包含所选组织的全部下级；省略时默认为false", required = false) Boolean subtree,
+        @McpToolParam(description = "可选页码；省略时默认为1", required = false) Integer pageNum,
+        @McpToolParam(description = "可选每页条数，最大100；省略时默认为20", required = false) Integer pageSize) {
         StpUtil.checkPermission("system:person:list");
         Long orgNodeId = parseOptionalId(orgId, "组织ID");
         int page = pageNum == null ? 1 : pageNum;

@@ -1,22 +1,22 @@
 /*
- * 文件用途：向受控智能体暴露织云 ERP 的MCP 基础认证能力。
- * 文件版本：1.0.0
- * 功能目的：向受控智能体暴露织云 ERP 的MCP 基础认证能力。
- * 设计思路：工具契约以显式权限、输入白名单、当前用户身份和数据范围为边界，复用既有业务实现。
- * 实现方法：解析参数、校验身份权限和格式、调用业务层并按最小必要字段返回结构化结果。
- * 关键约束：不得扩大员工数据范围或返回非必要敏感信息。
- * 依赖与引用：Docs/API/API文档.md；Docs/AI/织云AI集成总体规划.md；Docs/项目记录/功能实现状态.md
+ * 文件用途：为 MCP 后台账号密码认证建立受控的 ERP 员工登录会话。
+ * 文件版本：1.0.1
+ * 功能目的：让被允许的 MCP 客户端使用专用员工账号认证，并沿用 ERP 现有身份和权限上下文。
+ * 设计思路：认证默认关闭；开启后仅接受 HTTPS 或本机请求，并同时校验专用用户名、员工密码及启用的 password 客户端。
+ * 实现方法：读取自定义 MCP 凭据头或标准 Basic 认证头，验证配置和客户端后创建 120 秒的 Sa-Token 会话。
+ * 关键约束：Authorization 头必须明确使用 Basic 方案；不得记录密码或绕过 ERP 员工权限；认证失败必须拒绝请求。
+ * 依赖与引用：Docs/Skills/MCP调用指南.md；Docs/AI/织云AI集成总体规划.md；Docs/规范/开发规范.md
  * 初始开发人员：JY（织云项目自研内容）
  * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-MCP认证与SSE解析缺陷修正；校验Basic方案并拒绝畸形认证头
+ * 最近测试时间：2026-11-21
+ * 测试人员：JY
+ * 测试状态：McpBasicAuthenticatorTest 定向测试通过（3 个畸形/非 Basic 输入场景）
+ * 测试范围与记录位置：Docs/功能任务/ZY-ERP-20261121-MCP认证与SSE解析缺陷修正.md
  */
 package org.dromara.web.mcp;
 
@@ -75,9 +75,17 @@ public class McpBasicAuthenticator implements McpPasswordAuthenticator {
         String password = request.getHeader("X-MCP-Password");
         String authorization = request.getHeader("Authorization");
         if (authorization != null) {
+            // Authorization scheme 按 HTTP 约定不区分大小写；不允许把 Bearer 等其他方案误当成 Basic 凭据切片。
+            if (!authorization.regionMatches(true, 0, "Basic ", 0, 6)) {
+                throw new IllegalArgumentException("MCP 认证信息格式错误");
+            }
+            String encodedCredentials = authorization.substring(6).trim();
+            if (encodedCredentials.isEmpty()) {
+                throw new IllegalArgumentException("MCP 认证信息格式错误");
+            }
             String decoded;
             try {
-                decoded = new String(Base64.getDecoder().decode(authorization.substring(6).trim()), StandardCharsets.UTF_8);
+                decoded = new String(Base64.getDecoder().decode(encodedCredentials), StandardCharsets.UTF_8);
             } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("MCP 认证信息格式错误");
             }
