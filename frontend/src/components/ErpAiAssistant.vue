@@ -1,22 +1,22 @@
 <!--
-文件用途：为 ERP 页面提供内嵌智能体入口，在当前业务上下文中提问并使用已授权工具。
-文件版本：1.0.0
-功能目的：为 ERP 页面提供内嵌智能体入口，在当前业务上下文中提问并使用已授权工具。
-设计思路：对话界面和 ERP 业务工具分离；文件、图片及工具调用通过受控服务传递，浏览器不绕过业务权限。
-实现方法：收集文本/附件与页面上下文，提交会话 API，展示答复、工具过程及可确认的业务提议。
-关键约束：截图或文件内容只作为分析输入；会改变 ERP 数据的动作仍须用户确认和服务端授权。
-依赖与引用：Docs/AI/织云AI集成总体规划.md；Docs/API/API文档.md
+文件用途：在 ERP 页面内提供员工与 SnailAI 智能体的对话、附件和操作确认界面。
+文件版本：1.0.1
+功能目的：提交员工问题及已上传附件，展示模型回复、服务端事件和待确认的业务操作。
+设计思路：浏览器只负责会话交互与展示；ERP 数据读取和写入由服务端工具按员工权限执行，写操作须经员工确认。
+实现方法：收集文本/附件并调用会话 API；以增量 UTF-8 解码读取 SSE，由 sseEventParser 兼容 CRLF、LF、CR 空行并更新消息状态。
+关键约束：附件权限和工具执行留在服务端；只处理完整事件，保留跨网络分块的未完成字节和事件内容。
+依赖与引用：Docs/AI/织云AI集成总体规划.md；Docs/API/API文档.md；frontend/src/utils/sseEventParser.js；RuoYi-Vue-Plus/ruoyi-modules/ruoyi-ai/src/main/java/org/dromara/ai/controller/SnailAiController.java
 初始开发人员：JY（织云项目自研内容）
 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
 最近修改人员：JY
 AI辅助工具：Codex（智能体）
-最近修改时间：2026-11-20
-修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-最近测试时间：本次整理未执行功能测试
-测试人员：本次整理未执行
-测试状态：待功能回归；历史测试记录待追溯
-测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+最近修改时间：2026-11-21
+修改标记：ZY-ERP-20261121-MCP认证与SSE解析缺陷修正；兼容SSE标准行结束符
+最近测试时间：2026-11-21
+测试人员：JY
+测试状态：SSE 分帧 Node 测试 3/3 通过，前端构建通过；未作浏览器端到端验收
+测试范围与记录位置：Docs/功能任务/ZY-ERP-20261121-MCP认证与SSE解析缺陷修正.md
 -->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
@@ -25,6 +25,7 @@ import { useFloatingDrag } from '../composables/useFloatingDrag'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { RobotOutlined, SendOutlined, PlusOutlined, CheckOutlined, CloseOutlined, PaperClipOutlined } from '@ant-design/icons-vue'
+import { extractSseEventBlocks, splitSseEventLines } from '../utils/sseEventParser.js'
 
 type UploadedImage = { uid: string; id?: string; name: string; previewUrl: string; kind?: "document"; status: 'uploading' | 'done' | 'error'; error?: string }
 
@@ -449,7 +450,7 @@ function removeAttachment(uid: string) {
   attachments.value = attachments.value.filter(item => item.uid !== uid)
 }
 
-/** 按 SSE 空行边界增量解码 UTF-8 事件，并在结束时释放读取锁。 / Decode streamed SSE blocks and always release the reader lock. */
+/** 按 SSE 标准行结束符识别空行事件边界，保留跨网络分块内容，并在结束时释放读取锁。 / Parse SSE line endings across chunks and always release the reader lock. */
 async function readEventStream(stream: ReadableStream<Uint8Array>, answer: ChatMessage) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
@@ -459,16 +460,17 @@ async function readEventStream(stream: ReadableStream<Uint8Array>, answer: ChatM
       const { value, done } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
-      let boundary = buffer.indexOf('\n\n')
-      while (boundary >= 0) {
-        const block = buffer.slice(0, boundary)
-        buffer = buffer.slice(boundary + 2)
-        handleEventBlock(block, answer)
-        boundary = buffer.indexOf('\n\n')
-      }
+      // SSE 空行由两个完整连续行结束符组成；解析器兼容 LF、CRLF、CR 及跨网络分块的分隔符。
+      const parsed = extractSseEventBlocks(buffer)
+      buffer = parsed.remainder
+      for (const block of parsed.blocks) handleEventBlock(block, answer)
       await scrollToBottom()
     }
     buffer += decoder.decode()
+    // 流结束后不再等待可能到达的下一块，收尾解析末尾的 CR 分隔符和未空行终止事件。
+    const finalEvents = extractSseEventBlocks(buffer, true)
+    for (const block of finalEvents.blocks) handleEventBlock(block, answer)
+    buffer = finalEvents.remainder
     if (buffer.trim()) handleEventBlock(buffer, answer)
   } finally {
     reader.releaseLock()
@@ -479,7 +481,8 @@ async function readEventStream(stream: ReadableStream<Uint8Array>, answer: ChatM
 function handleEventBlock(block: string, answer: ChatMessage) {
   let eventName = 'message'
   const dataLines: string[] = []
-  for (const line of block.split(/\r?\n/)) {
+  // SSE 规范允许 LF、CRLF 和单独 CR；行解析与事件边界识别使用同一套规则。
+  for (const line of splitSseEventLines(block)) {
     if (line.startsWith('event:')) eventName = line.slice(6).trim()
     else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
   }
