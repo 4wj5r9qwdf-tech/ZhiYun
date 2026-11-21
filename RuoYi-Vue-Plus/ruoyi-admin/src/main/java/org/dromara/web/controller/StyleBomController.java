@@ -136,7 +136,7 @@ public class StyleBomController {
             SELECT id::text AS id,color_name AS "colorName",size_name AS "sizeName"
             FROM rd_style_set_spec WHERE style_id=? ORDER BY sort_order,id
             """, styleId);
-        for (var spec : specs) {
+        for (Map<String, Object> spec : specs) {
             spec.put("items", jdbc.queryForList("""
                 SELECT i.child_id::text AS "childId",i.color_id::text AS "colorId",i.size_id::text AS "sizeId",
                        s.internal_code || ' · ' || s.style_name AS "childLabel",
