@@ -9,14 +9,14 @@
 初始开发人员：JY（织云项目自研内容）
 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-最近修改人员：JY
+最近修改人员：Codex（智能体）
 AI辅助工具：Codex（智能体）
-最近修改时间：2026-11-20
-修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-最近测试时间：本次整理未执行功能测试
-测试人员：本次整理未执行
-测试状态：待功能回归；历史测试记录待追溯
-测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+最近修改时间：2026-11-21
+修改标记：ZY-ERP-20261121-款式MCP字段契约；套装模式不提交不适用的单款规格数组
+最近测试时间：2026-11-21
+测试人员：Codex（智能体）
+测试状态：通过（vue-tsc 与 Vite 生产构建）；页面交互待用户验收
+测试范围与记录位置：`npm run build`，执行目录 `frontend/`
 -->
 <script setup lang="ts">
 /** 款式主档使用公共列表与分类范围，供订单及样衣后续引用。 / Shared style catalog with employee taxonomy scope. */
@@ -738,14 +738,22 @@ async function save(andAdd = false) {
     }
     const id = editId.value
     form.value.coverOssId = form.value.attachments.find(item => item.category === 'style_image' && item.isCover)?.ossId
-    const payload = {
+    const payload: Record<string, any> = {
       ...form.value,
       attachments: form.value.attachments.map(item => ({ ossId: item.ossId, category: item.category })),
       sameHanger: form.value.productionMode === 'combined' && form.value.sameHanger,
       members: single ? [] : form.value.members,
       setSpecs: single ? [] : form.value.setSpecs.map(({ id, colorName, sizeName, remark, items }) => ({ id, colorName, sizeName, remark, items })),
-      excludedPairs: form.value.excludedPairs.filter(pair =>
-        form.value.colorIds.includes(pair.colorId) && form.value.sizeIds.includes(pair.sizeId)),
+    }
+    if (single) {
+      payload.excludedPairs = form.value.excludedPairs.filter(pair =>
+        form.value.colorIds.includes(pair.colorId) && form.value.sizeIds.includes(pair.sizeId))
+    } else {
+      // 套装不接收单款颜色/尺码字段；省略它们以匹配服务端严格请求契约。
+      // Set styles do not accept single-style specification fields; omit them to match the server contract.
+      delete payload.colorIds
+      delete payload.sizeIds
+      delete payload.excludedPairs
     }
     const savedId = await foundationRequest<string>(id ? 'put' : 'post', id ? endpoint + '/' + id : endpoint, payload)
     message.success('款式已保存')

@@ -1,6 +1,7 @@
 # 标签管理 API
 
 > 状态：用户于 2026-11-20 验收通过。REST、权限、主建表、Skill 和 MCP 管理工具已接入；2026-11-20 开发服务重启后 `tools/list` 已发现标签管理 11 个工具。普通员工权限、真实读取及写入审计仍待账号级核验。分组属于具体功能命名空间 `module_key`，业务记录仍以 `module_key + record_id + tag_id` 关联标签。
+> 契约迁移：2026-11-21 已补齐本文件 MCP 输入字段矩阵和写入示例；当前只完成静态代码对照，运行时权限/真实调用仍按下方状态记录。
 
 ## REST 接口
 
@@ -56,7 +57,7 @@
 
 先查询功能命名空间，再查询该功能分组；不要把左侧导航模块名称当作 `moduleKey`，也不要猜 ID：
 
-```json
+```jsonl
 {"name":"tag_module_list","arguments":{}}
 {"name":"tag_group_list","arguments":{"moduleKey":"customer_master"}}
 ```
@@ -88,3 +89,47 @@
 `POST /ensure` 是业务表单自动收录标签的 REST 接口，不开放为通用 MCP 管理工具，避免智能体绕过明确的标签新增权限任意登记功能标签。业务功能产生的标签关联仍由对应业务保存流程维护。
 
 > 运行时记录：2026-11-20 MCP `tools/list` 已发现 11 个标签管理工具；尚未用普通员工账号执行读取、低权限拒绝及写入审计核验。后续账号级验证要求见《测试与验收清单》。
+
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+下表覆盖 `TagMcpTools` 的顶层参数和所有自由 `Map` 内部字段。MCP inputSchema 只约束顶层对象参数类型，不会递归约束 `body` 的键和值；工具实现通过字段白名单和控制器校验拒绝未知或非法字段。所有 ID 都是从前置查询复制的正十进制字符串。
+
+| 字段路径 | JSON 类型 / 示例 | 必填与省略结果 | `null` / 空白 / 空集合结果 | 用途、来源、约束与副作用 |
+|---|---|---|---|---|
+| `tag_group_list.moduleKey`、`tag_options.moduleKey` | string；`"customer_master"` | 必填；须先从 `tag_module_list` 读取 | null/空白不适用；无效命名空间由服务端拒绝 | 业务功能稳定命名空间；不是侧边导航模块名 |
+| `tag_list.moduleKey` | string；`"customer_master"` | 必填；从 `tag_module_list` 读取 | null/空白不适用；无效命名空间拒绝 | 标签查询范围固定为一个业务功能 |
+| `tag_list.keyword` | string；`"品牌"` | 可选；省略不按名称筛选 | null/纯空白不筛选；数组/对象拒绝 | 标签名称模糊筛选 |
+| `tag_list.status` | string；`"0"` | 可选；省略查全部状态 | null/空白不筛选；仅字符串 `"0"`/`"1"` 可筛选 | 0 启用、1 停用；数字 0/1 拒绝 |
+| `tag_list.groupId` | string 正十进制 ID；`"3001"` | 可选；省略查该功能全部分组 | null/空白不筛选；非字符串、非正 ID 拒绝 | 从同一 `moduleKey` 的 `tag_group_list` 读取；不得混用其他功能的分组 ID |
+| `tag_create.body` | object；见下方 `arguments` | 必须提供对象，且必须含 `moduleKey`、`moduleName`、`tagName` | null/空对象拒绝；未知字段拒绝 | 新增单个标签；无幂等键，超时后先用 `tag_list` 查证，避免重复创建 |
+| `tag_create.body.moduleKey`、`moduleName`、`tagName` | string；`"customer_master"` / `"客户档案"` / `"重点客户"` | 三者必填；不得省略、null 或空白 | 空白拒绝；数字/对象拒绝 | `moduleKey` 必须已登记；显示名与功能标识一致；标签名同功能同分组内不区分大小写唯一，最多长度按 REST 校验 |
+| `tag_create.body.groupId` | string 正十进制 ID；`"3001"` | 可选；省略进入该功能默认分组 | null/空白按未提供处理并进入默认分组；非字符串或非法 ID 拒绝 | 只能用同一功能 `tag_group_list` 返回的自定义组或默认组 |
+| `tag_create.body.isCommon` | string；`"0"` | 可选；省略默认 `"0"` | 若键显式出现且为 null/空白则拒绝；只能传字符串 `"0"`/`"1"` | 仅作为常用提示，不改变权限或业务状态 |
+| `tag_update.body` | object；见下方 `arguments` | 必须含全部六个字段：`tagId`、`moduleKey`、`groupId`、`tagName`、`isCommon`、`status` | null/空对象拒绝；未知/缺少字段拒绝 | 完整提交可编辑最终态；无增量补丁语义 |
+| `tag_update.body.tagId`、`groupId` | string 正十进制 ID；`"4001"` / `"3001"` | 必填；省略、null、空白均拒绝 | 非字符串或非法 ID 拒绝 | 标签 ID 来自 `tag_list`；目标分组来自同功能 `tag_group_list`；跨功能改组拒绝 |
+| `tag_update.body.moduleKey`、`tagName` | string；`"customer_master"` / `"重点客户"` | 必填；省略拒绝 | null/空白拒绝 | 功能归属不可变；标签名需与目标同组的其他标签不重复 |
+| `tag_update.body.isCommon`、`status` | string；`"1"` / `"0"` | 必填；省略拒绝 | null/空白/数字均拒绝；只能是字符串 `"0"` 或 `"1"` | `isCommon` 为常用提示；`status` 为生命周期（0启用、1停用），停用保留历史业务关系 |
+| `tag_disable.tagId`、`tag_delete.tagId` | string 正十进制 ID；`"4001"` | 必填；ID 来自 `tag_list` | null/空白/数字/非正 ID 拒绝 | disable 软停用并保留关联；delete 永久删除且只允许无业务引用记录，不能把删除失败改为解除关联 |
+| `tag_group_create.body` | object；`{"moduleKey":"customer_master","groupName":"客户分层"}` | 必须含 `moduleKey`、`groupName` | null/空对象拒绝；未知字段拒绝 | 创建自定义分组；无幂等键，重试前先查询 |
+| `tag_group_create.body.moduleKey`、`groupName` | string；`"customer_master"` / `"客户分层"` | 必填；均不可省略 | null/空白拒绝 | 功能键先从 `tag_module_list` 读取；同一功能内分组名不区分大小写唯一 |
+| `tag_group_update.body` | object；`{"groupId":"3001","moduleKey":"customer_master","groupName":"重要客户"}` | 必须含三个字段 | null/空对象拒绝；未知字段拒绝 | 只能重命名同功能的自定义分组，默认组由服务端拒绝 |
+| `tag_group_update.body.groupId` | string 正十进制 ID；`"3001"` | 必填；从 `tag_group_list` 复制 | null/空白/数字/非法 ID 拒绝 | 不能指向其他功能分组或默认分组 |
+| `tag_group_update.body.moduleKey`、`groupName` | string；`"customer_master"` / `"重要客户"` | 必填；均不可省略 | null/空白拒绝 | 分组功能归属不能变；名称须非空且同功能不重复 |
+| `tag_group_delete.groupId` | string 正十进制 ID；`"3001"` | 必填；从 `tag_group_list` 复制 | null/空白/数字/非法 ID 拒绝 | 仅删除空自定义分组；默认组及含标签分组拒绝 |
+
+写入权限分别为 `system:tag:add`（新增）、`system:tag:edit`（修改）和 `system:tag:remove`（停用/删除）；查询标签需 `system:tag:list`，分组/业务选项需员工登录。所有写工具都复用员工当前身份、服务端权限、命名空间检查及审计。
+
+### 写操作 `arguments` 示例
+
+以下均为结构示例；先读实际功能、分组和标签，再将示例 ID/名称替换成当前查询结果及员工确认内容。尖括号占位符不是可直接写入的业务值。
+
+```jsonl
+{"name":"tag_update","arguments":{"body":{"tagId":"4001","moduleKey":"customer_master","groupId":"3001","tagName":"重点客户","isCommon":"1","status":"0"}}}
+{"name":"tag_disable","arguments":{"tagId":"4001"}}
+{"name":"tag_delete","arguments":{"tagId":"4001"}}
+{"name":"tag_group_create","arguments":{"body":{"moduleKey":"customer_master","groupName":"客户分层"}}}
+{"name":"tag_group_update","arguments":{"body":{"groupId":"3001","moduleKey":"customer_master","groupName":"重要客户"}}}
+{"name":"tag_group_delete","arguments":{"groupId":"3001"}}
+```
+
+`tag_update` 用完整字段，不能只传发生变化的字段。`tag_disable` 保留历史关联；`tag_delete` 不可恢复。分组删除前需查询确认 `isDefault=false` 且 `tagCount=0`。以上语义只在 API 字段表维护，Skill 应引用本节，不另行定义空值规则。

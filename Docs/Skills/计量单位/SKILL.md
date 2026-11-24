@@ -6,8 +6,10 @@ description: 查询和维护织云 ERP 全局计量单位、固定换算关系�
 # 计量单位
 
 > 版本：v1
-> 更新日期：2026-11-05
+> 更新日期：2026-11-21
 > 说明：2026-11-05 用户验收通过；MCP已实际发现，目录/选项及单位新增、修改、删除已实际调用验证；低权限写入拒绝已验证。
+
+字段类型、空值、换算方向及更新完整字段以[计量单位 API 的 MCP 字段矩阵](../../API/计量单位API.md#MCP-输入字段矩阵契约迁移批次-1)为准；本 Skill 只编排调用流程。
 
 ## 适用与契约
 
@@ -28,6 +30,16 @@ description: 查询和维护织云 ERP 全局计量单位、固定换算关系�
 ```
 
 示例 ID 仅展示十进制字符串格式；调用时替换为同一有效换算关系中的真实 ID。
+
+## 写入参数示例
+
+```jsonl
+{"name":"unit_create","arguments":{"body":{"code":"CM","name":"厘米","symbol":"cm","dimension":"length","decimalPlaces":3,"baseUnitId":"101","factor":"0.01","sortOrder":1,"status":"0","remark":"1厘米等于0.01米"}}}
+{"name":"unit_update","arguments":{"id":"102","body":{"code":"CM","name":"厘米","symbol":"cm","dimension":"length","decimalPlaces":3,"baseUnitId":"101","factor":"0.01","sortOrder":1,"status":"0","remark":"1厘米等于0.01米"}}}
+{"name":"unit_delete","arguments":{"id":"102"}}
+```
+
+参照 ID 必须从选项复制为字符串；系数也必须是精确十进制字符串。`unit_update` 是完整替换：先读取当前单位，再明确回填参照、系数、精度、状态和所有显示字段，尤其不要把现有换算关系省略掉。
 
 ## 执行步骤
 

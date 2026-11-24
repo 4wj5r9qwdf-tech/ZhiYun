@@ -9,17 +9,17 @@
 # 初始开发人员：JY（织云项目自研内容）
 # 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 # 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-# 最近修改人员：JY
+# 最近修改人员：Codex（智能体）
 # AI辅助工具：Codex（智能体）
-# 最近修改时间：2026-11-20
-# 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-# 最近测试时间：本次整理未执行功能测试
-# 测试人员：本次整理未执行
-# 测试状态：待功能回归；历史测试记录待追溯
-# 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+# 最近修改时间：2026-11-24
+# 修改标记：ZY-ERP-20261124-SAA平台退役；移除 Agent Studio 自动启动
+# 最近测试时间：2026-11-24
+# 测试人员：Codex（智能体）
+# 测试状态：静态检查通过；未执行服务全量回归
+# 测试范围与记录位置：见 Docs/功能任务/ZY-ERP-20261124-SAA测试平台退役.md
 # 织云 ERP - 启动脚本
 # 用法：bash scripts/start.sh
-# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI + Spring AI Alibaba
+# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI
 # 日志：写项目内 logs/（已 gitignore）；不再用 /tmp（agent 沙箱里 /tmp 是隔离 tmpfs，外部看不见日志）
 set -e
 
@@ -124,9 +124,6 @@ fi
 
 # 4. 启动独立框架控制台（SnailJob 与 SnailAI）
 bash "$PROJECT_ROOT/scripts/start-framework-consoles.sh"
-
-# 5. 启动 Spring AI Alibaba 第二套智能体框架测试平台
-bash "$PROJECT_ROOT/scripts/start-spring-ai-alibaba.sh"
 
 echo ""
 echo "=== 启动中，等待服务就绪 ==="

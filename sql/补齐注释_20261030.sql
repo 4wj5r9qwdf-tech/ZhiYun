@@ -8,14 +8,19 @@
 -- 初始开发人员：JY（织云项目自研内容）
 -- 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 -- 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
--- 最近修改人员：JY
+-- 最近修改人员：Codex（智能体）
 -- AI辅助工具：Codex（智能体）
--- 最近修改时间：2026-11-20
--- 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
--- 最近测试时间：本次整理未执行功能测试
--- 测试人员：本次整理未执行
--- 测试状态：待功能回归；历史测试记录待追溯
--- 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-- 最近修改时间：2026-11-21
+-- 修改标记：ZY-ERP-20261121-注释审查；补齐建筑名称字段注释
+-- 既有测试记录（2026-11-20）：
+--   测试时间：本次整理未执行功能测试
+--   测试人员：本次整理未执行
+--   测试状态：待功能回归；历史测试记录待追溯
+--   测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-- 最近测试时间：2026-11-21
+-- 测试人员：Codex（智能体）
+-- 测试状态：主建表字段注释静态审计通过；未在项目数据库执行
+-- 测试范围与记录位置：51张表、516个字段候选；Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
 -- ============================================================
 -- 织云 ERP 注释补齐脚本（2026-10-30）
 -- 目标：满足《开发规范》§表/字段必须带中文注释
@@ -26,6 +31,7 @@
 --      sys_person_ext / sys_company / sys_building / sys_todo /
 --      sys_post_role / sys_user_menu_config / sys_user_workbench / sys_org_manage
 -- 说明：纯 COMMENT ON，不改结构、不动数据，可重复执行（幂等）
+-- 更新：2026-11-21（补齐 sys_building.plant_name 字段数据库注释）
 -- 执行：psql -U zhizhun -d zhizhun_erp -f sql/补齐注释_20261030.sql
 -- ============================================================
 BEGIN;
@@ -142,6 +148,7 @@ COMMENT ON COLUMN sys_company.name_color  IS '公司名文本颜色（hex 色值
 
 -- B3. sys_building（建筑档案）
 COMMENT ON COLUMN sys_building.plant_id    IS '建筑ID（主键，列名沿用 plant_id）';
+COMMENT ON COLUMN sys_building.plant_name   IS '建筑名称（如一号厂房、行政楼或一号宿舍楼）';
 COMMENT ON COLUMN sys_building.address      IS '地址';
 COMMENT ON COLUMN sys_building.built_year  IS '建成年份';
 COMMENT ON COLUMN sys_building.remark      IS '备注';

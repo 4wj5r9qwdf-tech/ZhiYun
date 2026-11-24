@@ -48,7 +48,6 @@ const router = createRouter({
         { path: 'admin-monitor', name: 'FrameworkAdminConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'admin' }, meta: { title: 'Admin 监控', tab: true } },
         { path: 'snailjob', name: 'FrameworkSnailJobConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'snailjob' }, meta: { title: 'SnailJob 任务调度', tab: true } },
         { path: 'snailai', name: 'FrameworkSnailAiConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'snailai' }, meta: { title: 'SnailAI 智能体', tab: true } },
-        { path: 'spring-ai-alibaba', name: 'FrameworkSpringAiAlibabaConsole', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'springai' }, meta: { title: 'Spring AI Alibaba', tab: true } },
         { path: 'snailai-traces', name: 'SnailAiTraces', component: () => import('../views/SnailAiTraces.vue'), meta: { title: '智能体对话记录', tab: true } },
         { path: 'api-docs', name: 'FrameworkApiDocs', component: () => import('../views/FrameworkConsole.vue'), props: { kind: 'api' }, meta: { title: '接口文档', tab: true } },
         { path: '', name: 'SystemIndex', component: () => import('../views/SystemIndex.vue'), meta: { title: '系统管理' } },
@@ -126,7 +125,7 @@ const router = createRouter({
 const ROUTE_PERMS: Record<string, string> = {
   NoticeManage: 'system:notice:list',
   LoginLogs: 'monitor:logininfo:list', CodeGeneratorManage: 'tool:gen:list',
-  FrameworkAdminConsole: 'monitor:admin:list', FrameworkSnailJobConsole: 'system:snailjob:list', FrameworkSnailAiConsole: 'system:snailai:list', FrameworkSpringAiAlibabaConsole: 'system:spring-ai-alibaba:list',
+  FrameworkAdminConsole: 'monitor:admin:list', FrameworkSnailJobConsole: 'system:snailjob:list', FrameworkSnailAiConsole: 'system:snailai:list',
   FrameworkApiDocs: 'system:api-docs:list',
   SnailAiTraces: 'system:snailai:trace:list',
   ClientDirectory: 'system:client:list',
@@ -153,7 +152,7 @@ const ROUTE_PERMS: Record<string, string> = {
   UnitManage: 'system:unit:list', CategoryManage: 'system:category:list',
   Company: 'system:company:list', CustomerManage: 'system:customer:list', CountryRegionManage: 'system:country:list',
 }
-const needAuth = ['NoticeManage', 'LoginLogs', 'CodeGeneratorManage', 'FrameworkAdminConsole', 'FrameworkSnailJobConsole', 'FrameworkSnailAiConsole', 'FrameworkSpringAiAlibabaConsole', 'FrameworkApiDocs', 'ApprovalIndex', 'ApprovalCategories', 'ApprovalDefinitions', 'ApprovalInstances', 'ApprovalTaskMonitor', 'WorkflowSpelManage', 'WorkflowLeaveDemo', 'ApprovalWaiting', 'ApprovalCopies', 'ApprovalInitiated', 'ApprovalFinished', 'ApprovalBindingManage', 'UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'ColorManage', 'OrderIndex', 'CustomerOrderManage', 'MaterialDemandPlanManage', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'MaterialManage', 'RAndDIndex', 'StyleManage', 'StyleBomManage', 'WelfareIndex']
+const needAuth = ['NoticeManage', 'LoginLogs', 'CodeGeneratorManage', 'FrameworkAdminConsole', 'FrameworkSnailJobConsole', 'FrameworkSnailAiConsole', 'FrameworkApiDocs', 'ApprovalIndex', 'ApprovalCategories', 'ApprovalDefinitions', 'ApprovalInstances', 'ApprovalTaskMonitor', 'WorkflowSpelManage', 'WorkflowLeaveDemo', 'ApprovalWaiting', 'ApprovalCopies', 'ApprovalInitiated', 'ApprovalFinished', 'ApprovalBindingManage', 'UnitManage', 'CategoryManage', 'ClientDirectory', 'StorageDirectory', 'FileDirectory', 'ParameterDirectory', 'DictionaryDirectory', 'CacheOverview', 'MenuDirectory', 'OperationLogs', 'OnlineUsers', 'SizeManage', 'SizeGroupManage', 'ColorManage', 'OrderIndex', 'CustomerOrderManage', 'MaterialDemandPlanManage', 'CustomerManage', 'Workbench', 'SystemIndex', 'Company', 'RoleManage', 'SystemTemplate', 'TagManage', 'CountryRegionManage', 'PersonIndex', 'Person', 'OrgManage', 'PostManage', 'PropertyIndex', 'BuildingManage', 'StockIndex', 'WarehouseManage', 'WarehouseLayoutManage', 'MaterialManage', 'RAndDIndex', 'StyleManage', 'StyleBomManage', 'WelfareIndex']
 router.beforeEach(async (to) => {
   const token = sessionStorage.getItem('token')
   if (to.name === 'SnailAiTraces' && !token) return { name: 'Login' }

@@ -81,7 +81,7 @@ public class CompanyController {
         Long total = jdbcTemplate.queryForObject(
             "SELECT count(*) FROM sys_company WHERE del_flag='0'", Long.class);
         java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-            "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login_bg_oss_id, " +
+            "SELECT c.company_id::text AS company_id, c.company_name, c.logo_oss_id::text AS logo_oss_id, c.login_bg_oss_id::text AS login_bg_oss_id, " +
             "       c.slogan, c.login_bg_mode, c.name_color, c.is_default, c.theme, c.status, " +
             "       COALESCE(o.url,'') AS logo_url, COALESCE(bg.url,'') AS login_bg_url " +
             "FROM sys_company c " +
@@ -99,7 +99,7 @@ public class CompanyController {
     @GetMapping("/{companyId}")
     public R<Map<String, Object>> getInfo(@PathVariable Long companyId) {
         Map<String, Object> row = jdbcTemplate.queryForMap(
-            "SELECT c.company_id, c.company_name, c.logo_oss_id, c.login_bg_oss_id, " +
+            "SELECT c.company_id::text AS company_id, c.company_name, c.logo_oss_id::text AS logo_oss_id, c.login_bg_oss_id::text AS login_bg_oss_id, " +
             "       c.slogan, c.login_bg_mode, c.name_color, c.is_default, c.theme, c.status, " +
             "       COALESCE(o.url,'') AS logo_url, COALESCE(bg.url,'') AS login_bg_url " +
             "FROM sys_company c " +

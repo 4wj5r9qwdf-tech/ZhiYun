@@ -12,11 +12,11 @@
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
  * 最近修改时间：2026-11-21
- * 修改标记：ZY-ERP-20261121-昨日功能回归；统一人员 MCP 可选参数描述
+ * 修改标记：ZY-ERP-20261121-MCP写工具确认契约；统一人员参数描述并补齐写操作对象展示
  * 最近测试时间：2026-11-21
- * 测试人员：JY
- * 测试状态：通过（全量后端测试覆盖 MCP 工具契约）
- * 测试范围与记录位置：人员 MCP 参数可选元数据契约；Maven Surefire 报告
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（MCP 工具契约测试覆盖全部命名写工具）
+ * 测试范围与记录位置：人员参数可选元数据及写操作确认描述；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -32,6 +32,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,11 +112,12 @@ public class PersonMcpTools {
     }
 
     /** 新增员工登录档案；登录密码须由授权人员在人员页面设置，MCP 不接受或返回密码。 / Create an employee account without accepting or returning password data. */
-    @McpTool(name = "person_create", description = "新增人员档案并创建登录账号；需明确确认工号、姓名、组织、岗位/角色和业务职责。MCP 不接收密码或证件、银行卡、家庭住址、社保金额等敏感字段；需要 system:person:add 权限；分配角色另需 system:user:edit。创建后由具备重置密码权限的人员在人员页面设置密码，员工才能登录")
+    @McpTool(name = "person_create", description = "新增人员档案并创建登录账号；调用前向员工展示工号、姓名、组织、岗位/角色和业务职责并取得本次明确确认。MCP 不接收密码或证件、银行卡、家庭住址、社保金额等敏感字段；需要 system:person:add 权限；分配角色另需 system:user:edit。创建后由具备重置密码权限的人员在人员页面设置密码，员工才能登录")
     public R<?> create(@McpToolParam(description = "人员字段：jobNo（6位工号字符串）、name必填、gender、email、phoneNumber、orgId十进制字符串、status、remark、postIds/roleIds十进制字符串数组、businessDuties代码数组；ext 仅接受dingTalkAccount、hireDate、groupName、groupId、empType、empStatus、leaveDate、signEntity、contractYears、contractStart、contractEnd、isDorm；不要传password或敏感个人字段") Map<String, Object> body) {
         StpUtil.checkPermission("system:person:add");
         if (body != null && body.containsKey("password")) throw new ServiceException("MCP 不接收人员密码，请通过人员页面安全设置");
         Map<String, Object> payload = requireBody(body, CREATE_FIELDS);
+        validateInput(payload, true);
         Object jobNo = payload.get("jobNo");
         if (!(jobNo instanceof String code) || !code.matches("\\d{6}")) throw new ServiceException("工号必须是6位数字字符串");
         if (!(payload.get("name") instanceof String name) || name.isBlank()) throw new ServiceException("请填写人员姓名");
@@ -131,7 +134,7 @@ public class PersonMcpTools {
     }
 
     /** 按字段补丁更新人员，读取现值仅在服务端合并，未提交字段不会被清空。 / Apply a partial update merged server-side so omitted fields remain unchanged. */
-    @McpTool(name = "person_update", description = "修改人员档案；按字段补丁合并，未提供的档案字段会在服务端保留。不得传工号或密码；展示目标人员及修改内容并确认。需要 system:person:query 和 system:person:edit 权限；改变角色另需 system:user:edit")
+    @McpTool(name = "person_update", description = "修改人员档案；按字段补丁合并，未提供的档案字段会在服务端保留。调用前展示目标人员、将修改的字段及岗位/角色影响，取得员工本次明确确认。不得传工号或密码；需要 system:person:query 和 system:person:edit 权限；改变角色另需 system:user:edit")
     public R<?> update(@McpToolParam(description = "人员ID，十进制字符串") String userId,
                        @McpToolParam(description = "只填写要改的字段：name、gender、email、phoneNumber、orgId、status、remark、postIds、roleIds、businessDuties 或 ext 内允许的工作字段；不支持jobNo/password及证件、银行卡、家庭住址、社保金额等敏感个人字段") Map<String, Object> changes) {
         StpUtil.checkPermission("system:person:query");
@@ -139,6 +142,7 @@ public class PersonMcpTools {
         Long id = parseId(userId, "人员ID");
         Map<String, Object> patch = requireBody(changes, UPDATE_FIELDS);
         if (patch.isEmpty()) throw new ServiceException("请至少提供一个要修改的字段");
+        validateInput(patch, false);
         validateIds(patch);
         R<Map<String, Object>> current = controller.getInfo(id);
         if (current.getCode() != 200 || current.getData() == null) return R.fail(current.getMsg());
@@ -158,7 +162,7 @@ public class PersonMcpTools {
     }
 
     /** 软删除人员并停用登录；禁止超级管理员及内置 admin 账号。 / Soft-delete and disable login, while protecting system accounts. */
-    @McpTool(name = "person_delete", description = "软删除人员并停用其登录账号，历史关联保留且可恢复；调用前先读取人员并确认工号/姓名。禁止删除超级管理员和内置admin账号；需要 system:person:query 与 system:person:remove 权限")
+    @McpTool(name = "person_delete", description = "软删除人员并停用其登录账号，历史关联保留且可恢复；调用前先读取并向员工展示工号、姓名、当前在职状态及停用登录账号的影响，取得本次明确确认。禁止删除超级管理员和内置admin账号；需要 system:person:query 与 system:person:remove 权限")
     public R<?> delete(@McpToolParam(description = "人员ID，十进制字符串") String userId) {
         StpUtil.checkPermission("system:person:query");
         StpUtil.checkPermission("system:person:remove");
@@ -170,7 +174,7 @@ public class PersonMcpTools {
     }
 
     /** 恢复已软删除人员；后端仍校验工号冲突和人员数据范围。 / Restore a soft-deleted employee subject to server-side scope and job-number checks. */
-    @McpTool(name = "person_restore", description = "恢复已软删除人员并恢复登录状态；先查询该人员并确认工号、姓名及工号未被占用。需要 system:person:query 和 system:person:edit 权限")
+    @McpTool(name = "person_restore", description = "恢复已软删除人员并恢复登录状态；调用前先查询该人员，向员工展示工号、姓名、恢复后的登录状态，并确认工号未被占用，取得本次明确确认。需要 system:person:query 和 system:person:edit 权限")
     public R<?> restore(@McpToolParam(description = "人员ID，十进制字符串") String userId) {
         StpUtil.checkPermission("system:person:query");
         StpUtil.checkPermission("system:person:edit");
@@ -296,7 +300,7 @@ public class PersonMcpTools {
     }
 
     /** 校验并复制只允许的字段，拒绝静默忽略未知字段。 / Copy only explicit fields and reject unknown input. */
-    private Map<String, Object> requireBody(Map<String, Object> body, Set<String> allowed) {
+    Map<String, Object> requireBody(Map<String, Object> body, Set<String> allowed) {
         if (body == null) throw new ServiceException("请求内容不能为空");
         for (String key : body.keySet()) if (!allowed.contains(key)) throw new ServiceException("不支持人员字段：" + key);
         return new LinkedHashMap<>(body);
@@ -314,7 +318,7 @@ public class PersonMcpTools {
     }
 
     /** 校验可修改的组织、岗位和角色ID形状；具体存在性及授权范围仍由人员控制器核验。 / Validate ID payload shapes while leaving existence and scope checks to the controller. */
-    private void validateIds(Map<String, Object> payload) {
+    void validateIds(Map<String, Object> payload) {
         validateOptionalId(payload.get("orgId"), "orgId");
         validateIdList(payload.get("postIds"), "postIds");
         validateIdList(payload.get("roleIds"), "roleIds");
@@ -324,11 +328,117 @@ public class PersonMcpTools {
         }
     }
 
+    /** 校验 MCP 人员字段 JSON 类型、枚举和全量集合空值，避免 Controller 将数字或对象隐式转成文本。 / Validate personnel MCP types and collection replacement semantics before reaching the controller. */
+    void validateInput(Map<String, Object> payload, boolean creating) {
+        for (String key : Set.of("jobNo", "name", "gender", "email", "phoneNumber", "status", "remark")) {
+            if (!payload.containsKey(key)) continue;
+            Object value = payload.get(key);
+            if (value != null && !(value instanceof String)) throw new ServiceException(key + "必须是字符串或null");
+        }
+        if (payload.containsKey("name") && (!(payload.get("name") instanceof String name) || name.isBlank())) {
+            throw new ServiceException("name必须是非空字符串");
+        }
+        if (payload.containsKey("gender") && payload.get("gender") != null) {
+            String gender = (String) payload.get("gender");
+            if (!gender.isEmpty() && !Set.of("1", "2").contains(gender)) throw new ServiceException("gender只能是1（男）或2（女）");
+        }
+        if (payload.containsKey("status")) {
+            Object value = payload.get("status");
+            if (!(value instanceof String status) || !Set.of("0", "1").contains(status)) throw new ServiceException("status必须是字符串0或1");
+        }
+
+        validateOptionalId(payload.get("orgId"), "orgId");
+        for (String key : Set.of("postIds", "roleIds", "businessDuties")) {
+            if (!payload.containsKey(key)) continue;
+            Object value = payload.get(key);
+            if (!creating && value == null) throw new ServiceException(key + "更新时不能为null；清空请传空数组[]");
+            if ("businessDuties".equals(key)) validateBusinessDuties(value);
+        }
+        if (payload.containsKey("ext")) {
+            Map<String, Object> ext = requireBody(asMap(payload.get("ext"), "ext"), EXT_FIELDS);
+            validateExtension(ext, creating);
+        } else if (creating) {
+            throw new ServiceException("新增人员必须提供ext.hireDate和ext.empStatus");
+        }
+        if (creating) {
+            Map<String, Object> ext = requireBody(asMap(payload.get("ext"), "ext"), EXT_FIELDS);
+            if (!(ext.get("hireDate") instanceof String hireDate) || hireDate.isBlank()) throw new ServiceException("新增人员必须提供ext.hireDate");
+            if (!(ext.get("empStatus") instanceof String empStatus) || empStatus.isBlank()) throw new ServiceException("新增人员必须提供ext.empStatus");
+        }
+    }
+
+    /** 校验白名单内工作扩展字段；日期为空字符串/null 表示清除，补丁中省略表示保留。 / Validate allowed work-extension fields with explicit date and enum behavior. */
+    private void validateExtension(Map<String, Object> ext, boolean creating) {
+        Map<String, Integer> maxLengths = Map.of(
+            "dingTalkAccount", 128, "groupName", 50, "empType", 20, "empStatus", 10, "signEntity", 100);
+        for (String key : Set.of("dingTalkAccount", "hireDate", "groupName", "empType", "empStatus", "leaveDate", "signEntity", "contractStart", "contractEnd", "isDorm")) {
+            if (!ext.containsKey(key)) continue;
+            Object value = ext.get(key);
+            if (value != null && !(value instanceof String)) throw new ServiceException("ext." + key + "必须是字符串或null");
+            if (value instanceof String text && maxLengths.containsKey(key) && text.length() > maxLengths.get(key)) {
+                throw new ServiceException("ext." + key + "超过允许长度");
+            }
+        }
+        for (String key : Set.of("hireDate", "leaveDate", "contractStart", "contractEnd")) {
+            Object raw = ext.get(key);
+            if (raw instanceof String value && !value.isBlank()) {
+                try {
+                    LocalDate.parse(value);
+                } catch (DateTimeParseException exception) {
+                    throw new ServiceException("ext." + key + "必须为YYYY-MM-DD日期");
+                }
+            }
+        }
+        if (creating) {
+            Object hireDate = ext.get("hireDate");
+            if (!(hireDate instanceof String value) || value.isBlank()) throw new ServiceException("新增人员必须提供ext.hireDate");
+        }
+        if (ext.containsKey("groupId")) validateOptionalId(ext.get("groupId"), "ext.groupId");
+        if (ext.containsKey("contractYears")) {
+            Object value = ext.get("contractYears");
+            if (value != null && (!(value instanceof Integer || value instanceof Long || value instanceof java.math.BigInteger)
+                || ((Number) value).longValue() < 0 || ((Number) value).longValue() > Integer.MAX_VALUE)) {
+                throw new ServiceException("ext.contractYears必须是非负JSON整数或null");
+            }
+        }
+        if (ext.containsKey("empType") && ext.get("empType") != null && !Set.of("正式", "临时", "劳务").contains(ext.get("empType"))) {
+            throw new ServiceException("ext.empType只能是正式、临时或劳务");
+        }
+        if (ext.containsKey("empStatus")) {
+            Object value = ext.get("empStatus");
+            if (!(value instanceof String status) || !Set.of("试用", "在职", "离职", "长假").contains(status)) {
+                throw new ServiceException("ext.empStatus只能是试用、在职、离职或长假");
+            }
+        }
+        if (creating && !ext.containsKey("empStatus")) throw new ServiceException("新增人员必须提供ext.empStatus");
+        if (ext.containsKey("isDorm")) {
+            Object value = ext.get("isDorm");
+            if (!(value instanceof String flag) || !Set.of("0", "1").contains(flag)) throw new ServiceException("ext.isDorm必须是字符串0或1");
+        }
+    }
+
+    /** 业务职责必须是去重的代码数组；空数组表示撤销全部职责。 / Validate the employee duty code set. */
+    private void validateBusinessDuties(Object value) {
+        if (value == null) return;
+        if (!(value instanceof List<?> duties)) throw new ServiceException("businessDuties必须是字符串代码数组");
+        Set<String> allowed = Set.of("SALES", "FOLLOWER", "PURCHASER", "PLANNER", "WAREHOUSE", "QUALITY");
+        Set<String> seen = new java.util.HashSet<>();
+        for (Object duty : duties) {
+            if (!(duty instanceof String code) || !allowed.contains(code) || !seen.add(code)) {
+                throw new ServiceException("businessDuties包含无效或重复的职责代码");
+            }
+        }
+    }
+
     /** 校验多选主键必须以十进制字符串数组传入，避免 JSON 浮点数破坏 bigint。 / Require decimal-string arrays for multi-select bigint IDs. */
     private void validateIdList(Object value, String field) {
         if (value == null) return;
         if (!(value instanceof List<?> values)) throw new ServiceException(field + "必须是十进制字符串数组");
-        for (Object item : values) parseId(item, field + "成员");
+        Set<Long> unique = new java.util.HashSet<>();
+        for (Object item : values) {
+            Long id = parseId(item, field + "成员");
+            if (!unique.add(id)) throw new ServiceException(field + "不能包含重复ID");
+        }
     }
 
     /** 校验可选主键字段；空值表示不改或清空，非空值必须是字符串ID。 / Validate an optional ID while preserving the API's null-versus-value semantics. */

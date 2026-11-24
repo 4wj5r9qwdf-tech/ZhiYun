@@ -41,6 +41,22 @@ description: 查询和维护织云 ERP 尺码组，包括组内尺码及顺序�
 {"name":"size_group_options","arguments":{}}
 ```
 
+### 写入 arguments 示例
+
+新建尺码组时，sizeIds 是按顺序提交的完整成员列表，编码空值使用当前规则：
+
+~~~json
+{"name":"size_group_create","arguments":{"body":{"code":"","name":"字母尺码组","name_en":"Alpha","sort_order":0,"remark":"","tagIds":[],"sizeIds":["1001","1002"]}}}
+~~~
+
+修改时先读取当前组，再传完整最终字段、标签和有序成员：
+
+~~~json
+{"name":"size_group_update","arguments":{"id":"<size_group_list返回的组ID>","body":{"code":"SG0001","name":"字母尺码组","name_en":"Alpha","sort_order":0,"remark":"","tagIds":["2001"],"sizeIds":["1001","1002"]}}}
+~~~
+
+省略修改请求中的 tagIds 会清除现有标签；sizeIds 必须是非空且无重复成员列表。空值和规则字段见[尺码组管理 API 字段矩阵](../../API/尺码组管理API.md#MCP-输入字段矩阵契约迁移批次-1)，所有示例 ID 须替换为本次读取结果。
+
 ## 执行规则
 
 - 查询尺码组时展示编号、名称、状态及有序组内尺码；停用项明确标注。

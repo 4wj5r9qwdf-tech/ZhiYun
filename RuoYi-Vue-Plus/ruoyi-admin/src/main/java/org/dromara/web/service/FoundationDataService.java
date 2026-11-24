@@ -9,14 +9,19 @@
  * 初始开发人员：JY（织云项目自研内容）
  * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
- * 最近修改人员：JY
+ * 最近修改人员：Codex（智能体）
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-精度边界核对；按 API 已发布契约校验换算数量整数位与小数位
+ * 既有测试记录（2026-11-20）：
+ *   测试时间：本次整理未执行功能测试
+ *   测试人员：本次整理未执行
+ *   测试状态：待功能回归；历史测试记录待追溯
+ *   测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过；边界单测见 Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
+ * 测试范围与记录位置：独立校验器覆盖30位整数、12位小数及相邻非法边界；Maven Surefire 报告
  */
 package org.dromara.web.service;
 
@@ -110,7 +115,7 @@ public class FoundationDataService {
         if(!rootFrom.equals(rootTo) || !from.get("dimension").equals(to.get("dimension"))) fail("单位没有共同固定换算参照，不能换算；包装或物料专属换算应由业务维护");
         if(!"0".equals(unit(requiredId(rootFrom)).get("status"))) fail("参照单位已停用");
         BigDecimal quantity=decimal(amount);
-        if(quantity.signum()<0 || quantity.precision()>30 || quantity.scale()>12) fail("换算数量须非负，最多30位有效数字和12位小数");
+        validateConversionQuantity(quantity);
         BigDecimal result=quantity.multiply(decimal(from.get("factor"))).divide(decimal(to.get("factor")),((Number)to.get("decimalPlaces")).intValue(),RoundingMode.HALF_UP);
         return Map.of("quantity",result.toPlainString(),"fromId",fromId,"toId",toId,"rounding","HALF_UP");
     }
@@ -305,6 +310,18 @@ public class FoundationDataService {
         String raw=Objects.toString(value,"");
         if(raw.length()>48 || !raw.matches("[+-]?(?:[0-9]{1,30}(?:\\.[0-9]{1,12})?|\\.[0-9]{1,12})")) fail("数量或系数须为普通十进制数，最多30位整数和12位小数，不支持科学计数法");
         try{return new BigDecimal(raw);}catch(NumberFormatException e){throw new ServiceException("数量或换算系数格式不正确");}
+    }
+    /**
+     * 校验换算数量的非负值和 API 位数边界。BigDecimal.precision() 会把小数位也算入有效数字，
+     * 因而这里单独计算整数位数，确保“30位整数 + 12位小数”不会被误当作“总共30位有效数字”。
+     * Validate the non-negative conversion range. Count integer digits separately because the API
+     * permits up to 30 integer digits plus 12 fractional digits, not 30 total significant digits.
+     */
+    static void validateConversionQuantity(BigDecimal quantity) {
+        long integerDigits = Math.max(0L, (long) quantity.precision() - quantity.scale());
+        if (quantity.signum() < 0 || integerDigits > 30 || quantity.scale() > 12) {
+            throw new ServiceException("换算数量须非负，整数最多30位，小数最多12位");
+        }
     }
     /** 统一抛出可读业务异常，触发事务回滚。 / Abort invalid mutations with a readable domain error. */
     private void fail(String message) {throw new ServiceException(message);}

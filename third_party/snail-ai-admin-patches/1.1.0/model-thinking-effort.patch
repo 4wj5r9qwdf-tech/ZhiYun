@@ -1,0 +1,97 @@
+diff --git a/src/views/model/components/ConfigPanel.vue b/src/views/model/components/ConfigPanel.vue
+index 575dd9d..0e12f0d 100644
+--- a/src/views/model/components/ConfigPanel.vue
++++ b/src/views/model/components/ConfigPanel.vue
+@@ -64,6 +64,17 @@ const extraBodyJson = ref('{}');
+ const extraBodyJsonError = ref('');
+ let syncingExtraBodyJson = false;
+ 
++/** 常见 OpenAI 兼容思考等级候选；实际支持值及工具调用限制因模型而异。 */
++const REASONING_EFFORT_OPTIONS = [
++  { value: 'none', label: '关闭 (none)' },
++  { value: 'minimal', label: '极低 (minimal)' },
++  { value: 'low', label: '低 (low)' },
++  { value: 'medium', label: '中 (medium)' },
++  { value: 'high', label: '高 (high)' },
++  { value: 'xhigh', label: '极高 (xhigh)' },
++  { value: 'max', label: '最高 (max)' }
++];
++
+ function replaceConfig(nextConfig: Record<string, any>) {
+   Object.keys(config).forEach(key => {
+     Reflect.deleteProperty(config, key);
+@@ -200,6 +211,42 @@ const defaultVisionModelEnabled = computed({
+   }
+ });
+ 
++/**
++ * reasoning_effort 是 OpenAI 兼容请求体中的可选字段。
++ * 通过 extraBody 保存，确保设置值与现有 JSON 编辑器双向同步。
++ */
++const reasoningEffort = computed<string>({
++  get: () => (typeof config.extraBody?.reasoning_effort === 'string' ? config.extraBody.reasoning_effort : ''),
++  set: value => {
++    const current = config.extraBody;
++    const extraBody = current && typeof current === 'object' && !Array.isArray(current) ? { ...current } : {};
++    if (value) {
++      extraBody.reasoning_effort = value;
++    } else {
++      delete extraBody.reasoning_effort;
++    }
++    config.extraBody = extraBody;
++  }
++});
++
++/**
++ * 保留尚未列入快捷选项的已有供应商取值，避免编辑其他设置时误清除它。
++ */
++const reasoningEffortOptions = computed(() => {
++  const currentValue = reasoningEffort.value;
++  if (currentValue && !REASONING_EFFORT_OPTIONS.some(option => option.value === currentValue)) {
++    return [...REASONING_EFFORT_OPTIONS, { value: currentValue, label: `自定义 (${currentValue})` }];
++  }
++  return REASONING_EFFORT_OPTIONS;
++});
++
++function handleReasoningEffortChange(event: Event) {
++  const target = event.target;
++  if (target instanceof HTMLSelectElement) {
++    reasoningEffort.value = target.value;
++  }
++}
++
+ function setVisionCapability(enabled: boolean) {
+   const capabilities = Array.isArray(config.capabilities) ? config.capabilities : [];
+   const nextCapabilities = capabilities.filter(item => item !== VISION_CAPABILITY);
+@@ -389,6 +436,31 @@ function normalizeVisionModelFlag() {
+         <NInputNumber v-model:value="config.timeoutMs" :min="1000" :max="999999999" class="w-full" />
+       </NFormItem>
+ 
++      <NFormItem class="config-form-item">
++        <template #label>
++          <div class="label-with-hint">
++            <span>思考等级 / Reasoning effort</span>
++            <NTooltip trigger="hover">
++              <template #trigger>
++                <span class="hint-icon">?</span>
++              </template>
++              仅对支持 reasoning_effort 的模型和接口组合生效；等级与工具调用限制因模型而异，不支持的请求会被服务商拒绝。留空表示不发送并使用模型默认。其他供应商参数（如 enable_thinking）请在自定义参数中配置。
++            </NTooltip>
++          </div>
++        </template>
++        <select
++          :value="reasoningEffort"
++          class="w-full"
++          style="height: 36px; padding: 0 12px; border: 1px solid var(--n-border-color); border-radius: 4px; background: var(--n-color); color: var(--n-text-color);"
++          @change="handleReasoningEffortChange"
++        >
++          <option value="">跟随模型默认 / Do not send</option>
++          <option v-for="option in reasoningEffortOptions" :key="option.value" :value="option.value">
++            {{ option.label }}
++          </option>
++        </select>
++      </NFormItem>
++
+       <NFormItem class="config-form-item" :validation-status="extraBodyJsonError ? 'error' : undefined">
+         <template #label>
+           <div class="label-with-hint">

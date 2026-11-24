@@ -53,6 +53,26 @@ description: 查询和维护织云 ERP 尺码档案、尺码类型标签及自�
 {"name":"size_options","arguments":{}}
 ```
 
+### 写入 arguments 示例
+
+新增时编码可留空使用当前规则；修改必须传 ID 和完整最终字段。修改若省略 tagIds 会清空已有标签，写前必须从最新详情合并得到完整集合：
+
+~~~json
+{"name":"size_create","arguments":{"body":{"code":"","name":"S","name_en":"Small","sort_order":0,"remark":"","tagIds":["2001"]}}}
+~~~
+
+~~~json
+{"name":"size_update","arguments":{"id":"<从size_list复制的尺码ID>","body":{"code":"SZ001","name":"S","name_en":"Small","sort_order":10,"remark":"成人尺码","tagIds":["2001"]}}}
+~~~
+
+批量标签工具是全量替换，空数组会清除所有目标尺码的类型标签；需要明确向用户展示该清除动作：
+
+~~~json
+{"name":"size_batch_set_tags","arguments":{"body":{"ids":["<尺码ID1>","<尺码ID2>"],"tagIds":[]}}}
+~~~
+
+字段空值语义及自动编码参数见[尺码管理 API 字段矩阵](../../API/尺码管理API.md#MCP-输入字段矩阵契约迁移批次-1)。示例中的 ID 和标签须替换成当前工具结果；不可照抄占位值。
+
 ## 执行剧本
 
 ### 查询

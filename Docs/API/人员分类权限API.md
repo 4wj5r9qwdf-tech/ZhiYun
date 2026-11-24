@@ -122,3 +122,19 @@ MCP 写工具与 REST 使用同一专门权限。智能体不得借用超管身�
 分类授权只定义人员可访问的分类范围；业务参数中的默认分类只负责页面初始定位，不授予权限，也不缩小授权范围。业务查询必须先在服务端按人员授权过滤，再执行分页、统计、导出和关键字搜索；新增、修改、启停及业务引用保存时再次校验分类范围。
 
 客户、物料、款式、款式 BOM 等各业务的接口覆盖范围见各自 API 分组文档。采购、库存、食堂、设备及其他尚未接入的业务，必须在开发该业务时完成分类范围集成；不得因本设置已验收而宣称所有模块均已受分类权限保护。
+
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+`person_category_scope_set.scope` 是 `Map<String,Object>`：运行时 schema 不会递归约束 `scope` 内字段。服务端只接受下列键和值；字段表是可调用契约。ID 不能传 JSON 数字。
+
+| 工具.字段路径 | JSON 类型 / 格式 / 示例 | 必填与省略结果 | `null` / 空白 / 空集合结果 | 用途、来源、校验与副作用 |
+|---|---|---|---|---|
+| `person_category_scope_get.userId`、`person_category_scope_set.userId` | string 正十进制 ID；`"1793602859000"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 目标普通人员 ID；须从有权人员列表获取，并处于当前操作人数据范围内；不可为本人或超级管理员 |
+| `person_category_scope_set.scope` | object；`{"mode":"ALL","grants":[]}` | 必填；必须同时含 `mode` 与 `grants` | `null`、空对象、缺任一键均拒绝；对象不可用空白表示 | 最终授权状态，整体替换原授权；调用前展示旧授权和新授权差异并确认 |
+| `scope.mode` | string 枚举；`"SELECTED"` | 必填；省略拒绝 | `null`/空白/未知值拒绝；数组/对象不适用 | 只能是 `ALL`、`NONE`、`SELECTED`；分别为全部可见、全部不可见、指定范围 |
+| `scope.grants` | array<object>；`[{"categoryId":"1793602859444","includeChildren":false}]` | 必填；省略或非数组拒绝 | `null` 拒绝；`[]` 对 `ALL`/`NONE` 合法并表示无单项授权；对 `SELECTED` 拒绝 | 最终授权项集合；有重复项、越权分类或无效 ID 时整个请求失败 |
+| `scope.grants[].schemeId` | string 正十进制 ID 或 `null`；`"1793602859336"` | `SELECTED` 中与 `categoryId` 恰好一个非空 | `null` 表示此项不用类型授权；空白/空串作为非空非法 ID 拒绝；数组/对象不适用 | 从查询返回的分类体系 ID 复制；类型授权要求 `includeChildren=true` |
+| `scope.grants[].categoryId` | string 正十进制 ID 或 `null`；`"1793602859444"` | `SELECTED` 中与 `schemeId` 恰好一个非空 | `null` 表示此项不用节点授权；空白/空串作为非空非法 ID 拒绝；数组/对象不适用 | 从查询返回的分类节点 ID 复制；节点授权按 includeChildren 决定是否包含后代 |
+| `scope.grants[].includeChildren` | boolean；`true` | 每项必填 | `null`、省略、字符串和数字均拒绝；空集合不适用 | 类型授权必须为 `true`；分类节点可为 `true` 或 `false` |
+
+可选 ID 允许显式 JSON `null`，因为服务端将 `null` 解析为“该授权项未选择此维度”；必须保持每项另一 ID 有效。`ALL`/`NONE` 的最终请求示例分别是 `{"mode":"ALL","grants":[]}` 和 `{"mode":"NONE","grants":[]}`；不可用空对象代替两者。

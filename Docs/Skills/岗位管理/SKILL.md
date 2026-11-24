@@ -5,6 +5,8 @@ description: 查询和维护织云 ERP 岗位档案、岗位状态及组织筛�
 
 # 岗位管理 Skill
 
+参数类型、完整更新字段与 null 语义以[岗位管理 API 的 MCP 字段矩阵](../../API/岗位管理API.md#MCP-输入字段矩阵契约迁移批次-1)为准；本 Skill 只编排调用。
+
 ## 适用范围
 
 查询和维护岗位档案、岗位状态、岗位选项及其组织筛选。岗位管理已由用户验收通过（2026-11-05）；角色管理不包含在此验收结论中。
@@ -23,6 +25,17 @@ description: 查询和维护织云 ERP 岗位档案、岗位状态及组织筛�
 ```json
 {"name":"post_list","arguments":{"keyword":"业务员","pageNum":1,"pageSize":20}}
 ```
+
+## 写入参数示例
+
+```jsonl
+{"name":"post_create","arguments":{"body":{"orgId":"10001","belongOrgId":"10001","postCode":"CUTTER","postName":"裁剪员","postCategory":"生产","postSort":10,"status":"0","remark":"负责裁剪工序"}}}
+{"name":"post_update","arguments":{"body":{"postId":"20001","orgId":"10001","belongOrgId":null,"postCode":"CUTTER","postName":"裁剪员","postCategory":"生产","postSort":10,"status":"0","remark":"负责裁剪工序"}}}
+{"name":"post_set_status","arguments":{"postId":"20001","status":"1"}}
+{"name":"post_delete","arguments":{"postIds":"20001,20002"}}
+```
+
+ID 从当前员工可见岗位和组织查询复制为字符串。修改前读取完整岗位字段并确认，停用已有员工的岗位会被服务端拒绝；删除前逐项核对岗位身份。
 
 ## 操作规则
 

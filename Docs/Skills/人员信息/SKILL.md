@@ -11,7 +11,7 @@ description: 查询和维护织云 ERP 人员档案、业务职责、钉钉号�
 
 ## 契约与工具
 
-- 人员档案契约：[人员信息 API](../../API/人员信息API.md)；分类授权契约：[人员分类权限 API](../../API/人员分类权限API.md)。
+- 人员档案契约：[人员信息 API](../../API/人员信息API.md)；写入字段类型、空值、集合替换及扩展对象以[人员信息 MCP 写入字段矩阵](../../API/人员信息API.md#五mcp-写入字段矩阵契约迁移批次-1)为准；分类授权契约：[人员分类权限 API](../../API/人员分类权限API.md)。
 - 人员档案 MCP 工具：`person_list`、`person_get`、`person_business_duty_options`、`person_create`、`person_update`、`person_delete`、`person_restore`。2026-11-20 后端重启后认证 `tools/list` 已发现 7/7 个；`person_business_duty_options` 已做实际读取，人员档案读写和普通账号权限尚未验收。工具目录总计 158 个，人员分类授权另有独立 2 个工具，详见 API 文档及验收清单。
 - 人员分类权限另有独立工具 `person_category_scope_get` 和 `person_category_scope_set`，只供具备 `system:person:categoryScope` 且在人员数据范围内的员工使用。档案查询/维护权限不自动包含分类授权权限。
 - 人员档案工具沿用当前员工身份及系统权限、人员数据范围。列表/详情手机号脱敏，短号也不返回完整值；MCP 不返回证件号码、银行卡号、家庭住址和社保金额。不得将空结果或无权说明为人员不存在。
@@ -41,7 +41,7 @@ description: 查询和维护织云 ERP 人员档案、业务职责、钉钉号�
 
 1. 先用 `person_list` 按工号或姓名查找，并核实返回的员工身份和数据范围；列表手机号已脱敏。
 2. 需要查看工作资料时用 `person_get`；不返回证件、银行卡、家庭住址或社保金额。
-3. 新增、修改、删除和恢复前，向用户展示工号、姓名及操作影响并取得本次确认。`person_update` 只传实际修改字段，省略字段会由服务端保留；不得把 `null` 当成“没改”。MCP 仅接受白名单工作字段和部分任职信息，不提交证件、银行卡、住址、出生信息或社保金额。
+3. 新增、修改、删除和恢复前，向用户展示工号、姓名及操作影响并取得本次确认。`person_update` 只传实际修改字段，省略字段会由服务端保留；关联集合用 `[]` 清空，传 `null` 会被拒绝。MCP 仅接受白名单工作字段和部分任职信息，不提交证件、银行卡、住址、出生信息或社保金额。
 4. MCP 不接收密码、不重置密码、不做彻底删除或全量导出。MCP 新增账号后，由具备重置密码权限的人员在人员管理页面设置密码，员工才能登录。
 5. 岗位/角色/组织 ID 必须来自 ERP 已授权资料，全部用十进制字符串，不猜 ID；业务职责代码先读取 `person_business_duty_options`。职责不是角色或系统权限。
 
@@ -68,14 +68,16 @@ description: 查询和维护织云 ERP 人员档案、业务职责、钉钉号�
 新增人员后，由具备重置密码权限的人员在人员页面设置登录密码。新增人员只传确认过的字段。工号必须为六位数字字符串，禁止传 `password`；组织、岗位、角色 ID 只能使用已授权查询结果：
 
 ```json
-{"name":"person_create","arguments":{"body":{"jobNo":"000123","name":"示例员工","businessDuties":["SALES"],"ext":{"dingTalkAccount":"employee@example.com"}}}}
+{"name":"person_create","arguments":{"body":{"jobNo":"000123","name":"示例员工","businessDuties":["SALES"],"ext":{"hireDate":"2026-11-20","empStatus":"试用","dingTalkAccount":"employee@example.com"}}}}
 ```
 
 仅修改钉钉号时使用补丁对象；不要重发整份人员档案，也不要传证件、银行卡、住址或社保等私人字段：
 
 ```json
-{"name":"person_update","arguments":{"userId":"<personId>","changes":{"ext":{"dingTalkAccount":"employee@example.com"}}}}
+{"name":"person_update","arguments":{"userId":"<personId>","changes":{"ext":{"dingTalkAccount":"employee@example.com"},"postIds":[]}}}
 ```
+
+`person_create` 必须填写 `ext.hireDate` 与 `ext.empStatus`；清空岗位、角色或业务职责时传空数组 `[]`。不要传 `null` 代替省略或清空。所有写示例使用 MCP 实际 `arguments` 形状。
 
 软删除和恢复均需在操作前确认目标员工，并用当前查询结果中的 ID：
 

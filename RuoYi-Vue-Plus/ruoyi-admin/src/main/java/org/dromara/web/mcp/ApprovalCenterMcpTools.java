@@ -12,11 +12,11 @@
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
  * 最近修改时间：2026-11-21
- * 修改标记：ZY-ERP-20261121-昨日功能回归；统一审批 MCP 可选参数描述
+ * 修改标记：ZY-ERP-20261121-MCP写工具确认契约；统一待办和审批绑定的展示、前置与确认描述
  * 最近测试时间：2026-11-21
- * 测试人员：JY
- * 测试状态：通过（全量后端测试覆盖 MCP 工具契约）
- * 测试范围与记录位置：审批中心 MCP 参数可选元数据契约；Maven Surefire 报告
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（MCP 工具契约测试覆盖全部命名写工具及审批绑定差异）
+ * 测试范围与记录位置：McpToolContractTest；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -132,7 +132,7 @@ public class ApprovalCenterMcpTools {
     }
 
     /** 退回当前待办；目标必须来自可退回节点查询。 / Return the current task to a node returned by the valid-back-node query. */
-    @McpTool(name = "approval_task_return", description = "退回当前审批待办；先调用 approval_task_back_nodes 并让员工选择目标节点，再展示单据、节点、目标节点及退回意见取得本次明确确认；需 approval:waiting:handle 权限")
+    @McpTool(name = "approval_task_return", description = "退回当前审批待办；先调用 approval_task_back_nodes 并让员工选择目标节点；退回前向员工展示单据、当前节点、目标节点及退回意见并取得本次明确确认；需 approval:waiting:handle 权限")
     public R<?> returnTask(
         @McpToolParam(description = "待办任务ID，十进制字符串") String taskId,
         @McpToolParam(description = "退回目标节点编码，必须来自 approval_task_back_nodes 返回值") String nodeCode,
@@ -157,7 +157,7 @@ public class ApprovalCenterMcpTools {
     }
 
     /** 设置业务审批对象流程；只接受与业务类型匹配的已发布流程。 / Bind a business approval object to a matching published workflow. */
-    @McpTool(name = "approval_binding_set", description = "设置业务单据的审批流程绑定；调用前展示业务类型、原流程、新流程及对之后提交单据的影响并取得本次明确确认；只允许绑定匹配的已发布流程，需 approval:binding:edit 权限")
+    @McpTool(name = "approval_binding_set", description = "设置业务单据的审批流程绑定；调用前先读取 approval_binding_list，使用其中与业务类型匹配的已发布 flowCode，并向员工展示业务类型、原流程、新流程及对之后提交单据的影响，取得本次明确确认；需 approval:binding:edit 权限")
     public R<?> bindingSet(
         @McpToolParam(description = "审批业务类型：customer_order、material_demand_plan、customer_order_unapprove、material_demand_plan_unapprove") String businessType,
         @McpToolParam(description = "已发布流程编码；必须从 approval_binding_list 的 flows 中复制") String flowCode) {
@@ -166,7 +166,7 @@ public class ApprovalCenterMcpTools {
     }
 
     /** 解除允许解绑的常规流程绑定；反审核流程不能解绑。 / Remove a supported normal approval binding; reversal workflows are mandatory and cannot be unbound. */
-    @McpTool(name = "approval_binding_remove", description = "解除客户订单或物料需求计划的常规审批流程绑定；执行前展示业务类型、当前流程和之后提交单据的审核方式变化并取得本次明确确认；反审核流程不允许解绑，需 approval:binding:edit 权限")
+    @McpTool(name = "approval_binding_remove", description = "解除客户订单或物料需求计划的常规审批流程绑定；调用前先读取 approval_binding_list 确认当前绑定，向员工展示业务类型、当前流程及之后提交单据不再使用该审批流程的影响，并取得本次明确确认；本工具只接收 businessType，不需要 flowCode；反审核流程不允许解绑，需 approval:binding:edit 权限")
     public R<?> bindingRemove(
         @McpToolParam(description = "仅支持 customer_order 或 material_demand_plan") String businessType) {
         StpUtil.checkPermission("approval:binding:edit");

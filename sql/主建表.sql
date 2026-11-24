@@ -8,14 +8,19 @@
 -- 初始开发人员：JY（织云项目自研内容）
 -- 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 -- 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
--- 最近修改人员：JY
+-- 最近修改人员：Codex（智能体）
 -- AI辅助工具：Codex（智能体）
--- 最近修改时间：2026-11-20
--- 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
--- 最近测试时间：本次整理未执行功能测试
--- 测试人员：本次整理未执行
--- 测试状态：待功能回归；历史测试记录待追溯
--- 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-- 最近修改时间：2026-11-21
+-- 修改标记：ZY-ERP-20261121-注释审查；补齐 sys_building.plant_name 字段数据库注释
+-- 既有测试记录（2026-11-20）：
+--   测试时间：本次整理未执行功能测试
+--   测试人员：本次整理未执行
+--   测试状态：待功能回归；历史测试记录待追溯
+--   测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+-- 最近测试时间：2026-11-21
+-- 测试人员：Codex（智能体）
+-- 测试状态：主建表字段注释静态审计通过；未执行完整建表脚本
+-- 测试范围与记录位置：51张表、516个字段候选；Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
 -- ============================================================
 -- 织云 ERP 主建表脚本（唯一权威建表入口）
 -- 规则：开发期可分模块零散写，功能验证通过后必须合并进本文件
@@ -32,6 +37,7 @@
 -- 更新：2026-10-30（与线上库对齐：create_dept→create_org；sys_role.data_scope_dept_ids→data_scope_org_ids；
 --       补 sys_company.name_color、sys_user_menu_config.locked、新增 sys_org_manage 节；
 --       全部列注释补全，另见 sql/补齐注释_20261030.sql）
+-- 更新：2026-11-21（补齐 sys_building.plant_name 字段数据库注释）
 -- 更新：2026-11-05（确认公司档案、组织架构、岗位管理、建筑档案及客户档案相关表结构和权限均已合并；客户国家/地区编码字段与外键一并保留）
 -- ============================================================
 
@@ -369,6 +375,7 @@ COMMENT ON TABLE  sys_building            IS '建筑档案（物理资产/固定
 COMMENT ON COLUMN sys_building.building_type IS '用途类别 厂房/行政楼/宿舍楼';
 COMMENT ON COLUMN sys_building.plant_id    IS '建筑ID（主键，列名沿用 plant_id）';
 COMMENT ON COLUMN sys_building.plant_code   IS '建筑编号（如 P1/P2/P3）';
+COMMENT ON COLUMN sys_building.plant_name   IS '建筑名称（如一号厂房、行政楼或一号宿舍楼）';
 COMMENT ON COLUMN sys_building.floor_info   IS '楼层情况（单层/双层/三层…）';
 COMMENT ON COLUMN sys_building.land_area    IS '占地面积 ㎡';
 COMMENT ON COLUMN sys_building.building_area IS '建筑面积 ㎡';

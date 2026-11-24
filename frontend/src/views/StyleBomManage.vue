@@ -9,14 +9,14 @@
 初始开发人员：JY（织云项目自研内容）
 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-最近修改人员：JY
+最近修改人员：Codex（智能体）
 AI辅助工具：Codex（智能体）
-最近修改时间：2026-11-20
-修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-最近测试时间：本次整理未执行功能测试
-测试人员：本次整理未执行
-测试状态：待功能回归；历史测试记录待追溯
-测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+最近修改时间：2026-11-21
+修改标记：ZY-ERP-20261121-精度边界核对；前端校验与 BOM 服务端十亿上限一致
+最近测试时间：2026-11-21
+测试人员：Codex（智能体）
+测试状态：通过；构建记录见 Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
+测试范围与记录位置：前端类型检查与生产构建；按 API 输入契约复核 BOM 数量与系数边界
 -->
 <script setup lang="ts">
 import { computed, ref, onMounted, watch, nextTick } from 'vue'
@@ -34,6 +34,12 @@ import { can } from '../utils/perms'
 import { readPrecision, precisionKey, displayDecimal } from '../utils/decimalDisplay'
 const bomPrecision = ref(readPrecision().bomUsage)
 const rawUsage = ref(false)
+
+/** 精确判断十进制字符串是否小于十亿，只比较规范化后的整数部分，避免高精度小数在 Number 边界处误判。 */
+function isBelowBillion(value: string): boolean {
+  const integer = value.split('.')[0]!.replace(/^0+/, '') || '0'
+  return integer.length < 10 || (integer.length === 10 && integer < '1000000000')
+}
 
 type Option = { value: string; label: string }
 type Pair = { colorId?: string; sizeId?: string }
@@ -811,7 +817,7 @@ function updateMatrixDetails(row: MatrixRow, field: 'color' | 'unit' | 'factor' 
 function fillMatrixField(row: MatrixRow, value: unknown, field: 'usage' | 'materialVariantId' | 'materialColorId' = 'usage') {
   if (typeof value !== 'string' || !value.trim()) return
   const nextValue = value.trim()
-  if (field === 'usage' && (!/^\d+(?:\.\d{1,8})?$/.test(nextValue) || !/[1-9]/.test(nextValue) || Number(nextValue) >= 1e9)) {
+  if (field === 'usage' && (!/^\d+(?:\.\d{1,8})?$/.test(nextValue) || !/[1-9]/.test(nextValue) || !isBelowBillion(nextValue))) {
     message.warning('用量须大于零、小于十亿，最多八位小数')
     return
   }
@@ -1166,8 +1172,8 @@ async function importBomCsv(event: Event) {
         : item.value === material.inventoryUnitId)
       const unit = matchingUnits[0]
       if (!unit || matchingUnits.length !== 1) return fail('用量单位不可用或名称重复')
-      if (!usage || (!/^\d+(?:\.\d{1,8})?$/.test(usage) || !/[1-9]/.test(usage) || Number(usage) >= 1e9)) fail('用量须大于零、小于十亿，最多八位小数')
-      if (factor && (!/^\d+(?:\.\d{1,12})?$/.test(factor) || !/[1-9]/.test(factor))) fail('换算系数须大于零，最多十二位小数')
+      if (!usage || (!/^\d+(?:\.\d{1,8})?$/.test(usage) || !/[1-9]/.test(usage) || !isBelowBillion(usage))) fail('用量须大于零、小于十亿，最多八位小数')
+      if (factor && (!/^\d+(?:\.\d{1,12})?$/.test(factor) || !/[1-9]/.test(factor) || !isBelowBillion(factor))) fail('换算系数须大于零、小于十亿，最多十二位小数')
       rule.usageUnitId = unit.value
       if (variableUnit(rule) && !factor) fail('此辅助单位须填写换算系数')
       Object.assign(rule, { material: material.code + ' · ' + material.name, materialCategory: material.categoryLabel,
@@ -1251,7 +1257,7 @@ async function save(release: boolean) {
       return
     }
     const quantity = String(rule.usage || '').trim()
-    if (!rule.materialId || !rule.usageUnitId || !/^(?:\d+)(?:\.\d{1,8})?$/.test(quantity) || !/[1-9]/.test(quantity)) {
+    if (!rule.materialId || !rule.usageUnitId || !/^(?:\d+)(?:\.\d{1,8})?$/.test(quantity) || !/[1-9]/.test(quantity) || !isBelowBillion(quantity)) {
       batchMode.value = false
       activeGroupId.value = rule.childId || ''
       const spec = (specsByPart.value[activeGroupId.value] || []).find(item => exact(rule, item))
@@ -1259,8 +1265,8 @@ async function save(release: boolean) {
       message.warning('请填写物料、用量单位和大于零的用量（最多八位小数）')
       return
     }
-    if (variableUnit(rule) && (!rule.conversionFactor || !/^(?:\d+)(?:\.\d{1,12})?$/.test(rule.conversionFactor) || !/[1-9]/.test(rule.conversionFactor))) {
-      message.warning('请填写大于零的换算系数（最多十二位小数）')
+    if (variableUnit(rule) && (!rule.conversionFactor || !/^(?:\d+)(?:\.\d{1,12})?$/.test(rule.conversionFactor) || !/[1-9]/.test(rule.conversionFactor) || !isBelowBillion(rule.conversionFactor))) {
+      message.warning('请填写大于零、小于十亿的换算系数（最多十二位小数）')
       return
     }
   }

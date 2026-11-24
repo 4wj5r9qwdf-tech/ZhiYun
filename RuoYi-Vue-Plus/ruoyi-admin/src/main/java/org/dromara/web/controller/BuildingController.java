@@ -9,14 +9,14 @@
  * 初始开发人员：JY（织云项目自研内容）
  * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
- * 最近修改人员：JY
+ * 最近修改人员：Codex（智能体）
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-建筑状态契约修正；列表筛选接受档案定义的0/1/2状态
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（建筑状态筛选契约 2 项测试）
+ * 测试范围与记录位置：在用/闲置/维修状态筛选及非法值拒绝；BuildingControllerTest 与 Maven Surefire 报告
  */
 package org.dromara.web.controller;
 
@@ -50,8 +50,8 @@ public class BuildingController {
     private final JdbcTemplate jdbcTemplate;
 
     /**
-     * 查询建筑列表并返回占用车间数；状态筛选只接受0/1，避免非法值被误当作有效查询。
-     * Query buildings with their workshop counts; accept only 0/1 status filters to reject malformed queries.
+     * 查询建筑列表并返回占用车间数；状态筛选与档案状态字典0/1/2一致，避免维修状态无法筛选。
+     * Query buildings with their workshop counts; accept the persisted 0/1/2 lifecycle values.
      */
     @SaCheckPermission("system:building:list")
     @GetMapping("/list")
@@ -59,8 +59,8 @@ public class BuildingController {
                                              @RequestParam(required = false) String buildingType,
                                              @RequestParam(required = false) String status) {
         String statusFilter = status == null ? "" : status.trim();
-        if (!statusFilter.isEmpty() && !java.util.Set.of("0", "1").contains(statusFilter)) {
-            return R.fail("建筑状态筛选只能是0（启用）或1（停用）");
+        if (!statusFilter.isEmpty() && !java.util.Set.of("0", "1", "2").contains(statusFilter)) {
+            return R.fail("建筑状态筛选只能是0（在用）、1（闲置）或2（维修）");
         }
         StringBuilder sql = new StringBuilder(
             "SELECT b.*, " +

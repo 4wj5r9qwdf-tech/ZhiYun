@@ -63,7 +63,6 @@ export const MODULE_FUNCTIONS: FunctionDef[] = [
   { key: 'framework_admin_monitor', title: 'Admin 运行监控', desc: '打开框架独立服务监控中心', icon: 'DashboardOutlined', route: 'FrameworkAdminConsole', module: 'system', perm: 'monitor:admin:list' },
   { key: 'framework_snailjob', title: 'SnailJob 任务调度', desc: '打开框架独立任务调度控制台', icon: 'ScheduleOutlined', route: 'FrameworkSnailJobConsole', module: 'system', perm: 'system:snailjob:list' },
   { key: 'framework_snailai', title: 'SnailAI 智能体', desc: '打开框架独立智能体控制台', icon: 'RobotOutlined', route: 'FrameworkSnailAiConsole', module: 'system', perm: 'system:snailai:list' },
-  { key: 'framework_spring_ai_alibaba', title: 'Spring AI Alibaba', desc: '打开 Spring AI Alibaba Agent Studio 双路测试平台', icon: 'RobotOutlined', route: 'FrameworkSpringAiAlibabaConsole', module: 'system', perm: 'system:spring-ai-alibaba:list' },
   { key: 'snailai_traces', title: '智能体对话记录', desc: '查看员工对话及工具执行情况', icon: 'FileSearchOutlined', route: 'SnailAiTraces', module: 'system', perm: 'system:snailai:trace:list' },
   { key: 'framework_api_docs', title: '接口文档', desc: '查看框架开放的 API 契约', icon: 'ApiOutlined', route: 'FrameworkApiDocs', module: 'system', perm: 'system:api-docs:list' },
   { key: 'monitor_online', title: '在线用户', desc: '系统维护查询', icon: 'TeamOutlined', route: 'OnlineUsers', module: 'system', perm: 'monitor:online:list' },

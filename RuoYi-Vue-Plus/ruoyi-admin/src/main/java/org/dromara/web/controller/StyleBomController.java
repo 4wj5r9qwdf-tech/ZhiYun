@@ -9,14 +9,19 @@
  * 初始开发人员：JY（织云项目自研内容）
  * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
- * 最近修改人员：JY
+ * 最近修改人员：Codex（智能体）
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-精度审查；补充试算乘法说明及换算系数越界提示
+ * 既有测试记录（2026-11-20）：
+ *   测试时间：本次整理未执行功能测试
+ *   测试人员：本次整理未执行
+ *   测试状态：待功能回归；历史测试记录待追溯
+ *   测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：后端编译及目标单测通过；本轮未执行 BOM 接口业务验收
+ * 测试范围与记录位置：Maven Surefire 报告；精度审查见 Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
  */
 package org.dromara.web.controller;
 
@@ -388,6 +393,8 @@ public class StyleBomController {
         for (var selection : selections) {
             var matched = resolve(rules,selection);
             if (matched.isEmpty()) gaps.add(style(selection.childId()).get("label")+" 缺少适用用料");
+            // 试算按“订购套数 × 每套子款件数”展开；以下 BigDecimal 乘法不提前舍入，结果之后写入需求计划 numeric(24,8)。
+            // Expand sets as order count × child pieces per set; keep exact products here before demand-plan numeric(24,8) persistence.
             var factor = BigDecimal.valueOf(count).multiply(BigDecimal.valueOf(selection.quantity()));
             appendDemand(matched,factor,style(selection.childId()).get("label").toString(),selection,details,totals);
         }
@@ -407,6 +414,8 @@ public class StyleBomController {
                               Map<List<String>,Map<String,Object>> totals) {
         for (var saved : rules) {
             var rule = saved.rule();
+            // BOM库存需求 = 单位用量 × 版本快照换算系数 × 订单展开数量；十进制乘法保留原精度，不在试算阶段舍入。
+            // Inventory demand is usage × snapshotted unit factor × expanded order quantity, with no rounding at preview time.
             var qty = rule.usage().multiply(saved.inventoryFactor()==null ? BigDecimal.ONE : saved.inventoryFactor()).multiply(factor);
             var common = Map.of("material",saved.material(),"materialColor",saved.materialColor(),"unit",saved.unit(),
                 "materialId",rule.materialId().toString(),"materialVariantId",Objects.toString(rule.materialVariantId(),""),
@@ -627,7 +636,7 @@ public class StyleBomController {
         BigDecimal factor = "VARIABLE".equals(config.get("mode")) ? supplied : (BigDecimal) config.get("factor");
         if (factor!=null) factor = factor.stripTrailingZeros();
         if (factor==null || factor.signum()<=0 || factor.scale()>12 || factor.compareTo(new BigDecimal("1000000000"))>=0) {
-            throw new ServiceException("请填写有效的单位换算系数，最多十二位小数");
+            throw new ServiceException("请填写有效的单位换算系数（大于零、小于十亿，最多十二位小数）");
         }
         return Map.of("name",config.get("name"),"factor",factor);
     }

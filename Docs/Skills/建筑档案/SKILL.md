@@ -5,6 +5,8 @@ description: 查询和维护织云 ERP 建筑档案，包括用途、编码、�
 
 # 建筑档案 Skill
 
+字段类型、空值和完整更新规则以[建筑档案 API 的 MCP 字段矩阵](../../API/建筑档案API.md#MCP-输入字段矩阵契约迁移批次-1)为准；本 Skill 只负责调用编排。
+
 ## 适用范围
 
 查询和维护建筑用途、编码、名称、楼层、占地/建筑面积、地址及状态。建筑档案已由用户验收通过（2026-11-05）。
@@ -23,6 +25,16 @@ description: 查询和维护织云 ERP 建筑档案，包括用途、编码、�
 ```json
 {"name":"building_list","arguments":{"keyword":"厂房","status":"0"}}
 ```
+
+## 写入参数示例
+
+```jsonl
+{"name":"building_create","arguments":{"body":{"buildingType":"厂房","plantCode":"BLD001","plantName":"一号厂房","floorInfo":"3层","landArea":1200,"buildingArea":3600,"address":"示例路1号","builtYear":2018,"status":"0","remark":"建筑示例"}}}
+{"name":"building_update","arguments":{"body":{"plantId":"30001","buildingType":"厂房","plantCode":"BLD001","plantName":"一号厂房","floorInfo":"3层","landArea":1200,"buildingArea":3600,"address":"示例路1号","builtYear":2018,"status":"2","remark":"维修"}}}
+{"name":"building_delete","arguments":{"plantId":"30001"}}
+```
+
+ID 只用十进制字符串；`building_update` 先读现值并提交所有字段，空值按 API 矩阵处理。建筑状态为 `0` 在用、`1` 闲置、`2` 维修；涉及删除时先检查组织关联并展示影响。
 
 ## 操作规则
 

@@ -11,17 +11,18 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-物料需求计划请求契约；保留原始 JSON ID 类型并拒绝数值型业务 ID
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（物料需求计划控制器 3 项契约测试）
+ * 测试范围与记录位置：明细 ID 字符串校验、空请求及空集合无变更语义；Maven Surefire 报告
  */
 package org.dromara.web.controller;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.stp.StpUtil;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.dromara.common.core.domain.R;
 import org.dromara.common.core.exception.ServiceException;
@@ -52,8 +53,10 @@ public class MaterialDemandPlanController {
     private final BusinessApprovalWorkflowService workflows;
     private final CategoryAccessService categoryAccess;
 
-    /** 计划数量调整请求，使用修订号保护并发并要求提交业务原因。 / Quantity edit request guarded by the document revision and accompanied by a business reason. */
-    public record QuantityRequest(Integer revision,List<MaterialDemandPlanService.QuantityChange> items,String reason) {}
+    /** 数量请求明细保留原始 JSON ID 类型，确保 JSON 数字主键不会被自动转成长整型。 / Preserve the incoming JSON ID type so numeric IDs cannot be coerced to long. */
+    public record QuantityItemRequest(JsonNode itemId,BigDecimal plannedQuantity) {}
+    /** 数量变更请求使用修订号防并发；只有提交非空明细时才要求调整原因。 / Guard quantity edits by revision and require a reason only for non-empty changes. */
+    public record QuantityRequest(Integer revision,List<QuantityItemRequest> items,String reason) {}
     /** 需求计划状态流转请求，动作限定在控制器白名单内。 / Lifecycle request whose action is validated against the controller's allowlist. */
     public record Action(Integer revision,String action,String reason) {}
 
@@ -142,10 +145,11 @@ public class MaterialDemandPlanController {
     @RepeatSubmit
     @Log(title="调整物料需求计划数量",businessType=BusinessType.UPDATE,isSaveRequestData=false,isSaveResponseData=false)
     public R<Map<String,Object>> saveQuantities(@PathVariable Long id,@RequestBody QuantityRequest request) {
+        if(request==null)throw new ServiceException("请求体不能为空");
         if(request.revision()==null)throw new ServiceException("缺少计划版本，请刷新后重试");
         var before=plans.detail(id,true);
         assertCategories(before);
-        var saved=plans.saveQuantities(id,request.revision(),request.items(),request.reason());
+        var saved=plans.saveQuantities(id,request.revision(),quantityChanges(request.items()),request.reason());
         assertCategories(saved);
         return R.ok(saved);
     }
@@ -156,6 +160,7 @@ public class MaterialDemandPlanController {
     @RepeatSubmit
     @Log(title="物料需求计划流转",businessType=BusinessType.UPDATE,isSaveRequestData=false,isSaveResponseData=false)
     public R<Map<String,Object>> transition(@PathVariable Long id,@RequestBody Action request) {
+        if(request==null)throw new ServiceException("请求体不能为空");
         if(request.revision()==null)throw new ServiceException("缺少计划版本，请刷新后重试");
         var before=plans.detail(id,true);
         assertCategories(before);
@@ -257,5 +262,28 @@ public class MaterialDemandPlanController {
     /** 将缺失或空白的可选筛选值统一为无筛选状态。 / Treat absent or blank optional filters as no filter. */
     private static String optionalFilter(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** 严格要求计划明细主键为 JSON 字符串，再转成服务层 long，防止客户端把 bigint 当数值丢精度。 / Require JSON string item IDs before converting them for the service layer. */
+    static List<MaterialDemandPlanService.QuantityChange> quantityChanges(List<QuantityItemRequest> items) {
+        if(items==null)return null;
+        List<MaterialDemandPlanService.QuantityChange> changes=new ArrayList<>(items.size());
+        for(QuantityItemRequest item:items){
+            if(item==null||item.itemId()==null||!item.itemId().isTextual())
+                throw new ServiceException("需求明细itemId必须以十进制字符串传递");
+            String rawId=item.itemId().textValue();
+            if(!rawId.matches("[0-9]{1,19}"))
+                throw new ServiceException("需求明细itemId必须是有效的正十进制字符串");
+            Long itemId;
+            try{
+                itemId=Long.valueOf(rawId);
+            }catch(NumberFormatException error){
+                throw new ServiceException("需求明细itemId必须是有效的正十进制字符串");
+            }
+            if(itemId<=0)throw new ServiceException("需求明细itemId必须大于0");
+            if(item.plannedQuantity()==null)throw new ServiceException("计划需求量plannedQuantity不能为空");
+            changes.add(new MaterialDemandPlanService.QuantityChange(itemId,item.plannedQuantity()));
+        }
+        return changes;
     }
 }

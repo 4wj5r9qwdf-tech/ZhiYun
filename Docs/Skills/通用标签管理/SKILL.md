@@ -6,8 +6,10 @@ description: 查询和维护织云 ERP 通用标签目录，按导航模块、�
 # 通用标签管理
 
 > 版本：v1
-> 更新日期：2026-11-20
+> 更新日期：2026-11-21
 > 说明：用户验收通过。分组属于具体业务功能；MCP 管理工具已实现，运行时发现/调用状态以《标签管理 API》及《测试与验收清单》记录为准。
+
+字段类型、required、空值、完整更新和各工具输入形状以[标签管理 API 的 MCP 输入字段矩阵](../../API/标签管理API.md#MCP-输入字段矩阵契约迁移批次-1)为唯一依据；此 Skill 只说明调用顺序和确认步骤。
 
 ## 适用范围与工具
 
@@ -86,6 +88,20 @@ description: 查询和维护织云 ERP 通用标签目录，按导航模块、�
 - `tag_group_create`：提交 `moduleKey` 与 `groupName`。先查询分组，避免重复名称。
 - `tag_group_update`：提交完整定位 `groupId`、`moduleKey` 与新 `groupName`；默认分组不能重命名。
 - 分组名称在同一功能内不区分大小写唯一，不同功能可以重名。
+
+### 完整写操作示例
+
+下面示例覆盖修改、启停/删除标签，以及新增、重命名和删除分组。它们只说明真实 `arguments` 外形；调用前必须把 ID、功能名、分组名和目标状态替换为本次读取结果和员工确认内容。
+
+```jsonl
+{"name":"tag_update","arguments":{"body":{"tagId":"4001","moduleKey":"customer_master","groupId":"3001","tagName":"重点客户","isCommon":"1","status":"0"}}}
+{"name":"tag_disable","arguments":{"tagId":"4001"}}
+{"name":"tag_delete","arguments":{"tagId":"4001"}}
+{"name":"tag_group_update","arguments":{"body":{"groupId":"3001","moduleKey":"customer_master","groupName":"重要客户"}}}
+{"name":"tag_group_delete","arguments":{"groupId":"3001"}}
+```
+
+`tag_group_delete` 仅适用于已核实为空的自定义分组；默认分组不可删除。删除标签仅适用于无业务引用且用户明确要求永久删除的情形。各字段省略、null、空白和标志枚举严格按上述 API 矩阵。
 
 ## 权限、审计与边界
 

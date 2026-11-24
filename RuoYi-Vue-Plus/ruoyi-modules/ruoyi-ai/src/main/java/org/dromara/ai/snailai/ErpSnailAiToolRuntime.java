@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-写工具确认护栏验证；仅调整回调包装器可见性以供同包测试，不改变执行流程
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（2 项实际确认包装器测试）
+ * 测试范围与记录位置：确认前阻断、同员工确认和拒绝不执行；ErpSnailAiToolRuntimeTest 与 Maven Surefire 报告
  */
 package org.dromara.ai.snailai;
 
@@ -147,7 +147,8 @@ public class ErpSnailAiToolRuntime extends ToolRuntime {
             .build();
     }
 
-    private static final class ObservedToolCallback implements ToolCallback {
+    /** 包级可见供同包单元测试验证确认闸门；运行时仍只由 ERP 会话装配该代理。 / Package visibility lets tests verify the approval gate; only ERP sessions assemble this adapter at runtime. */
+    static final class ObservedToolCallback implements ToolCallback {
 
         private final ToolCallback delegate;
         private final SnailAiChatSession session;
@@ -155,8 +156,8 @@ public class ErpSnailAiToolRuntime extends ToolRuntime {
         private final ToolDefinition definition;
         private final boolean requiresApproval;
 
-        private ObservedToolCallback(ToolCallback delegate, SnailAiChatSession session,
-                                     SnailAiChatSessionStore sessions, boolean requiresApproval) {
+        ObservedToolCallback(ToolCallback delegate, SnailAiChatSession session,
+                             SnailAiChatSessionStore sessions, boolean requiresApproval) {
             this.delegate = delegate;
             this.session = session;
             this.sessions = sessions;

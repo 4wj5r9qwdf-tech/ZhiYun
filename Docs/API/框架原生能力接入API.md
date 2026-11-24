@@ -1,7 +1,7 @@
 # 框架原生能力接入 API/MCP 核对
 
-> 更新日期：2026-11-17
-> 范围：RuoYi-Vue-Plus 系统管理、审批工作流、代码生成、监控及配套独立控制台的 ERP 接入核对。本文记录集成入口和权限边界；完整请求字段以运行中的 Swagger 为准。
+> 更新日期：2026-11-24
+> 范围：RuoYi-Vue-Plus 系统管理、审批工作流、代码生成、监控及配套独立控制台的 ERP 接入核对。本文记录集成入口和权限边界；完整请求字段以运行中的 Swagger 和框架控制器为准。
 
 运行服务的 Swagger 配置实际返回五组接口：`1.织云业务与基础资料`（161 个路径）、`2.系统管理接口`（121 个路径）、`3.审批与工作流接口`（56 个路径）、`4.代码生成接口`（12 个路径）和 `9.框架示例（开发测试）`（70 个路径）。框架示例组保留在 Swagger 供开发测试，不放到织云业务导航。
 
@@ -64,6 +64,26 @@
 `/tool/gen/**` 包括数据表列表及导入、表和字段详情、生成配置修改、预览、同步数据库、单表/批量生成代码、下载和删除。生成及下载会产生代码文件，须由有 `tool:gen:*` 权限的维护人员在页面中执行。
 
 > 独立 Admin、SnailJob、SnailAI 控制台不属于上述 ERP REST 路径；其链接由 ERP 菜单权限控制，控制台使用自身服务接口和认证。
+
+### 代码生成器 ERP 页面覆盖（2026-11-24）
+
+ERP 页面接入了现有 ruoyi-gen 的完整生成工作流。框架接口和操作权限如下：
+
+| 能力 | REST 路径 | 权限 |
+|---|---|---|
+| 已导入配置列表、数据源名称、候选数据库表 | GET /tool/gen/list、GET /tool/gen/getDataNames、GET /tool/gen/db/list | tool:gen:list |
+| 表配置和字段详情 | GET /tool/gen/{tableId} | tool:gen:query |
+| 独立字段列表 | GET /tool/gen/column/{tableId} | tool:gen:list |
+| 导入表结构 | POST /tool/gen/importTable | tool:gen:import |
+| 保存表级及字段配置 | PUT /tool/gen | tool:gen:edit |
+| 删除单条/多条生成器配置 | DELETE /tool/gen/{tableIds} | tool:gen:remove |
+| 预览生成文件 | GET /tool/gen/preview/{tableId} | tool:gen:preview |
+| 下载单表/批量生成文件 | GET /tool/gen/download/{tableId}、GET /tool/gen/batchGenCode?tableIdStr=... | tool:gen:code |
+| 同步已导入表的数据库列元数据 | GET /tool/gen/synchDb/{tableId} | tool:gen:edit |
+
+代码生成配置页通过表详情接口一次取得字段 rows，不重复调用独立字段列表接口。表级扩展选项通过请求 params 保存到框架 options，包括父菜单、导出/状态/组合唯一/排序，以及树表字段配置。父菜单树选择另需 system:menu:query；无该权限时仍可填写数字菜单 ID。
+
+生成及下载返回源码 ZIP，可包含 Java、MyBatis XML、所选 Vue/React 前端模板和数据库方言 SQL。生成结果不会自动写入织云项目、执行 SQL 或发布页面；导入只登记生成器配置，同步只更新生成器列元数据，删除只清理生成器配置和字段配置，不改变数据库业务表及其数据。后端仍依据控制器权限注解授权。
 
 ## 权限结论
 

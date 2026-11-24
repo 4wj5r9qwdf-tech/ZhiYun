@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">不同裁片包码映射到同一配套件工序组</title>
+  <desc id="desc">同一生产任务、款色和工艺版本中，同一件服装的前片包码和袖片包码不同，但都关联到同一部件工序组；该组共享工序清单和已报进度。另一个Y序位置映射到独立工序组。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#52657A" />
+    </marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif; fill: #253247; }
+      .title { font-size: 30px; font-weight: 700; fill: #17365D; }
+      .subtitle { font-size: 17px; fill: #52657A; }
+      .card-title { font-size: 22px; font-weight: 700; }
+      .body { font-size: 18px; }
+      .small { font-size: 15px; }
+      .mono { font-family: "DejaVu Sans Mono", monospace; font-size: 16px; font-weight: 700; }
+      .white { fill: #FFFFFF; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="760" fill="#FFFFFF" />
+  <text x="60" y="55" class="title">不同裁片包码，共享同一配套件工序与已报进度</text>
+  <text x="60" y="88" class="subtitle">逻辑工序组范围：生产任务＋款色＋工艺版本＋部件＋Y序/卷层＋尺码＋同码件序</text>
+
+  <rect x="60" y="145" width="370" height="170" rx="14" fill="#EAF2FF" stroke="#4472C4" stroke-width="2" />
+  <path d="M60 159 Q60 145 74 145 H416 Q430 145 430 159 V190 H60 Z" fill="#4472C4" />
+  <text x="84" y="176" class="card-title white">裁片1包</text>
+  <text x="84" y="225" class="body">Y01 · X码第1件</text>
+  <text x="84" y="257" class="body">扎号：001</text>
+  <text x="84" y="288" class="mono">PKG00000001</text>
+
+  <rect x="60" y="355" width="370" height="170" rx="14" fill="#EAF2FF" stroke="#4472C4" stroke-width="2" />
+  <path d="M60 369 Q60 355 74 355 H416 Q430 355 430 369 V400 H60 Z" fill="#4472C4" />
+  <text x="84" y="386" class="card-title white">裁片2包</text>
+  <text x="84" y="435" class="body">Y01 · X码第1件</text>
+  <text x="84" y="467" class="body">扎号：001</text>
+  <text x="84" y="498" class="mono">PKG00000055</text>
+
+  <path d="M430 230 C470 230 475 285 520 300" fill="none" stroke="#52657A" stroke-width="3" marker-end="url(#arrow)" />
+  <path d="M430 440 C470 440 475 385 520 370" fill="none" stroke="#52657A" stroke-width="3" marker-end="url(#arrow)" />
+
+  <rect x="520" y="230" width="390" height="220" rx="16" fill="#FFF2CC" stroke="#D6A327" stroke-width="2.5" />
+  <path d="M520 246 Q520 230 536 230 H894 Q910 230 910 246 V281 H520 Z" fill="#D6A327" />
+  <text x="548" y="264" class="card-title white">逻辑部件工序组</text>
+  <text x="548" y="315" class="small">系统内部关联 ID，不额外打印扫码</text>
+  <text x="548" y="352" class="body">A部件 · X码</text>
+  <text x="548" y="383" class="body">Y01 · 第1件</text>
+  <text x="548" y="420" class="small">对应同一件服装的裁片配套位置</text>
+
+  <path d="M910 340 H980" fill="none" stroke="#52657A" stroke-width="3" marker-end="url(#arrow)" />
+
+  <rect x="990" y="175" width="350" height="330" rx="16" fill="#E2F0D9" stroke="#70AD47" stroke-width="2.5" />
+  <path d="M990 191 Q990 175 1006 175 H1324 Q1340 175 1340 191 V230 H990 Z" fill="#70AD47" />
+  <text x="1018" y="210" class="card-title white">共享工序与进度</text>
+  <text x="1020" y="268" class="body">工序清单：相同</text>
+  <text x="1020" y="307" class="body">工序1　目标 / 已报 / 状态</text>
+  <line x1="1018" y1="325" x2="1310" y2="325" stroke="#B7D7A8" stroke-width="1.5" />
+  <text x="1020" y="363" class="body">工序2　目标 / 已报 / 状态</text>
+  <line x1="1018" y1="381" x2="1310" y2="381" stroke="#B7D7A8" stroke-width="1.5" />
+  <text x="1020" y="419" class="body">工序3　目标 / 已报 / 状态</text>
+  <text x="1020" y="468" class="small">任一裁片包扫码，读取同一进度</text>
+
+  <rect x="60" y="585" width="1280" height="112" rx="14" fill="#F3F6FA" stroke="#C7D2DF" stroke-width="1.5" />
+  <text x="88" y="625" class="card-title">另一个配套位置：Y02 · X码第1件</text>
+  <text x="88" y="662" class="body">在各裁片包内扎号均为 002，但它映射到另一件服装的独立工序组，进度不与 Y01 混在一起。</text>
+  <text x="60" y="733" class="small">员工扫描实物包唯一包码；报工记入逻辑工序组，并保留本次扫描包码作为来源记录。</text>
+</svg>

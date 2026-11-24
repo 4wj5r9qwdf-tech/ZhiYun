@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-MCP写工具确认契约；补齐物料新增、修改和状态变更的调用前展示
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（MCP 工具契约测试覆盖全部命名写工具）
+ * 测试范围与记录位置：McpToolContractTest；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -89,7 +89,7 @@ public class MaterialMcpTools {
     }
 
     /** 新增物料档案；调用前须展示分类、单位、颜色、规格和全部属性并取得确认。 / Create a material after confirming its taxonomy, units, colors, variants and properties. */
-    @McpTool(name = "material_create", description = "新增物料档案；须展示编码、名称、分类、规格、型号、库存单位和颜色完整字段并取得员工确认，需要 inventory:material:add 权限")
+    @McpTool(name = "material_create", description = "新增物料档案；调用前向员工展示编码、名称、分类、规格、型号、库存单位和颜色完整字段并取得本次明确确认，需要 inventory:material:add 权限")
     public R<?> create(
         @McpToolParam(description = "物料字段：code、name、categoryId、inventoryUnitId、materialUnits、colorIds、specTemplateCode、specValues、multiSpec、variantFields、variants、fabricWeightGsm、fabricWidthCm、composition、model、brand、materialDesc、sortOrder、remark；variants每条含code、name、status、attributes；所有ID为十进制字符串；自动编码建议可编辑")
         Map<String, Object> body) {
@@ -98,7 +98,7 @@ public class MaterialMcpTools {
     }
 
     /** 全量更新物料资料及关联集合；未展示的字段不得擅自移除。 / Update the material and its final relations without dropping unreviewed data. */
-    @McpTool(name = "material_update", description = "修改物料档案；展示完整字段前后差异并取得确认，需要 inventory:material:edit 权限")
+    @McpTool(name = "material_update", description = "修改物料档案；调用前先读取当前记录，展示完整字段前后差异和关联影响并取得员工本次明确确认，需要 inventory:material:edit 权限")
     public R<?> update(
         @McpToolParam(description = "物料ID正十进制字符串") String id,
         @McpToolParam(description = "完整字段，含最终colorIds和materialUnits；属性模板及共用值为specTemplateCode和specValues；维护规格须提交multiSpec、variantFields、specValues及完整variants，已有规格带字符串id，停用状态为1")
@@ -108,7 +108,7 @@ public class MaterialMcpTools {
     }
 
     /** 启用或停用物料；停用后阻止新业务引用，既有历史记录继续保留。 / Change material availability while preserving historical references. */
-    @McpTool(name = "material_set_status", description = "启用或停用物料；停用阻止新业务引用但保留历史，执行前取得确认，需要 inventory:material:edit 权限")
+    @McpTool(name = "material_set_status", description = "启用或停用物料；执行前读取并展示物料编码、名称、当前及目标状态，说明停用会阻止新业务引用但保留历史，并取得员工本次明确确认，需要 inventory:material:edit 权限")
     public R<?> status(
         @McpToolParam(description = "物料ID正十进制字符串") String id,
         @McpToolParam(description = "目标状态：0启用、1停用") String status) {

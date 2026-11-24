@@ -1,3 +1,0 @@
-[submodule "third_party/spring-ai-alibaba"]
-	path = third_party/spring-ai-alibaba
-	url = https://github.com/alibaba/spring-ai-alibaba.git

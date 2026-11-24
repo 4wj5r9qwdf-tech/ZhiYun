@@ -113,3 +113,47 @@
 - 启停：保留历史引用；前置为 `system:customer:edit` 且客户属于当前员工可见分类；执行前确认目标状态。
 - 删除：删除客户及档案子项、标签关系；任何已声明业务外键引用时拒绝；前置为 `system:customer:remove` 且客户属于当前员工可见分类；执行前确认客户编码和名称。
 - 审计不得记录原始联系方式；日志对电话、邮箱脱敏。
+
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+customer_create.body 和 customer_update.body 是自由 Map；MCP schema 只描述外层 body 对象，不校验内部业务字段。所有键均按下表处理，未知键不要依赖服务端忽略。联系人、地址、标签是完整最终集合；编辑时省略或传空集合会清空现有关联。
+
+| 字段路径 | JSON 类型 / 示例 | 必填与省略结果 | null / 空白 / 空集合结果 | 用途、来源、约束与副作用 |
+|---|---|---|---|---|
+| body.customer_name | string；"示例客户" | 必填；缺失、null、空白拒绝 | trim 后不能为空；最长200字符 | 客户显示名称；同名允许，重复检查仅提示 |
+| body.customer_short_name | string；"示例" | 可选；省略保存空字符串 | null/空白保存空字符串 | 客户简称，最长100字符 |
+| body.unified_social_credit_code | string；"91310000XXXXXXXXXX" | 可选；省略保存空字符串 | null/空白保存空字符串 | 非空须为18位大写字母或数字，不能使用真实企业数据作为示例 |
+| body.country_region | string；"中国" | 可选；通常与 country_region_code 一起从地区目录选择 | null/空白可与空 code 一起表示未填写；仅保留与当前记录完全相同的历史手填名称 | 最长100字符；提供有效编码时名称以服务端地区目录为准 |
+| body.country_region_code | string；"CN" | 可选；新选择国家/地区时必填 | null/空白表示未选地区；若 name 非空，只允许原记录未匹配地区完全不变 | 最长12字符；必须存在于地区目录，新增或更换时须为启用地区；原记录的停用编码可原样保留 |
+| body.categoryId | string 十进制分类 ID；"1793602859444" | 新增可省略表示未分类；修改省略保留原分类 | null/空白/空串新增表示未分类；修改表示清除。受限人员不能保存到未分类 | 从 customer_category_options 复制 selectable=true 的分类；传入需在当前员工范围内且启用 |
+| body.sales_representative_id | string 十进制人员 ID；"1793602859000" | 必填；省略/null/非法 ID 拒绝 | 空白会解析为空并拒绝；数组/对象不适用 | 从 customer_sales_options 复制；必须为在职且有 SALES 业务职责人员；修改旧业务员仅在仍归属当前客户时可保留 |
+| body.remark | string；"主要面向成衣订单" | 可选；省略保存空字符串 | null/空白保存空字符串 | 最长2000字符 |
+| body.tagIds | array<string>；["2001"] | 可选；新增/修改省略都按空集合处理；修改时省略会清除全部标签 | 显式 null 拒绝；[] 清除全部标签 | 标签 ID 从 customer_master 的 tag_options 查询；新关联须启用，既有关联停用标签可保留 |
+| body.contacts | array<object>；见下方子字段 | 可选；省略按空集合处理；修改省略会删除全部现有联系人 | null 拒绝；[] 明确删除全部联系人；最多100项 | 联系人是客户最终完整集合；不会按增量追加 |
+| contacts[].contact_name | string；"王女士" | 每条联系人必填且非空 | null/空白拒绝 | 最长100字符；联系人姓名 |
+| contacts[].phone_number | string；"021-55550000" | 每条联系人必填且非空 | null/空白拒绝 | 最长100字符；原值仅对具备编辑权限的员工可见，日志脱敏 |
+| contacts[].contact_title | string；"采购" | 可选 | null/空白保存空值 | 最长100字符；联系人职务 |
+| contacts[].email | string；"buyer@example.com" | 可选 | null/空白保存空值；当前代码只限制长度，不执行邮箱格式校验 | 最长200字符；详情及审计按权限脱敏 |
+| contacts[].contact_role | string；"采购联系人" | 可选 | null/空白保存空值 | 最长100字符；联系人业务角色说明 |
+| contacts[].is_primary | boolean；true | 可选；省略视为 false | null/省略/非布尔值不会设为默认；最多一条为 true | 标记默认联系人；多于一条为 true 整单拒绝 |
+| body.addresses | array<object>；见下方子字段 | 可选；省略按空集合处理；修改省略会删除全部现有地址 | null 拒绝；[] 明确删除全部地址；最多100项 | 地址是客户最终完整集合；地区与默认地址规则逐条校验 |
+| addresses[].address_id | string 十进制 ID；"1793602859555" | 可选；新增地址省略；修改时可用于匹配原地址 | null/空白表示新地址；提供值必须属于当前客户 | 仅用于保留原地址的停用/历史地区值；保存时子项重新建立，不作为新地址主键 |
+| addresses[].address_type | string；"样衣收件" | 每条地址必填且非空 | null/空白拒绝 | 最长100字符；同一用途最多一个 is_default=true |
+| addresses[].recipient_name | string；"王女士" | 可选；address_type 含“样衣”时必填 | null/空白表示无值；样衣收件地址因此校验失败 | 最长100字符；收件人名称 |
+| addresses[].recipient_phone | string；"021-55550000" | 可选；address_type 含“样衣”时必填 | null/空白表示无值；样衣收件地址因此校验失败 | 最长100字符；详情/审计按权限脱敏 |
+| addresses[].country_region | string；"中国" | 可选；与 country_region_code 配合使用 | null/空白与空编码表示未指定地区；历史值只允许原样保留 | 最长100字符；有效编码时保存名称由服务端目录规范化 |
+| addresses[].country_region_code | string；"CN" | 可选；新选择地区时必填 | null/空白表示未选；不能用名称字符串替代新选择的编码 | 最长12字符；必须来自地区目录；新选须启用，当前地址旧值可原样保留 |
+| addresses[].province | string；"上海市" | 可选 | null/空白保存空值 | 最长100字符 |
+| addresses[].city | string；"上海市" | 可选 | null/空白保存空值 | 最长100字符 |
+| addresses[].district | string；"浦东新区" | 可选 | null/空白保存空值 | 最长100字符 |
+| addresses[].address_line | string；"示例路1号" | 每条地址必填且非空 | null/空白拒绝 | 最长500字符；详细地址 |
+| addresses[].postal_code | string；"200000" | 可选 | null/空白保存空值 | 最长30字符 |
+| addresses[].is_default | boolean；true | 可选；省略视为 false | null/省略/非布尔值不会设为默认 | 同一地址用途最多一条为 true |
+
+修改前应先用 customer_get 读取当前主档、联系人、地址及标签，并基于“现有值 + 用户指定改动”形成最终集合。MCP body 的字段内部未被 inputSchema 校验；以下示例需将所有分类、业务员和标签 ID 替换为本次查询所得值：
+
+~~~json
+{"name":"customer_create","arguments":{"body":{"customer_name":"示例客户","customer_short_name":"示例","unified_social_credit_code":"","country_region":"中国","country_region_code":"CN","categoryId":"1793602859444","sales_representative_id":"1793602859000","remark":"契约示例","tagIds":["2001"],"contacts":[{"contact_name":"王女士","contact_title":"采购","phone_number":"021-55550000","email":"buyer@example.com","contact_role":"采购联系人","is_primary":true}],"addresses":[{"address_type":"样衣收件","recipient_name":"王女士","recipient_phone":"021-55550000","country_region":"中国","country_region_code":"CN","province":"上海市","city":"上海市","district":"浦东新区","address_line":"示例路1号","postal_code":"200000","is_default":true}]}}}
+~~~
+
+本节完成写入根字段及子集合入参迁移；读响应对象逐字段矩阵与运行时 schema/权限/真实调用核对仍属后续迁移和验收项。

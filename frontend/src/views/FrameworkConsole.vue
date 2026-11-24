@@ -27,13 +27,12 @@ const consoles:Record<string,{title:string;port:number;path:string;description:s
   admin:{title:'Spring Boot Admin 运行监控',port:9090,path:'/admin',description:'查看已注册服务的健康状态、运行指标和日志端点。监控台使用 ERP 超管账号认证，在独立控制台单独登录。'},
   snailjob:{title:'SnailJob 任务调度',port:8800,path:'/snail-job/',description:'管理框架 SnailJob 的调度任务、执行器和运行记录。任务调度服务需要单独启动。'},
   snailai:{title:'SnailAI 智能体管理',port:8900,path:'/snail-ai/',description:'管理框架 SnailAI 的智能体、知识库与相关运行配置。智能服务需要单独启动。'},
-  springai:{title:'Spring AI Alibaba Agent Studio',port:8910,path:'/',description:'打开 Spring AI Alibaba 官方 Agent Studio，用于第二套智能体框架的独立测试。该平台使用独立账号登录，不会复用或转发 ERP 登录状态。'},
   api:{title:'框架接口文档',port:8080,path:'/swagger-ui/index.html',description:'查看当前部署版本开放的 API 契约与请求结构。接口文档仅用于开发联调，实际调用仍受后端认证和权限控制。'},
 }
 const kind=computed(()=>props.kind||'admin')
 const current=computed(()=>consoles[kind.value]||consoles.admin)
 const configuredUrl=computed(()=>{
-  const key=({admin:'VITE_FRAMEWORK_ADMIN_URL',snailjob:'VITE_SNAILJOB_URL',snailai:'VITE_SNAILAI_URL',springai:'VITE_SPRING_AI_ALIBABA_URL',api:'VITE_FRAMEWORK_API_DOCS_URL'} as Record<string,string>)[kind.value]
+  const key=({admin:'VITE_FRAMEWORK_ADMIN_URL',snailjob:'VITE_SNAILJOB_URL',snailai:'VITE_SNAILAI_URL',api:'VITE_FRAMEWORK_API_DOCS_URL'} as Record<string,string>)[kind.value]
   const configured=(import.meta.env as Record<string,string|undefined>)[key]
   return configured||`${location.protocol}//${location.hostname}:${current.value.port}${current.value.path}`
 })

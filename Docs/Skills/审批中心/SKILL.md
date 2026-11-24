@@ -128,3 +128,23 @@
 详细方法、参数、权限、来源单据和返回边界见[审批中心 API 契约](../../API/审批中心API.md)。
 
 退回节点查询沿用任务详情的数据范围。`currentNodeCode`（REST 路径参数 `nowNodeCode`）必须与服务端当前节点一致。节点已变化时，请刷新待办后重新查询。
+
+### 退回与解绑 arguments 示例
+
+退回必须按顺序读取最新待办、读取其来源单据、调用 `approval_task_back_nodes`，由员工从返回列表选择目标节点，然后展示完整影响并确认。以下示例中的任务 ID 和节点编码均须替换为本次查询结果：
+
+```json
+{"name":"approval_task_back_nodes","arguments":{"taskId":"<本次待办taskId>","currentNodeCode":"<本次待办nodeCode>"}}
+```
+
+```json
+{"name":"approval_task_return","arguments":{"taskId":"<同一待办taskId>","nodeCode":"<员工选择的返回nodeCode>","opinion":"请补充交期依据后重新提交"}}
+```
+
+解除常规绑定只传 `businessType`；先用 `approval_binding_list` 核对旧绑定。反审核类型不允许解绑：
+
+```json
+{"name":"approval_binding_remove","arguments":{"businessType":"customer_order"}}
+```
+
+占位符只用于说明值的来源，执行前必须替换为真实查询结果，不能将尖括号内容传给 MCP。

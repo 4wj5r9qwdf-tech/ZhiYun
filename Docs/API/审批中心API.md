@@ -142,3 +142,42 @@
 - 当前员工权限不足返回 403；不得改用超管身份继续。审批详情即使从合法待办进入，也必须拥有对应业务单据查看权限和分类数据范围。
 
 退回节点查询沿用任务详情的数据范围。`currentNodeCode`（REST 路径参数 `nowNodeCode`）必须与服务端当前节点一致。节点已变化时，请刷新待办后重新查询。
+
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+以下为已注册工具的顶层输入字段；未列出的工具无参数。MCP `inputSchema` 只接受表中 JSON 类型。省略可选字符串用于不筛选/使用默认；不传 `null`、空白替代 ID、数组或对象。
+
+| 工具.字段 | JSON 类型 / 格式 / 示例 | 必填与省略结果 | `null` / 空白 / 空集合结果 | 用途、来源、校验与副作用 |
+|---|---|---|---|---|
+| `approval_my_todo_list.flowName`、`approval_my_done_list.flowName` | string；`"采购审批"` | 可选；省略不按流程名筛选 | `null` 不属于 schema；`""`/纯空格归一为不筛选；数组/对象不适用 | 名称关键字；服务端 trim；分别受本人待办/已办权限范围过滤 |
+| `approval_my_todo_list.pageNum`、`approval_my_done_list.pageNum` | integer；`1` | 可选；省略为 1 | `null` 不属于 schema；空白不适用；数组/对象不适用 | 从 1 开始；小于 1 或非整数拒绝，不执行分页查询 |
+| `approval_my_todo_list.pageSize`、`approval_my_done_list.pageSize` | integer；`20` | 可选；省略为 20 | `null` 不属于 schema；空白不适用；数组/对象不适用 | 允许 1–100；越界拒绝，避免无界历史读取 |
+| `approval_my_initiated_detail.instanceId`、`approval_my_initiated_document.instanceId` | string 正十进制 ID；`"123456789012345678"` | 必填；省略或非正十进制值拒绝 | `null`/空白拒绝；数组/对象不适用 | 必须从本人 `approval_my_initiated_list` 结果原样复制；服务端再校验发起人及来源业务权限/范围 |
+| `approval_my_todo_document.taskId`、`approval_my_done_document.taskId` | string 正十进制 ID；`"123456789012345678"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 分别从本人待办/已办列表复制；待办详情须仍有效并有来源业务查看权限 |
+| `approval_task_back_nodes.taskId` | string 正十进制 ID；`"123456789012345678"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 从最新待办复制；只读查询当前可退回节点 |
+| `approval_task_back_nodes.currentNodeCode` | string；`"review_manager"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 必须复制同一最新待办的 `nodeCode`；节点变化后先刷新待办。过期编码不得复用 |
+| `approval_task_approve.taskId`、`approval_task_return.taskId` | string 正十进制 ID；`"123456789012345678"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 只处理当前登录员工有资格办理的有效待办；非幂等，网络超时后先读回任务状态 |
+| `approval_task_approve.opinion` | string；`"数量和交期已核对"` | 可选；省略不填写意见 | JSON `null` 不属于 schema；空串/纯空格经 trim 后按无意见处理；数组/对象不适用 | 最长 2000 字符；提交前向员工展示意见文本，不能把确认复用于其他待办 |
+| `approval_task_return.nodeCode` | string；`"review_manager"` | 必填；省略拒绝 | `null`/空白拒绝；数组/对象不适用 | 必须来自本任务最新 `approval_task_back_nodes` 返回值并由员工选择；不能自造或跨任务复用 |
+| `approval_task_return.opinion` | string；`"请补充交期依据"` | 必填；省略、空串或纯空格拒绝 | `null`/空白拒绝；数组/对象不适用 | trim 后须非空，最长 2000 字符；连同当前节点和目标节点在调用前展示确认 |
+| `approval_binding_set.businessType` | string 枚举；`"customer_order"` | 必填；省略或其他值拒绝 | `null`/空白拒绝；数组/对象不适用 | 仅 `customer_order`、`material_demand_plan`、`customer_order_unapprove`、`material_demand_plan_unapprove`；必须与已发布流程类型匹配 |
+| `approval_binding_set.flowCode` | string；`"order_example"` | 必填；省略、空白或超过 40 字符拒绝 | `null`/空白拒绝；数组/对象不适用 | 从同业务类型 `approval_binding_list.flows[].flowCode` 原样复制；必须已发布、启用且未删除。设置只影响之后提交的单据 |
+| `approval_binding_remove.businessType` | string 枚举；`"customer_order"` | 必填；仅 `customer_order`、`material_demand_plan` 可解绑 | `null`/空白/其他枚举拒绝；数组/对象不适用 | 先从 `approval_binding_list` 核对当前绑定；反审核类型不可解绑。解除只影响之后提交的单据 |
+
+所有 `ID` 均为 JSON 字符串；不要将 bigint 转成数字或科学计数法。工具示例必须使用实际查询返回的 ID/节点/流程编码，表内值只示范格式。审批写工具不提供幂等键，连接中断后先重新查询任务或绑定状态，再决定是否重试；重复审批可能因任务已流转而被拒。
+
+### 最小可复制写入示例
+
+示例中的任务 ID、`nodeCode`、`flowCode` 均须由本次只读查询替换，不能照抄格式值。
+
+```json
+{"name":"approval_task_approve","arguments":{"taskId":"123456789012345678","opinion":"数量和交期已核对，同意。"}}
+```
+
+```json
+{"name":"approval_task_return","arguments":{"taskId":"123456789012345678","nodeCode":"review_manager","opinion":"请补充交期依据后重新提交"}}
+```
+
+```json
+{"name":"approval_binding_remove","arguments":{"businessType":"customer_order"}}
+```

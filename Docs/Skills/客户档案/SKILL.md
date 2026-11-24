@@ -15,6 +15,7 @@ description: 查询和维护织云 ERP 客户主档、客户分类、联系人�
 - MCP 工具：`customer_category_options`、`customer_list`、`customer_category_counts`、`customer_get`、`customer_check_duplicate`、`customer_sales_options`、`customer_options`、`customer_create`、`customer_update`、`customer_set_status`、`customer_delete`。
 - 2026-11-20 开发服务 MCP `tools/list` 已发现上述 11 个工具，包含 `customer_category_options` 和分类筛选参数。普通员工分类范围下的实际结果尚未账号级核验；工具可发现不代表已完成权限验收。
 - 参数类型、空值处理和 JSON-RPC 调用结构见[织云 ERP MCP 调用指南](../MCP调用指南.md)。
+- 所有字段空值、嵌套联系人/地址、完整集合替换和 ID 来源以[客户档案 API 字段矩阵](../../API/客户档案API.md#MCP-输入字段矩阵契约迁移批次-1)为准；本 Skill 只编排调用。
 
 ## 推荐查询顺序
 
@@ -61,3 +62,19 @@ description: 查询和维护织云 ERP 客户主档、客户分类、联系人�
 - 删除仅在权限允许且无业务引用时执行；被引用时停止并说明原因。
 - 国家/地区使用有效编码；地址地区、客户所在地与订单目的地不得混用。
 - 禁止把电话、邮箱原值写入说明或日志。
+
+### 写入 arguments 示例
+
+新增前先执行分类选项、业务员选项和标签查询；向员工展示全部主档与关联集合并确认后再调用。下例 ID 均须替换为本次查询结果：
+
+~~~json
+{"name":"customer_create","arguments":{"body":{"customer_name":"示例客户","customer_short_name":"示例","unified_social_credit_code":"","country_region":"中国","country_region_code":"CN","categoryId":"<可选分类ID>","sales_representative_id":"<在职业务员ID>","remark":"示例说明","tagIds":["<客户标签ID>"],"contacts":[{"contact_name":"王女士","contact_title":"采购","phone_number":"021-55550000","email":"buyer@example.com","contact_role":"采购联系人","is_primary":true}],"addresses":[{"address_type":"样衣收件","recipient_name":"王女士","recipient_phone":"021-55550000","country_region":"中国","country_region_code":"CN","province":"上海市","city":"上海市","district":"浦东新区","address_line":"示例路1号","postal_code":"200000","is_default":true}]}}}
+~~~
+
+修改前调用 customer_get 并构造完整最终集合。若用户没有要求删除联系人、地址或标签，保留当前项；不要省略任一集合：
+
+~~~json
+{"name":"customer_update","arguments":{"customerId":"<从customer_list复制的客户ID>","body":{"customer_name":"示例客户","customer_short_name":"示例","unified_social_credit_code":"","country_region":"中国","country_region_code":"CN","categoryId":"<当前分类ID>","sales_representative_id":"<当前业务员ID>","remark":"示例说明","tagIds":["<保留的标签ID>"],"contacts":[{"contact_name":"王女士","contact_title":"采购","phone_number":"021-55550000","email":"buyer@example.com","contact_role":"采购联系人","is_primary":true}],"addresses":[{"address_id":"<该客户已有地址ID>","address_type":"样衣收件","recipient_name":"王女士","recipient_phone":"021-55550000","country_region":"中国","country_region_code":"CN","province":"上海市","city":"上海市","district":"浦东新区","address_line":"示例路1号","postal_code":"200000","is_default":true}]}}}
+~~~
+
+尖括号内容只标示值的来源，调用前必须替换成真实查询结果；不需要分类时按 API 字段矩阵传省略或空值语义，不要发送占位文字。

@@ -9,14 +9,19 @@
  * 初始开发人员：JY（织云项目自研内容）
  * 初始开发时间：待追溯（不以补录时间代替原始开发时间）
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
- * 最近修改人员：JY
+ * 最近修改人员：Codex（智能体）
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-精度审查；注明展示比率精度与采购参考量舍入边界
+ * 既有测试记录（2026-11-20）：
+ *   测试时间：本次整理未执行功能测试
+ *   测试人员：本次整理未执行
+ *   测试状态：待功能回归；历史测试记录待追溯
+ *   测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：本次只补充注释，未改变需求计划计算行为；本类业务行为未单独回归
+ * 测试范围与记录位置：精度审查记录见 Docs/功能任务/ZY-ERP-20261121-注释与数值精度审查.md
  */
 package org.dromara.web.service;
 
@@ -453,6 +458,8 @@ public class MaterialDemandPlanService {
                 row.put("materialColorId",longValue(detail.get("materialColorId")));row.put("materialColorName",Objects.toString(detail.get("materialColor"),""));
                 row.put("inventoryUnitId",longValue(detail.get("unitId")));row.put("inventoryUnitName",Objects.toString(detail.get("unit"),""));
                 BigDecimal original=decimal(detail.get("quantity"),BigDecimal.ZERO);
+                // 该比率只用于展示每件/每套的来源单耗，按需求数量字段上限取8位；不会反向覆盖原始需求量或计划量。
+                // This display reference is capped at eight decimals and never replaces the separate original or planned quantity values.
                 row.put("perUnitUsage",ordered.signum()==0?null:original.divide(ordered,8,RoundingMode.HALF_UP));
                 row.put("originalQuantity",original);row.put("plannedQuantity",original);
                 row.put("purchaseUnits",detail.get("purchaseUnits") instanceof Collection<?> units?units:List.of());
@@ -582,6 +589,8 @@ public class MaterialDemandPlanService {
             String mode = Objects.toString(unit.get("mode"), "");
             BigDecimal factor = decimal(unit.get("inventoryFactor"), BigDecimal.ZERO);
             if ("FIXED".equalsIgnoreCase(mode) && factor.signum() > 0) {
+                // 采购单位换算值最多展示8位参考小数；若乘回系数不等于库存需求量，approximate 会提示该值不可直接作为最终采购量。
+                // Keep an eight-place purchase reference and flag any value that cannot convert back exactly.
                 BigDecimal converted = plannedQuantity.divide(factor, 8, RoundingMode.HALF_UP);
                 item.put("quantity", converted.stripTrailingZeros().toPlainString());
                 item.put("approximate", converted.multiply(factor).compareTo(plannedQuantity) != 0);

@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-MCP写工具确认契约；明确标签及分组写操作展示与确认内容
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（MCP 工具契约测试覆盖全部命名写工具）
+ * 测试范围与记录位置：McpToolContractTest；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -110,7 +110,7 @@ public class TagMcpTools {
     }
 
     /** 软停用标签并保留历史业务关联。 / Disable a tag while preserving historical business relations. */
-    @McpTool(name = "tag_disable", description = "停用标签；保留历史关系并阻止业务新选，执行前取得员工确认，需要 system:tag:remove 权限")
+    @McpTool(name = "tag_disable", description = "停用标签；执行前读取并展示功能、分组、标签名称和当前/目标状态，说明保留历史关系并阻止业务新选，取得员工本次明确确认，需要 system:tag:remove 权限")
     public R<?> tagDisable(
         @McpToolParam(description = "标签ID十进制字符串") String tagId) {
         StpUtil.checkPermission("system:tag:remove");
@@ -137,7 +137,7 @@ public class TagMcpTools {
     }
 
     /** 重命名自定义分组；默认分组由服务端拒绝修改。 / Rename a custom group; the server protects the default group. */
-    @McpTool(name = "tag_group_update", description = "重命名功能内自定义分组；默认分组不可重命名，执行前取得员工确认，需要 system:tag:edit 权限")
+    @McpTool(name = "tag_group_update", description = "重命名功能内自定义分组；执行前展示功能、原分组名和新分组名并取得员工本次明确确认；默认分组不可重命名，需要 system:tag:edit 权限")
     public R<?> groupUpdate(
         @McpToolParam(description = "分组字段对象：groupId、moduleKey、groupName；ID使用十进制字符串") Map<String, Object> body) {
         StpUtil.checkPermission("system:tag:edit");
@@ -149,7 +149,7 @@ public class TagMcpTools {
     }
 
     /** 删除空的自定义分组；默认分组及非空分组由服务端拒绝。 / Delete an empty custom group; the server protects default and non-empty groups. */
-    @McpTool(name = "tag_group_delete", description = "删除空的自定义分组；默认分组不可删除且非空分组需先迁出标签，执行前确认，需要 system:tag:remove 权限")
+    @McpTool(name = "tag_group_delete", description = "删除空的自定义分组；执行前展示功能及分组名，并说明默认分组不可删除、非空分组需先迁出标签，取得员工本次明确确认，需要 system:tag:remove 权限")
     public R<?> groupDelete(
         @McpToolParam(description = "分组ID十进制字符串") String groupId) {
         StpUtil.checkPermission("system:tag:remove");

@@ -1,22 +1,22 @@
 <!--
-文件用途：提供织云 ERP Login的查询、编辑、状态展示和用户操作界面。
-文件版本：1.0.0
-功能目的：提供织云 ERP Login的查询、编辑、状态展示和用户操作界面。
-设计思路：使用 Vue 3 响应式状态与项目公共布局；页面编排交互，服务端负责业务规则和最终授权。
-实现方法：加载选项/列表，按当前状态驱动表单和弹窗，调用业务 API 后刷新并反馈结果。
+文件用途：展示公司品牌信息，采集账号密码并提交登录。
+文件版本：1.0.2
+功能目的：提供织云 ERP 登录界面，支持点击登录及在页面任意位置按回车登录。
+设计思路：A/B 品牌背景模式共用同一表单；页面级回车转交表单原生提交，使自动填入的账号密码也能提交并复用表单校验。
+实现方法：表单校验成功后调用登录 API，保存会话信息、加载权限并跳转工作台；校验失败时保留字段与页面错误提示。
 关键约束：按钮可见性不是授权；业务校验仍由服务端执行。
 依赖与引用：Docs/规范/前端规范.md；Docs/API/API文档.md；Docs/项目记录/功能实现状态.md
 初始开发人员：JY（织云项目自研内容）
 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-最近修改人员：JY
+最近修改人员：Codex（智能体）
 AI辅助工具：Codex（智能体）
-最近修改时间：2026-11-20
-修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-最近测试时间：本次整理未执行功能测试
-测试人员：本次整理未执行
-测试状态：待功能回归；历史测试记录待追溯
-测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+最近修改时间：2026-11-24
+修改标记：ZY-ERP-20261124-登录回车提交；A/B 模式下页面任意位置回车均提交
+最近测试时间：2026-11-24
+测试人员：Codex（智能体）
+测试状态：TypeScript 检查、Vite 生产构建、开发转换与键盘处理静态断言通过；共享浏览器不可用，实际按键未实测
+测试范围与记录位置：vue-tsc -b、vite build、Vite Login.vue 开发转换、页面级回车/自动填充值同步/监听清理静态断言、git diff --check
 -->
 <script setup lang="ts">
 import { ensurePerms, resetPerms } from '../utils/perms'
@@ -25,7 +25,7 @@ import { ensurePerms, resetPerms } from '../utils/perms'
  * 右侧表单改用 ant-design-vue（a-form + a-input + a-button + a-alert）
  * handleLogin 业务逻辑（/auth/login、存 token、1s 后跳 Workbench）完全不变
  */
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { CLIENT_ID } from '../api'
 import { useTabsStore } from '../store/tabs'
@@ -56,6 +56,8 @@ const rules: any = {
 }
 
 onMounted(async () => {
+  // A/B 只改变品牌背景布局，页面级快捷键挂在同一个 Login 视图上，确保两种模式一致。
+  document.addEventListener('keydown', handleLoginKeydown, true)
   try {
     const res: any = await api.get('/public/company')
     if (res.code === 200 && res.data) {
@@ -72,7 +74,35 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  // 登录页离开时移除全局监听，避免键盘事件影响其他页面。
+  document.removeEventListener('keydown', handleLoginKeydown, true)
+})
+
+function syncRememberedCredentials() {
+  // 浏览器自动填充有时只更新原生 input；在提交前把其值同步回 Vue 表单模型。
+  const formElement = formRef.value?.$el as HTMLFormElement | undefined
+  const usernameInput = formElement?.querySelector<HTMLInputElement>('input[autocomplete="username"]')
+  const passwordInput = formElement?.querySelector<HTMLInputElement>('input[autocomplete="current-password"]')
+  if (usernameInput) loginForm.value.username = usernameInput.value
+  if (passwordInput) loginForm.value.password = passwordInput.value
+}
+
+function handleLoginKeydown(event: KeyboardEvent) {
+  // 仅处理无修饰键的回车，并跳过输入法选字确认，避免打断中文输入。
+  if (event.key !== 'Enter' || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+  const formElement = formRef.value?.$el as HTMLFormElement | undefined
+  if (!formElement) return
+
+  // 阻止浏览器再隐式提交一次；requestSubmit 会沿用 a-form 的校验与 finish 事件。
+  event.preventDefault()
+  syncRememberedCredentials()
+  formElement.requestSubmit()
+}
+
 async function handleLogin() {
+  // 连续按回车时忽略重复提交，避免登录请求并发。
+  if (loading.value) return
   // 手动校验（不依赖 a-form validate，避免静默 reject 无提示）
   if (!loginForm.value.username.trim() || !loginForm.value.password) {
     errorMsg.value = '请输入工号/手机号和密码'
@@ -121,6 +151,11 @@ async function handleLogin() {
     loading.value = false
   }
 }
+
+function handleLoginValidationFailed() {
+  // Ant Design Vue 会在必填校验失败时阻止 finish 事件；保留原有的页面级错误提示。
+  errorMsg.value = '请输入工号/手机号和密码'
+}
 </script>
 
 <template>
@@ -166,7 +201,14 @@ async function handleLogin() {
           :message="errorMsg"
         />
 
-        <a-form ref="formRef" :model="loginForm" layout="vertical">
+        <!-- A/B 品牌模式共用表单；点击走 submit 按钮，页面任意位置回车由全局处理器转交此表单。 -->
+        <a-form
+          ref="formRef"
+          :model="loginForm"
+          layout="vertical"
+          @finish="handleLogin"
+          @finishFailed="handleLoginValidationFailed"
+        >
           <a-form-item label="工号 / 手机号" name="username" :rules="rules.username">
             <a-input
               v-model:value="loginForm.username"
@@ -185,8 +227,8 @@ async function handleLogin() {
             type="primary"
             block
             size="large"
+            html-type="submit"
             :loading="loading"
-            @click="handleLogin"
           >
             登 录
           </a-button>

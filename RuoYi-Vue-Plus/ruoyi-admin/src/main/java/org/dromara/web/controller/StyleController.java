@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-款式写入字段契约；拒绝非单款模式中被静默忽略的单款规格集合
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（款式控制器模式契约 2 项测试）
+ * 测试范围与记录位置：单款与套装规格输入边界；Maven Surefire 报告
  */
 package org.dromara.web.controller;
 
@@ -573,6 +573,7 @@ public class StyleController {
     /** 同一事务更新主档和组成或规格；异常时一并回滚。 / Persist master data and related composition or specifications atomically; roll back on failure. */
     private void saveConfiguration(Long id, String mode, StyleInput input) {
         boolean single = "single".equals(mode);
+        validateStyleSpecificationMode(mode, input.colorIds(), input.sizeIds(), input.excludedPairs());
         var previousMembers = members(id,false);
         List<Member> submitted = input.members();
         if (!single && submitted == null && previousMembers.isEmpty()) throw new ServiceException("套装至少需要一个子款");
@@ -619,6 +620,14 @@ public class StyleController {
             jdbc.update("INSERT INTO rd_style_spec_exclusion(style_id,color_id,size_id) VALUES (?,?,?)",id,pair.colorId(),pair.sizeId());
         }
     }
+
+    /** 套装模式不得携带会被忽略的单款颜色/尺码规格，避免请求方误判保存结果。 / Reject ignored single-style specifications on set-style modes. */
+    static void validateStyleSpecificationMode(String mode, List<Long> colorIds, List<Long> sizeIds, List<SpecPair> excludedPairs) {
+        if (!"single".equals(mode) && (colorIds != null || sizeIds != null || excludedPairs != null)) {
+            throw new ServiceException("合并或分开生产套装不能提交单款颜色、尺码和排除组合字段");
+        }
+    }
+
     /** 替换款式规格并校验订单或 BOM 对既有规格的引用。 / Replace style specifications while validating order and BOM references. */
 
     private void replaceSpec(Long id, SpecReference ref, List<Long> requested) {

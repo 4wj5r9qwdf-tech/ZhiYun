@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-MCP只读白名单收紧；仅精确登记的读取工具免确认，未知名称默认写操作
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（3 项工具分类测试）
+ * 测试范围与记录位置：已知读写工具、后缀冲突及未知读式名称；SnailAiMcpToolPolicyTest 和 Maven Surefire 报告
  */
 package org.dromara.ai.snailai;
 
@@ -24,7 +24,6 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -79,17 +78,27 @@ public final class SnailAiMcpToolPolicy {
         "size_options", "size_get_code_rule", "size_group_options", "size_group_get_code_rule"
     );
 
-    private static final List<String> READ_ONLY_SUFFIXES = List.of(
-        "_list", "_get", "_detail", "_options", "_tree", "_counts", "_usage",
-        "_check_duplicate", "_sales_options", "_org_tree", "_configuration", "_spec_options",
-        "_spec_templates", "_tags", "_preview", "_coverage", "_convert", "_next_code",
-        "_get_code_rule", "_schemes", "_manages_get"
-    );
-
-    /** 语义不适合用后缀判断的只读工具，采用完整名称白名单。 / Exact names for read tools whose names do not use a safe read-only suffix. */
+    /** 仅把已审核的准确工具名归为只读；未知工具即使以 list/get/options 结尾也按写操作要求确认。 / Only exact reviewed names are reads; unknown tools require approval even with read-like suffixes. */
     private static final Set<String> READ_ONLY_TOOLS = Set.of(
+        "approval_binding_list", "approval_my_done_list", "approval_my_initiated_detail",
+        "approval_my_initiated_list", "approval_my_todo_list", "building_get", "building_list",
+        "category_list", "category_options", "category_scheme_options", "category_schemes",
+        "color_list", "color_next_code", "color_options", "company_file_usage", "company_get",
+        "company_list", "customer_category_counts", "customer_category_options",
+        "customer_check_duplicate", "customer_get", "customer_list", "customer_options",
+        "customer_sales_options", "material_category_options", "material_list", "material_next_code",
+        "material_options", "material_spec_templates", "org_get", "org_list", "org_manage_counts",
+        "org_manages_get", "org_options", "person_business_duty_options", "person_category_scope_get",
+        "person_get", "person_list", "post_get", "post_list", "post_options", "post_org_tree",
+        "size_get_code_rule", "size_group_get_code_rule", "size_group_list", "size_group_options",
+        "size_list", "size_options", "style_bom_coverage", "style_bom_detail", "style_bom_list",
+        "style_bom_preview", "style_category_options", "style_configuration", "style_list",
+        "style_spec_options", "tag_group_list", "tag_list", "tag_module_list", "tag_options",
+        "unit_convert", "unit_list", "unit_options", "warehouse_form_options", "warehouse_get",
+        "warehouse_layout_get", "warehouse_layout_list", "warehouse_layout_next_code",
+        "warehouse_layout_options", "warehouse_layout_tree", "warehouse_list", "warehouse_next_code",
         "approval_my_todo_document", "approval_my_done_document", "approval_my_initiated_document",
-        "approval_task_back_nodes"
+        "approval_task_back_nodes", "style_tags", "read_chat_document", "read_zhiyun_skill"
     );
 
     /** 静态策略类不允许实例化。 / Prevent instances of this static policy utility. */
@@ -110,10 +119,15 @@ public final class SnailAiMcpToolPolicy {
         return permissions.contains("*:*:*") || permissions.containsAll(required);
     }
 
-    /** 按明确白名单或约定的只读后缀分类；需要确认的写操作不能使用泛化详情后缀。 / Classify read tools by allowlist or read suffix; write actions must not rely on generic detail suffixes. */
+    /** 按精确只读白名单分类；未知工具走需确认写操作路径。 / Classify exact allowlisted reads; unknown tools use the approval-required write path. */
     public static boolean isReadOnly(ToolCallback callback) {
-        String name = normalizeName(callback.getToolDefinition().name());
-        return READ_ONLY_TOOLS.contains(name) || READ_ONLY_SUFFIXES.stream().anyMatch(name::endsWith);
+        return isReadOnlyName(callback.getToolDefinition().name());
+    }
+
+    /** 只把经过审核的准确工具名视为只读；未登记工具一律按写操作处理。 / Treat only reviewed exact names as reads; classify all unregistered names as writes. */
+    public static boolean isReadOnlyName(String toolName) {
+        String name = normalizeName(toolName);
+        return READ_ONLY_TOOLS.contains(name);
     }
 
     /** 去除 MCP 传输层可能附加的命名空间前缀，得到本地工具目录名。 / Normalize transport-qualified tool names to their local identifiers. */

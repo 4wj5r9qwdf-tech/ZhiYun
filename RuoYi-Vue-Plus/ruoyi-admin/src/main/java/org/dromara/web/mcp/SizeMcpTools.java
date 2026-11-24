@@ -11,12 +11,12 @@
  * 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
  * 最近修改人员：JY
  * AI辅助工具：Codex（智能体）
- * 最近修改时间：2026-11-20
- * 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
- * 最近测试时间：本次整理未执行功能测试
- * 测试人员：本次整理未执行
- * 测试状态：待功能回归；历史测试记录待追溯
- * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+ * 最近修改时间：2026-11-21
+ * 修改标记：ZY-ERP-20261121-MCP写工具确认契约；补齐尺码和尺码组写入的调用前展示
+ * 最近测试时间：2026-11-21
+ * 测试人员：Codex（智能体）
+ * 测试状态：通过（MCP 工具契约测试覆盖全部命名写工具；只读分类回归覆盖批量标签替换）
+ * 测试范围与记录位置：McpToolContractTest、SnailAiMcpToolPolicyTest；Maven Surefire 报告
  */
 package org.dromara.web.mcp;
 
@@ -66,7 +66,7 @@ public class SizeMcpTools {
     }
 
     /** 修改尺码完整字段和标签集合。 / Update the full size fields and final tag set. */
-    @McpTool(name = "size_update", description = "修改尺码及其完整类型标签集合；展示前后差异并取得确认，需要 system:size:edit 权限")
+    @McpTool(name = "size_update", description = "修改尺码及其完整类型标签集合；调用前先读取当前记录，向员工展示尺码字段和完整标签集合的前后差异，并取得本次明确确认，需要 system:size:edit 权限")
     public R<?> sizeUpdate(@McpToolParam(description = "尺码ID十进制字符串") String id,
                            @McpToolParam(description = "完整尺码字段对象：code、name、name_en、sort_order、remark、tagIds") Map<String, Object> body) {
         StpUtil.checkPermission("system:size:edit");
@@ -74,7 +74,7 @@ public class SizeMcpTools {
     }
 
     /** 启停尺码但保留已有尺码组引用。 / Change size availability while preserving existing group references. */
-    @McpTool(name = "size_set_status", description = "启用或停用尺码；停用不清除尺码组历史引用，执行前取得确认，需要 system:size:edit 权限")
+    @McpTool(name = "size_set_status", description = "启用或停用尺码；执行前读取并展示尺码编码、名称、当前及目标状态，说明停用不清除尺码组历史引用，并取得员工本次明确确认，需要 system:size:edit 权限")
     public R<?> sizeSetStatus(@McpToolParam(description = "尺码ID十进制字符串") String id,
                               @McpToolParam(description = "目标状态：0启用、1停用") String status) {
         StpUtil.checkPermission("system:size:edit");
@@ -127,14 +127,14 @@ public class SizeMcpTools {
     }
 
     /** 新增尺码组前展示成员顺序并取得员工确认。 / Create a size group after confirming its ordered members. */
-    @McpTool(name = "size_group_create", description = "新增尺码组；展示编码、名称、标签和有序尺码成员并取得确认，需要 system:size-group:add 权限")
+    @McpTool(name = "size_group_create", description = "新增尺码组；调用前向员工展示编码、名称、标签和有序尺码成员并取得本次明确确认，需要 system:size-group:add 权限")
     public R<?> sizeGroupCreate(@McpToolParam(description = "尺码组对象：code、name、name_en、sort_order、remark、tagIds、sizeIds；至少包含一个尺码，顺序即组内顺序") Map<String, Object> body) {
         StpUtil.checkPermission("system:size-group:add");
         return sizeController.add("size-group", body);
     }
 
     /** 修改尺码组档案、成员顺序和完整标签集合。 / Update a size group, ordered members, and final tags. */
-    @McpTool(name = "size_group_update", description = "修改尺码组及组内尺码顺序；展示完整前后差异并取得确认，需要 system:size-group:edit 权限")
+    @McpTool(name = "size_group_update", description = "修改尺码组及组内尺码顺序；调用前先读取当前组，向员工展示完整前后差异及被移除的尺码/标签影响，并取得本次明确确认，需要 system:size-group:edit 权限")
     public R<?> sizeGroupUpdate(@McpToolParam(description = "尺码组ID十进制字符串") String id,
                                 @McpToolParam(description = "完整尺码组对象：code、name、name_en、sort_order、remark、tagIds、sizeIds") Map<String, Object> body) {
         StpUtil.checkPermission("system:size-group:edit");
@@ -142,7 +142,7 @@ public class SizeMcpTools {
     }
 
     /** 启停尺码组并保留历史引用。 / Change size-group availability and preserve historical references. */
-    @McpTool(name = "size_group_set_status", description = "启用或停用尺码组；执行前取得确认，需要 system:size-group:edit 权限")
+    @McpTool(name = "size_group_set_status", description = "启用或停用尺码组；执行前读取并展示编码、名称、当前及目标状态，并取得员工本次明确确认，需要 system:size-group:edit 权限")
     public R<?> sizeGroupSetStatus(@McpToolParam(description = "尺码组ID十进制字符串") String id,
                                    @McpToolParam(description = "目标状态：0启用、1停用") String status) {
         StpUtil.checkPermission("system:size-group:edit");

@@ -3,6 +3,7 @@
 > 版本：v1
 > 更新日期：2026-11-05
 > 说明：2026-11-05 用户验收通过；已完成接口验证与 MCP 发现/读写及低权限拒绝验证。数据表 `base_unit`，功能键 `unit`。
+> 契约迁移：2026-11-21 已补 MCP 字段矩阵；MCP 单位 Map 现在拒绝数字型 ID/系数、未知字段和不完整更新对象，相关自动化验证见 `FoundationMcpToolsTest`。
 
 ## 一、认证与接口
 
@@ -86,3 +87,40 @@
 工具：`unit_list`、`unit_options`、`unit_convert`、`unit_create`、`unit_update`、`unit_delete`。分别映射上述接口；更新/删除额外接收 `id:string`，换算接收 `fromId/toId/quantity:string`，新增/更新接收 `body:object`（字段见上表）。
 
 服务端显式检查同等员工权限；新增、修改、删除、状态及换算关系变化记录中文动作、单位身份和实际前后值。智能体写入前展示完整目标/变化并确认；不借用超管权限。源码在 `FoundationMcpTools`；16个本批工具已发现；单位新增、更新、删除及公共查询已实际调用，低权限写入拒绝已验证。
+
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+`unit_create.body` 和 `unit_update.body` 在 inputSchema 中为自由 object；MCP 适配器会按字段白名单校验类型。更新必须读取 `unit_list` 后提交全部十个字段，避免省略 `baseUnitId`、`factor`、状态或备注时被重置。REST 与 MCP 都应按本节业务规则构造最终对象；下表明确 MCP 接受的 JSON 形态。
+
+| 字段路径 | JSON 类型 / 示例 | 必填与省略结果 | `null` / 空白 / 空集合结果 | 用途、来源、约束与副作用 |
+|---|---|---|---|---|
+| `unit_list.arguments`、`unit_options.arguments` | object；`{}` | 无参数 | 不适用 | `unit_list` 需 `system:unit:list`；`unit_options` 需登录；`selectable=false` 仅表示不能新建引用，不等于记录不存在 |
+| `unit_convert.fromId`、`unit_convert.toId` | string 正十进制 ID；`"101"` / `"102"` | 均必填 | null/空白/JSON 数字/非法 ID 拒绝 | 从 `unit_options` 复制；只能在启用且同维度、同独立参照根的单位间换算 |
+| `unit_convert.quantity` | string 普通十进制；`"125.5"` | 必填 | null/空白、负数、科学计数法拒绝 | 非负；最多30位整数和12位小数；字符串精确计算，结果按目标单位精度 HALF_UP |
+| `unit_create.body` | object；见下方 `arguments` | 必须含 `code`、`name`、`dimension`；其余省略采用默认值 | null/空对象拒绝；未知键拒绝 | 新增单位；无幂等键。超时后先查询编码确认是否已建档再重试 |
+| `unit_update.id` | string 正十进制 ID；`"102"` | 必填；从 `unit_list` 复制 | null/空白/JSON 数字/非法 ID 拒绝 | 更新目标单位，不得从猜测值构造 |
+| `unit_update.body` | object；示例见下方 | 必须包含 `code/name/symbol/dimension/decimalPlaces/baseUnitId/factor/sortOrder/status/remark` 全部字段 | null/空对象/缺任意字段拒绝；未知字段拒绝 | 完整替换；读取现值并逐项回填。省略会拒绝，避免关系或精度悄然重置 |
+| `body.code` | string；`"M"` | 新增/更新必填；修改时回填现有编码或确认新的编码 | null/空白拒绝 | 最长40字符，字母数字开头，只允许字母数字及 `_.-`；历史编码不能复用 |
+| `body.name` | string；`"米"` | 新增/更新必填 | null/空白拒绝；最多80字符 | 单位名称；未删除单位中全局不区分大小写唯一 |
+| `body.symbol` | string；`"m"` | 新增可选省略为空；更新必须显式提交 | null/空白表示清空；最长20字符 | 显示符号。更新需回填要保留的当前值 |
+| `body.dimension` | string 枚举；`"length"` | 新增/更新必填 | null/空白/未知值拒绝 | 允许 `length/mass/area/volume/time/count/other`；被引用或有子单位时不可改变 |
+| `body.decimalPlaces` | integer；`3` | 新增省略默认3；更新必填 | null/小数/空白拒绝；0–8 | 数量显示精度及换算目标精度；被引用单位不能修改 |
+| `body.baseUnitId` | string 正十进制 ID或null；`"101"` | 新增省略为独立参照根；更新必须显式提供 | null表示独立根；空白字符串、JSON 数字和非法 ID 拒绝 | 从 `unit_options` 选择启用的独立参照单位；须同维度，不能自引用或形成多层链。更新要清除关系时须明确传 null |
+| `body.factor` | string 普通十进制；`"0.01"` | 新增省略默认 `"1"`；更新必填 | null/空白/JSON 数字/科学计数法拒绝；必须大于0，最多18位整数、12位小数 | 方向固定为“1个本单位 = factor × baseUnit”；独立根必须恰为1。被引用关系受保护 |
+| `body.sortOrder` | integer；`0` | 新增省略默认0；更新必填 | null/小数/空白拒绝；0–999999 | 管理目录排序 |
+| `body.status` | string；`"0"` | 新增省略默认 `"0"`；更新必填 | null/空白/JSON 数字拒绝；只允许 `"0"`、`"1"` | 0启用、1停用；有启用子换算单位时不能停用参照单位 |
+| `body.remark` | string；`"长度基准单位"` | 新增省略为空；更新必填 | null/空白表示清空；最多500字符 | 备注，更新保留时从 `unit_list` 回填 |
+
+单位新增/更新需 `system:unit:add/edit`，删除需 `system:unit:remove`；查询列表需 `system:unit:list`，业务选项及换算需员工登录。删除有子单位或业务外键引用时被拒绝；更新被引用语义受到保护。
+
+### MCP `arguments` 示例
+
+```jsonl
+{"name":"unit_list","arguments":{}}
+{"name":"unit_convert","arguments":{"fromId":"102","toId":"101","quantity":"100"}}
+{"name":"unit_create","arguments":{"body":{"code":"CM","name":"厘米","symbol":"cm","dimension":"length","decimalPlaces":3,"baseUnitId":"101","factor":"0.01","sortOrder":1,"status":"0","remark":"1厘米等于0.01米"}}}
+{"name":"unit_update","arguments":{"id":"102","body":{"code":"CM","name":"厘米","symbol":"cm","dimension":"length","decimalPlaces":3,"baseUnitId":"101","factor":"0.01","sortOrder":1,"status":"0","remark":"1厘米等于0.01米"}}}
+{"name":"unit_delete","arguments":{"id":"102"}}
+```
+
+所有 ID 示例均须替换成当前 `unit_list`/`unit_options` 的实值；若新增独立参照单位可省略创建时的 `baseUnitId`，更新对象仍必须显式提交 `baseUnitId:null`。修改单位须展示换算关系和是否已有关联，取得本次确认后再执行。

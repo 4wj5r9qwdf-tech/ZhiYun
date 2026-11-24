@@ -85,7 +85,7 @@
 |---|---|
 | 方法 + 路径 | `PUT /order/material-demand-plans/{id}/quantities` |
 | 读/写类型 | 写 |
-| 请求体 | `revision` integer 必填；`reason` string 必填，最多 500 字；`items` array 必填，每项含 `itemId` string 和 `plannedQuantity` decimal。数量按该明细库存单位计，范围 `0` 至非负最大 24 位精度、最多 8 位小数。 |
+| 请求体 | `revision` integer 必填且须匹配当前版本；`items` 可省略、null 或空数组（无变更并原样返回）；非空时每项含唯一的正十进制字符串 `itemId` 和非空 `plannedQuantity` decimal。数量按该明细库存单位计，范围 `0` 至非负最大 24 位精度、最多 8 位小数。仅提交非空 `items` 时 `reason` 必填、trim 后非空且最多 500 字。 |
 | 示例请求体 | `{"revision":1,"reason":"客户确认本批次损耗较低，按最新用量修正","items":[{"itemId":"2114531897794859001","plannedQuantity":120.5}]}` |
 | 返回 | 保存后的计划详情及追加后的调整历史。 |
 | 权限 | `order:material-demand-plan:list` + `order:material-demand-plan:edit`；服务端检查每行所属计划和分类范围。 |
@@ -127,3 +127,66 @@
 计划需求量以库存单位填写，必须为零或正数，整数最多 16 位、小数最多 8 位。末尾补零不影响校验。超出范围时整次调整失败，不保存任何行或调整历史。
 
 明细同时返回十进制字符串 `usageRaw`、`originalRaw`、`plannedRaw` 和库存单位显示位数 `unitPlaces`。编辑使用原值。历史采购快照缺少显示位数时直接展示已有参考值。
+
+## 五、写接口请求字段矩阵（契约迁移批次 1）
+
+本矩阵针对三个 REST 写接口。路径中的 bigint ID 均按十进制字符串使用；不得由智能体转成 JSON 数字。服务端身份、权限、物料分类范围、版本和状态前置条件仍以对应接口实现为准。本功能目前没有 MCP 工具，以下 REST 字段契约不代表工具已在运行时注册或可由智能体直接调用；MCP/Skill 在业务验收后另行接入。
+
+### 从已审核订单补生成草稿
+
+| 字段路径 | JSON 类型/格式/示例值 | 必填条件与省略结果 | null / 空白 / 空集合结果 | 用途、来源、默认、校验与副作用 |
+|---|---|---|---|---|
+| POST /order/material-demand-plans/generate/{orderId} 路径 orderId | 十进制字符串；"2114531897794859001" | 必填；省略路由不匹配 | 不适用请求体；空白或非十进制路径 ID 拒绝 | 从已审核客户订单查询结果复制；必须为正 bigint。按订单幂等创建/返回草稿，要求订单已审核并有编辑权限 |
+| 请求体 | 无 | 不接受必需请求体 | 不适用 | 接口无 @RequestBody 参数；不传请求体。此动作不能人工提供计划字段或明细，计划由订单算料快照生成 |
+
+调用示例：
+
+~~~http
+POST /order/material-demand-plans/generate/2114531897794859001
+~~~
+
+### 保存计划数量调整
+
+| 字段路径 | JSON 类型/格式/示例值 | 必填条件与省略结果 | null / 空白 / 空集合结果 | 用途、来源、默认、校验与副作用 |
+|---|---|---|---|---|
+| PUT /order/material-demand-plans/{id}/quantities 路径 id | 十进制字符串；"2114531897794859002" | 必填；省略路由不匹配 | 空白或非十进制路径 ID 拒绝 | 从当前计划详情复制；正 bigint，必须在当前权限及分类范围内可访问 |
+| 请求体 | object；见下列字段 | 必填 | null 请求体拒绝；{} 因缺 revision 拒绝 | 使用当前详情中的 revision；仅草稿且算料状态 ready 时可调整 |
+| revision | integer；1 | 必填；省略或 null 拒绝 | 空白、字符串、浮点、数组/对象不适用 | 从详情复制当前并发修订号；必须与服务器当前值相同，否则先刷新详情；成功保存实际变化时递增 |
+| items | object 数组；[{"itemId":"2114531897794859003","plannedQuantity":120.5}] | 可省略或提供；省略/null/[] 表示无变更并返回详情 | null 与 [] 均为无变更；非数组拒绝 | 非空时逐行按最终数量调整；列表中 itemId 不能重复，任何一行非法则整次失败 |
+| items[].itemId | 十进制字符串；"2114531897794859003" | items 非空时必填 | null、空白、JSON 数字、正负号或非十进制文本拒绝 | 从同一计划详情对应明细的 itemId 原样复制；必须为正 bigint，且属于该计划 |
+| items[].plannedQuantity | decimal；120.5 | items 非空时必填 | null 拒绝；不能为负数 | 表示该明细最终计划需求量，单位为该行 inventoryUnitName 库存单位；数据库 numeric(24,8)，整数最多 16 位、小数最多 8 位，末尾补零不计有效小数位，0 合法 |
+| reason | string；"客户确认本批次损耗较低，按最新用量修正" | items 非空时必填；items 省略/null/[] 时不校验 | null、空白在 items 非空时拒绝；服务端 trim；超过 500 字拒绝 | 所有行共用的本次业务调整原因；即使数量最终与当前值相同，非空 items 仍要求原因，但不会写调整历史或递增版本 |
+
+带实际调整行的示例：
+
+~~~json
+{"revision":1,"reason":"客户确认本批次损耗较低，按最新用量修正","items":[{"itemId":"2114531897794859003","plannedQuantity":120.5}]}
+~~~
+
+空数组示例表示无变更，不记录调整历史：
+
+~~~json
+{"revision":1,"items":[]}
+~~~
+
+### 计划状态流转
+
+| 字段路径 | JSON 类型/格式/示例值 | 必填条件与省略结果 | null / 空白 / 空集合结果 | 用途、来源、默认、校验与副作用 |
+|---|---|---|---|---|
+| POST /order/material-demand-plans/{id}/transition 路径 id | 十进制字符串；"2114531897794859002" | 必填；省略路由不匹配 | 空白或非十进制路径 ID 拒绝 | 从当前计划详情复制；正 bigint，当前员工须有计划数据范围 |
+| 请求体 | object；见下列字段 | 必填 | null 请求体拒绝；{} 因缺 revision/action 拒绝 | 一次只提交一个动作；同一 revision 重放会由版本/状态校验拒绝 |
+| revision | integer；3 | 必填；省略或 null 拒绝 | 空白、字符串、浮点、数组/对象不适用 | 从最新计划详情复制；必须匹配当前版本；操作前重新读取状态和版本 |
+| action | string；"submit" | 必填；省略、null、空白或未列值拒绝 | 不接受空字符串或 null | 只能为 submit、unsubmit、approve、return、cancel、request_unapprove；权限、状态前置和审批依赖见上方动作表 |
+| reason | string 或 null；"客户确认订单已取消" | return、cancel、request_unapprove 必填；其他动作可省略 | 必需时 null、空白或纯空格拒绝；可选动作传 null/空白视为无原因；trim 后最多 500 字 | return 的原因写入审核意见，cancel 写入取消原因，request_unapprove 写入反审核申请；approve 的可选文本写入审核意见；submit/unsubmit 的 reason 当前不持久化 |
+
+提交审批示例：
+
+~~~json
+{"revision":3,"action":"submit"}
+~~~
+
+申请反审核示例：
+
+~~~json
+{"revision":4,"action":"request_unapprove","reason":"客户确认物料需求版本有误，需重新核算"}
+~~~

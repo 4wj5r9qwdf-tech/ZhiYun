@@ -211,6 +211,39 @@
 
 **机器契约**：相同规则值幂等；副作用为更新 `system.code.size` 配置并清除参数缓存；前置条件为参数项存在、开关为布尔值、前缀非空且不超过 30 字符、数字位数为 1–10 的整数、具有 `system:config:edit`；审批不需要，但写入前必须让员工确认新规则。
 
+## MCP 输入字段矩阵（契约迁移批次 1）
+
+size_create.body、size_update.body 和 size_batch_set_tags.body 是 Map<String,Object>，运行时 inputSchema 不会逐字段校验对象内部结构。下表依据 SizeDataController 的保存、批量标签及规则校验；对象只使用列出的字段。
+
+| 字段路径 | JSON 类型 / 示例 | 必填与省略结果 | null / 空白 / 空集合结果 | 用途、来源、约束与副作用 |
+|---|---|---|---|---|
+| size_update.id、size_set_status.id、size_delete.id | string 正十进制 ID；"1001" | 必填；省略拒绝 | null/空白/非数字拒绝；数组/对象不适用 | 从 size_list 或 size_options 原样复制；size_delete 仅无尺码组引用可执行 |
+| size_create.body.code | string；"SZ001" | 可选；省略或空白按编码规则生成，规则关闭时拒绝 | null/空白与省略相同；最多40字符，重复拒绝 | 可编辑的建议编号；编码查询不预留号码 |
+| size_update.body.code | string；"SZ001" | 必填；省略或空白拒绝 | null/空白拒绝；最多40字符，重复拒绝 | 修改时完整提交最终编码；不因字段名相同而复用创建时的留空自动生成语义 |
+| body.name | string；"S" | 新增/修改必填；省略、null、空白拒绝 | trim 后不能为空；最多100字符 | 尺码中文/主显示名称 |
+| body.name_en | string；"Small" | 可选；省略按空字符串写入 | null/空白写为空字符串 | 英文名称，最多200字符 |
+| body.sort_order | integer；10 | 可选；省略/null/空白回退为0；需可解析为整数 | 空白按0；小数格式或非数字拒绝 | 显示排序；当前控制器不限制正负范围 |
+| body.remark | string；"成人尺码" | 可选；省略/null/空白写为空字符串 | 空白清空备注 | 最长2000字符 |
+| body.tagIds | array<string>；["2001"] | 新增可省略；修改也可省略但会解释为空集合并清除全部标签，因此修改必须显式提交完整最终集合 | null/非数组按空集合处理并清除；[]明确清除全部标签 | 每个标签须属于 size 命名空间且可用或已在目标记录上保留；不得用其他功能标签 |
+| size_set_status.status | string 枚举；"1" | 必填；只能是 "0" 或 "1" | null、空白、其他文本拒绝 | "0"启用、"1"停用；停用不移除尺码组历史关联 |
+| size_batch_set_tags.body.ids | array<string>；["1001","1002"] | 必填，1–500 个且不得重复 | null/缺失/[]拒绝；空白 ID 解析失败 | 从尺码列表复制；全部尺码须存在，否则整批不变 |
+| size_batch_set_tags.body.tagIds | array<string>；["2001"] | 可选；省略按空数组处理并清除所选尺码全部标签 | null/省略/[]均表示清除全部类型标签；非数组拒绝 | 这是给每个所选尺码设置的同一最终集合；全部校验通过后在一个事务内替换并审计 |
+| size_set_code_rule.body.enabled | boolean；true | 必填；省略/null拒绝 | 空白不适用 | 是否生成建议编码；规则只影响以后新建 |
+| size_set_code_rule.body.prefix | string；"SZ" | 必填；非空且最多30字符 | null/空白拒绝 | 自动编码前缀；规则格式按系统参数校验 |
+| size_set_code_rule.body.digits | integer；3 | 必填，1–10整数 | null/空白/小数/越界拒绝 | 序号补零位数 |
+
+### MCP arguments 示例
+
+更新尺码时，请从最新详情回填完整字段，并将当前标签以外的移除项从最终 tagIds 中去掉。空数组是有意清除标签，须单独展示并确认：
+
+~~~json
+{"name":"size_update","arguments":{"id":"1001","body":{"code":"SZ001","name":"S","name_en":"Small","sort_order":10,"remark":"成人尺码","tagIds":["2001"]}}}
+~~~
+
+~~~json
+{"name":"size_batch_set_tags","arguments":{"body":{"ids":["1001","1002"],"tagIds":[]}}}
+~~~
+
 ## 11. 错误及安全边界
 
 | 返回码/消息 | 条件 |
