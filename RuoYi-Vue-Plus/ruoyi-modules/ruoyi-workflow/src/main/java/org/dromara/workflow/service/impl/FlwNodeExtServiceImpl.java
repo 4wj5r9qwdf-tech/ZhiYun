@@ -18,6 +18,7 @@
  * 测试状态：待功能回归；历史测试记录待追溯
  * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
  */
+
 package org.dromara.workflow.service.impl;
 
 import cn.hutool.core.convert.Convert;
@@ -30,13 +31,12 @@ import org.dromara.common.core.service.DictService;
 import org.dromara.common.core.utils.StringUtils;
 import org.dromara.common.json.utils.JsonUtils;
 import org.dromara.warm.flow.core.FlowEngine;
-import org.dromara.warm.flow.core.utils.CollUtil;
 import org.dromara.warm.flow.core.utils.ExpressionUtil;
+import org.dromara.warm.flow.core.utils.CollUtil;
 import org.dromara.warm.flow.ui.service.NodeExtService;
 import org.dromara.warm.flow.ui.vo.NodeExt;
 import org.dromara.workflow.common.ConditionalOnEnable;
 import org.dromara.workflow.common.enums.ButtonPermissionEnum;
-import org.dromara.workflow.common.enums.CopySettingEnum;
 import org.dromara.workflow.common.enums.NodeExtEnum;
 import org.dromara.workflow.common.enums.VariablesEnum;
 import org.dromara.workflow.domain.vo.ButtonPermissionVo;
@@ -65,14 +65,6 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
 
     static {
         CHILD_NODE_MAP = Map.of(
-            CopySettingEnum.class.getSimpleName(),
-            Map.of(
-                "label", "抄送对象",
-                "type", 5,
-                "must", false,
-                "multiple", true,
-                "desc", "选择节点办理后接收抄送的人员"
-            ),
             VariablesEnum.class.getSimpleName(),
             Map.of(
                 "label", "自定义参数",
@@ -104,7 +96,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
         List<NodeExt> nodeExtList = new ArrayList<>();
         // 构建基础设置页面
         nodeExtList.add(buildNodeExt("wf_basic_tab", "基础设置", 1,
-            List.of(CopySettingEnum.class, VariablesEnum.class)));
+            List.of(VariablesEnum.class)));
         // 构建按钮权限页面
         nodeExtList.add(buildNodeExt("wf_button_tab", "权限", 2,
             List.of(ButtonPermissionEnum.class)));
@@ -212,23 +204,20 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
     /**
      * 解析扩展属性 JSON 并构建 Node 扩展属性对象
      * <p>
-     * 根据传入的 JSON 字符串，将扩展属性分为三类：
+     * 根据传入的 JSON 字符串，将扩展属性分为两类：
      * 1. ButtonPermissionEnum：解析为按钮权限列表，标记每个按钮是否勾选
-     * 2. CopySettingEnum：解析为抄送对象 ID 集合
-     * 3. VariablesEnum：解析为自定义参数 Map
+     * 2. VariablesEnum：解析为自定义参数 Map
      *
      * <p>示例 JSON：
      * [
      * {"code": "ButtonPermissionEnum", "value": "back,termination"},
-     * {"code": "CopySettingEnum", "value": "1,3,4,#{@spelRuleComponent.selectOrgLeaderById(#orgId", "#roleId)}"},
      * {"code": "VariablesEnum", "value": "key1=value1,key2=value2"}
      * ]
      *
      * @param ext      扩展属性 JSON 字符串
      * @param variable 流程变量
-     * @return NodeExtVo 对象，封装按钮权限列表、抄送对象集合和自定义参数 Map
+     * @return NodeExtVo 对象，封装按钮权限列表和自定义参数 Map
      */
-    /** 解析流程节点扩展 JSON 并构造审批人、抄送人等配置对象。 / Parse node-extension JSON into assignee, carbon-copy and related settings. */
     @Override
     public NodeExtVo parseNodeExt(String ext, Map<String, Object> variable) {
         NodeExtVo nodeExtVo = new NodeExtVo();
@@ -261,21 +250,20 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
 
                 nodeExtVo.setButtonPermissions(buttonList);
 
-            } else if (CopySettingEnum.class.getSimpleName().equals(code)) {
+            } else if ("CopySettingEnum".equals(code)) {
+                // 兼容升级前存入流程 ext 的抄送配置；新建流程改用 Warm-Flow 2.1 原生 node_config.copy。
                 List<String> permissions = spelSmartSplit(value).stream()
-                    .map(s -> {
-                        List<String> result = ExpressionUtil.evalVariable(s, variable);
-                        if (CollUtil.isNotEmpty(result)) {
-                            return result;
-                        }
-                        return Collections.singletonList(s);
-                    }).filter(Objects::nonNull)
-                    .flatMap(List::stream)
+                    .map(expression -> {
+                        List<String> resolved = ExpressionUtil.evalVariable(expression, variable);
+                        return CollUtil.isNotEmpty(resolved) ? resolved : Collections.singletonList(expression);
+                    })
+                    .filter(Objects::nonNull)
+                    .flatMap(Collection::stream)
                     .distinct()
-                    .collect(Collectors.toList());
-                List<String> copySettings = FlowEngine.permissionHandler().convertPermissions(permissions);
-                // 解析抄送对象 ID 集合
-                nodeExtVo.setCopySettings(new HashSet<>(copySettings));
+                    .toList();
+                if (FlowEngine.permissionHandler() != null) {
+                    nodeExtVo.setCopySettings(new HashSet<>(FlowEngine.permissionHandler().convertPermissions(permissions)));
+                }
 
             } else if (VariablesEnum.class.getSimpleName().equals(code)) {
                 // 解析自定义参数
@@ -292,6 +280,7 @@ public class FlwNodeExtServiceImpl implements NodeExtService, IFlwNodeExtService
         }
         return nodeExtVo;
     }
+
 
     /**
      * 按逗号分割字符串，但保留 #{...} 表达式和字符串常量中的逗号

@@ -114,12 +114,28 @@ public interface UserService {
     List<UserDTO> selectUsersByOrgIds(Collection<Long> orgIds);
 
     /**
+     * 通过组织 ID 查询正常状态的用户 ID。
+     *
+     * @param orgIds 组织 ID 集合
+     * @return 用户 ID 集合
+     */
+    List<Long> selectUserIdsByOrgIds(Collection<Long> orgIds);
+
+    /**
      * 通过岗位ID查询用户
      *
      * @param postIds 岗位ids
      * @return 用户
      */
     List<UserDTO> selectUsersByPostIds(Collection<Long> postIds);
+
+    /**
+     * 通过岗位ID查询用户ID
+     *
+     * @param postIds 岗位ids
+     * @return 用户ids
+     */
+    List<Long> selectUserIdsByPostIds(Collection<Long> postIds);
 
     /**
      * 根据用户 ID 列表查询用户昵称映射关系
