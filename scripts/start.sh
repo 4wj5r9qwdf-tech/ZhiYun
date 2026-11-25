@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 文件用途：执行“start.sh”对应的本地开发、诊断或数据核验辅助操作。
-# 文件版本：1.0.0
+# 文件版本：1.0.1
 # 功能目的：执行“start.sh”对应的本地开发、诊断或数据核验辅助操作。
 # 设计思路：将可重复环境操作收敛到脚本，依赖环境变量并避免凭据进入代码或输出。
 # 实现方法：检查参数和本地环境，再执行目标命令或只读核验并返回明确退出状态。
@@ -9,17 +9,17 @@
 # 初始开发人员：JY（织云项目自研内容）
 # 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 # 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-# 最近修改人员：Codex（智能体）
+# 最近修改人员：JY（Codex辅助）
 # AI辅助工具：Codex（智能体）
 # 最近修改时间：2026-11-24
-# 修改标记：ZY-ERP-20261124-SAA平台退役；移除 Agent Studio 自动启动
+# 修改标记：ZY-ERP-20261124-文档解析自动启动；框架控制台启动链路按需拉起 Docling
 # 最近测试时间：2026-11-24
-# 测试人员：Codex（智能体）
-# 测试状态：静态检查通过；未执行服务全量回归
-# 测试范围与记录位置：见 Docs/功能任务/ZY-ERP-20261124-SAA测试平台退役.md
+# 测试人员：JY（测试责任人）
+# 测试状态：Shell 静态检查通过；启动入口衔接 Docling 的逻辑已检查
+# 测试范围与记录位置：Docling 由 scripts/start-framework-consoles.sh 按配置启动；本轮未在此工作区启动全套服务
 # 织云 ERP - 启动脚本
 # 用法：bash scripts/start.sh
-# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI
+# 启动：监控中心(9090) + 后端(RuoYi-Vue-Plus 8080) + 前端(Vue3 dev 5273) + SnailJob + SnailAI + 按需启用的本地 Docling
 # 日志：写项目内 logs/（已 gitignore）；不再用 /tmp（agent 沙箱里 /tmp 是隔离 tmpfs，外部看不见日志）
 set -e
 
@@ -122,7 +122,7 @@ else
   cd "$PROJECT_ROOT"
 fi
 
-# 4. 启动独立框架控制台（SnailJob 与 SnailAI）
+# 4. 启动独立框架控制台（SnailJob 与 SnailAI），并按配置启动本地 Docling
 bash "$PROJECT_ROOT/scripts/start-framework-consoles.sh"
 
 echo ""
@@ -130,5 +130,5 @@ echo "=== 启动中，等待服务就绪 ==="
 echo "监控中心: http://127.0.0.1:9090/admin  (日志 $PROJECT_ROOT/logs/ruoyi-monitor-admin.log)"
 echo "后端: http://127.0.0.1:8080  (日志 $BACKEND_LOG)"
 echo "前端: http://localhost:5273/login  (日志 $FRONTEND_LOG)"
-echo "SnailJob: http://127.0.0.1:8800/snail-job/  SnailAI: http://127.0.0.1:8900/snail-ai/"
+echo "SnailJob: http://127.0.0.1:8800/snail-job/  SnailAI: http://127.0.0.1:8900/snail-ai/  本地 Docling 状态见 scripts/status.sh"
 echo "查看状态：bash scripts/status.sh"
