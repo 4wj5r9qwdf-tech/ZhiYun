@@ -1,3 +1,19 @@
+/*
+ * 织云文件元信息
+ * 文件版本：v1.0
+ * 开发/编制人员：JY
+ * AI协作：Codex
+ * 开发时间：实际开发/编制时间未单独记录；首次纳入版本库：2026-11-05T17:50:26+08:00
+ * 开发思路：实现“verify-warehouse-layout-import”对应前端职责，复用页面规范并保持与 API、权限契约一致。
+ * 最近修改时间：2026-11-20T18:02:03+08:00
+ * 修改人员：JY；Codex（元信息整理）
+ * 修改标记：补录统一文件头元信息，未改动业务逻辑或接口契约。
+ * 测试时间：2026-11-20T18:02:03+08:00
+ * 测试人员：Codex（文件头元信息核对）
+ * 测试状态：头部字段核对通过；本次未重跑业务功能测试，既有结果见对应功能验收记录。
+ * 说明：织云 ERP 项目文件：frontend/scripts/verify-warehouse-layout-import.mjs
+ */
+
 /** 本次功能专项检查：CSV复杂输入、归属与重复校验、部分失败、连续新增缓存；可选真实接口链路。 */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'

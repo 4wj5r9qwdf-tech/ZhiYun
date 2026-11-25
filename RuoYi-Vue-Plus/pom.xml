@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+织云文件元信息
+文件版本：v1.0
+开发/编制人员：JY
+AI协作：Codex
+开发时间：原始开发时间未单独记录；本项目首次改造：2026-11-18T18:25:31+08:00
+开发思路：维护“pom”对应配置，并避免写入本地密钥或环境专属敏感值。
+最近修改时间：2026-11-20T18:02:03+08:00
+修改人员：JY；Codex（元信息整理）
+修改标记：补录统一文件头元信息，未改动业务逻辑或接口契约。
+测试时间：2026-11-20T18:02:03+08:00
+测试人员：Codex（文件头元信息核对）
+测试状态：头部字段核对通过；本次未重跑业务功能测试，既有结果见对应功能验收记录。
+说明：织云 ERP 项目文件：RuoYi-Vue-Plus/pom.xml
+-->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
