@@ -1,21 +1,3 @@
-# 文件用途：维护“application.yml”对应服务的环境配置与组件参数绑定。
-# 文件版本：1.0.0
-# 功能目的：维护“application.yml”对应服务的环境配置与组件参数绑定。
-# 设计思路：按 profile 管理环境差异，敏感配置从环境变量读取。
-# 实现方法：Spring Boot 按 profile 加载并注入服务；可选依赖不可用时需遵循实际配置策略。
-# 关键约束：不能提交本机口令、令牌或私有地址。
-# 依赖与引用：.env.example；Docs/规范/部署与迁移.md
-# 初始开发人员：上游原作者/许可证：保留源文件既有声明；本项目改造责任人：JY
-# 初始开发时间：待追溯（不以补录时间代替原始开发时间）
-# 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-# 最近修改人员：JY
-# AI辅助工具：Codex（智能体）
-# 最近修改时间：2026-11-20
-# 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-# 最近测试时间：本次整理未执行功能测试
-# 测试人员：本次整理未执行
-# 测试状态：待功能回归；历史测试记录待追溯
-# 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
 # 开发环境配置
 server:
   # 服务器的HTTP端口，默认为8080
@@ -49,6 +31,8 @@ logging:
     org.springframework: warn
     org.mybatis.spring.mapper: error
     org.apache.fury: warn
+    com.yomahub.liteflow: warn
+    org.anyline: warn
   config: classpath:logback-plus.xml
 
 # 用户配置
@@ -84,9 +68,9 @@ spring:
   servlet:
     multipart:
       # 单个文件大小
-      max-file-size: 50MB
+      max-file-size: 10MB
       # 设置总上传的文件大小
-      max-request-size: 52MB
+      max-request-size: 20MB
   mvc:
     # 设置静态资源路径 防止所有请求都去查静态资源
     static-path-pattern: /static/**
@@ -125,10 +109,6 @@ security:
     - /error
     - /*/api-docs
     - /*/api-docs/**
-    - /swagger-ui.html
-    - /swagger-ui/**
-    - /v3/api-docs
-    - /v3/api-docs/**
     - /warm-flow-ui/config
     - /snail-chat/**
     - /api/snail/chat/**
@@ -168,8 +148,7 @@ mybatis-encryptor:
 # api接口加密
 api-decrypt:
   # 是否开启全局接口加密
-  # 开发阶段关闭（便于 curl/前端直调试）；生产部署时改回 true
-  enabled: false
+  enabled: true
   # AES 加密头标识
   headerFlag: encrypt-key
   # 响应加密公钥 非对称算法的公私钥 如：SM2，RSA 使用者请自行更换
@@ -183,34 +162,30 @@ springdoc:
   api-docs:
     # 是否开启接口文档
     enabled: true
-  swagger-ui:
-    # 默认折叠接口详情，并提供分组内的接口快速搜索。
-    doc-expansion: none
-    filter: true
-    tags-sorter: alpha
-    operations-sorter: alpha
   info:
     # 标题
-    title: '织云服装加工 ERP 接口文档'
+    title: '标题：RuoYi-Vue-Plus后台管理系统_接口文档'
     # 描述
-    description: '供开发联调、测试和运维查阅。接口调用仍需满足登录认证、角色权限及业务校验。'
+    description: '描述：用于管理集团旗下公司的人员信息,具体包括XXX,XXX模块...'
     # 版本
-    version: '${project.version}'
+    version: '版本号: ${project.version}'
     # 作者信息
     contact:
-      name: 织云 ERP
-  # 按织云业务、平台管理、审批、代码生成和开发示例分组，避免业务接口与框架示例混杂。
+      name: Lion Li
+      email: crazylionli@163.com
+      url: https://gitee.com/dromara/RuoYi-Vue-Plus
+  #这里定义了两个分组，可定义多个，也可以不定义
   group-configs:
-    - group: 1.织云业务与基础资料
-      packages-to-scan: org.dromara.web
-    - group: 2.系统管理接口
-      packages-to-scan: org.dromara.system
-    - group: 3.审批与工作流接口
-      packages-to-scan: org.dromara.workflow
-    - group: 4.代码生成接口
-      packages-to-scan: org.dromara.gen
-    - group: 9.框架示例（开发测试）
+    - group: 1.演示模块
       packages-to-scan: org.dromara.demo
+    - group: 2.通用模块
+      packages-to-scan: org.dromara.web
+    - group: 3.系统模块
+      packages-to-scan: org.dromara.system
+    - group: 4.代码生成模块
+      packages-to-scan: org.dromara.gen
+    - group: 5.工作流模块
+      packages-to-scan: org.dromara.workflow
 
 # 防止XSS攻击
 xss:
@@ -266,19 +241,22 @@ warm-flow:
   ui: true
   # 是否显示流程图顶部文字
   top-text-show: true
+  # 流程图状态颜色：未办理、待办理、已办理（RGB）
+  chart-status-color: ["107,114,128", "245,158,11", "64,158,255"]
   # 是否渲染节点悬浮提示，默认true
   node-tooltip: true
   # 默认Authorization，如果有多个token，用逗号分隔
   token-name: ${sa-token.token-name},clientid
+  # 是否开启定时/事件引擎线程（默认false）。开启后常驻扫描线程池，
+  # 已发布的「定时启动」流程定义会按配置自动发起实例
+  timer-enabled: true
 
 --- # LiteFlow 业务规则编排
 liteflow:
   # 跟随工作流模块开关，避免禁用工作流时仍加载任务办理链
   enable: ${warm-flow.enabled:true}
   metrics:
-    # 临时修复：LiteFlow 2.16.2.1 的 Actuator 端点与 Spring Boot 4.1 参数名校验不兼容
-    # 待 LiteFlow 修复该问题后恢复为 ${liteflow.enable:true}
-    enabled: false
+    enabled: ${liteflow.enable:true}
   # 工作流模块用于编排任务办理链路
   rule-source: classpath:liteflow/*.el.xml
   # 开启虚拟线程

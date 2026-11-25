@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# 文件用途：执行“start-framework-consoles.sh”对应的本地开发、诊断或数据核验辅助操作。
-# 文件版本：1.0.0
-# 功能目的：执行“start-framework-consoles.sh”对应的本地开发、诊断或数据核验辅助操作。
-# 设计思路：将可重复环境操作收敛到脚本，依赖环境变量并避免凭据进入代码或输出。
-# 实现方法：检查参数和本地环境，再执行目标命令或只读核验并返回明确退出状态。
-# 关键约束：不输出凭据、不操作生产数据、不执行无关破坏性操作。
+# 文件用途：启动 SnailJob、SnailAI 管理控制台及按配置启用的本地 Docling 服务。
+# 文件版本：1.0.1
+# 功能目的：统一启动本地框架控制台，并在未配置 Docling 覆盖项时自动启动隔离的开发解析容器。
+# 设计思路：尊重 .env 显式启用/禁用和远程地址；默认本地模式受 Docker 与可用内存检查保护，失败时不阻止 ERP 控制台启动。
+# 实现方法：加载本地环境、校验框架凭据、按需启动 Docling 并仅传递密钥文件路径，再启动 SnailJob 与 SnailAI。
+# 关键约束：不输出密钥；Docling 开发容器仅用于本机开发，资源不足或 Docker 不可用时提示并继续启动控制台。
 # 依赖与引用：Docs/规范/开发环境与同步流程.md；Docs/规范/部署与迁移.md
 # 初始开发人员：JY（织云项目自研内容）
 # 初始开发时间：待追溯（不以补录时间代替原始开发时间）
 # 当前责任人：JY（项目维护责任；框架文件仅限项目改造范围）
-# 最近修改人员：JY
+# 最近修改人员：JY（Codex辅助）
 # AI辅助工具：Codex（智能体）
-# 最近修改时间：2026-11-20
-# 修改标记：ZY-ERP-20261120-注释整理；补齐文件说明和业务逻辑注释，不改变运行行为
-# 最近测试时间：本次整理未执行功能测试
-# 测试人员：本次整理未执行
-# 测试状态：待功能回归；历史测试记录待追溯
-# 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
+# 最近修改时间：2026-11-24
+# 修改标记：ZY-ERP-20261124-文档解析自启动；本地 Docling 随框架控制台按需启动
+# 最近测试时间：2026-11-24
+# 测试人员：JY（测试责任人）
+# 测试状态：Shell 静态检查通过；实际 XLSX 解析服务冒烟通过；启动脚本完整流程未在本工作区运行
+# 测试范围与记录位置：本轮运行验证与限制见当前交付说明；本工作区缺少 .env，未启动升级分支服务
 # 启动框架管理控制台；HTTP 管理端绑定回环地址，RPC 端口由上游组件监听。
 set -euo pipefail
 
@@ -41,16 +41,36 @@ for REQUIRED_NAME in SNAILJOB_DB_PASSWORD SNAILAI_DB_PASSWORD SNAIL_AI_CRYPTO_KE
   fi
 done
 
-# Docling 可用时让 SnailAI 复用自带客户端；密钥只传文件路径。
-# Enable the upstream client only when the local service and key are present.
+# 用户显式配置 enabled=false 时保持关闭；配置了远程地址或密钥文件时不覆盖用户服务地址。
+# 未提供 Docling 覆盖配置时，自动尝试启动受资源限制的本地开发容器。
 docling_key_file="${XDG_CONFIG_HOME:-$HOME/.config}/zhiyun/docling-dev.key"
-if [[ -z "${SNAIL_AI_RAG_DOCLING_ENABLED+x}" && -r "$docling_key_file" ]] && command -v docker >/dev/null 2>&1; then
-  docling_address="$(docker inspect --format '{{if .State.Running}}{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}{{end}}' zhiyun-docling-dev 2>/dev/null || true)"
-  if [[ "$docling_address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    export SNAIL_AI_RAG_DOCLING_ENABLED=true
-    export SNAIL_AI_RAG_DOCLING_URL="http://${docling_address}:5001"
-    export SNAIL_AI_RAG_DOCLING_API_KEY_FILE="$docling_key_file"
+if [[ -z "${SNAIL_AI_RAG_DOCLING_ENABLED+x}" \
+    && -z "${SNAIL_AI_RAG_DOCLING_URL:-}" \
+    && -z "${SNAIL_AI_RAG_DOCLING_API_KEY_FILE:-}" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    if bash "$PROJECT_ROOT/scripts/docling-dev.sh" start; then
+      docling_address="$(docker inspect --format '{{if .State.Running}}{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}{{end}}' zhiyun-docling-dev 2>/dev/null || true)"
+      if [[ "$docling_address" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && -r "$docling_key_file" ]]; then
+        export SNAIL_AI_RAG_DOCLING_ENABLED=true
+        export SNAIL_AI_RAG_DOCLING_URL="http://${docling_address}:5001"
+        export SNAIL_AI_RAG_DOCLING_API_KEY_FILE="$docling_key_file"
+        echo "本地 Docling 文档解析服务已启用（容器网络地址 ${docling_address}:5001）。"
+      else
+        echo "警告：Docling 容器未提供可用地址或密钥文件，SnailAI 将按当前配置启动。" >&2
+      fi
+    else
+      echo "警告：本地 Docling 未能启动，文档解析功能暂不可用；继续启动 SnailJob 与 SnailAI。" >&2
+    fi
+  else
+    echo "提示：未安装 Docker，跳过本地 Docling；远程服务请在 .env 中显式配置。"
   fi
+fi
+
+# 若 .env 显式提供远程地址或密钥路径但未写 enabled，则开发 profile 的默认 false 会屏蔽该配置；显式 false 仍优先。
+if [[ -z "${SNAIL_AI_RAG_DOCLING_ENABLED+x}" \
+    && ( -n "${SNAIL_AI_RAG_DOCLING_URL:-}" || -n "${SNAIL_AI_RAG_DOCLING_API_KEY_FILE:-}" ) ]]; then
+  export SNAIL_AI_RAG_DOCLING_ENABLED=true
+  echo "已按 .env 中的 Docling 地址/密钥文件配置启用解析客户端。"
 fi
 
 port_listening() {

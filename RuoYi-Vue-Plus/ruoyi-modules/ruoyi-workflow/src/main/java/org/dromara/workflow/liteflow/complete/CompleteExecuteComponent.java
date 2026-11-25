@@ -18,18 +18,19 @@
  * 测试状态：待功能回归；历史测试记录待追溯
  * 测试范围与记录位置：本次为注释/元信息整理；见 Docs/功能任务/ZY-ERP-20261120-既有功能注释整理.md
  */
+
 package org.dromara.workflow.liteflow.complete;
 
 import cn.hutool.core.convert.Convert;
 import com.yomahub.liteflow.annotation.LiteflowComponent;
 import com.yomahub.liteflow.core.NodeComponent;
 import lombok.RequiredArgsConstructor;
-import org.dromara.common.core.enums.BusinessStatusEnum;
-import org.dromara.warm.flow.core.dto.FlowParams;
-import org.dromara.warm.flow.core.enums.SkipType;
-import org.dromara.warm.flow.core.service.TaskService;
+import org.dromara.common.satoken.utils.LoginHelper;
+import org.dromara.warm.flow.core.FlowEngine;
+import org.dromara.warm.flow.core.enums.TaskStatus;
+import org.dromara.warm.flow.core.workflow.command.CompleteCommand;
+import org.dromara.warm.flow.core.workflow.context.OperatorContext;
 import org.dromara.workflow.common.ConditionalOnEnable;
-import org.dromara.workflow.common.enums.TaskStatusEnum;
 import org.dromara.workflow.domain.bo.CompleteTaskBo;
 import org.dromara.workflow.domain.context.CompleteTaskContext;
 
@@ -47,30 +48,24 @@ import static org.dromara.workflow.common.constant.FlowConstant.*;
 @LiteflowComponent("completeExecute")
 public class CompleteExecuteComponent extends NodeComponent {
 
-    private final TaskService taskService;
-
     @Override
     public void process() {
         CompleteTaskContext context = getContextBean(CompleteTaskContext.class);
         CompleteTaskBo completeTaskBo = context.getCompleteTaskBo();
         Map<String, Object> variables = completeTaskBo.getVariables();
-        FlowParams flowParams = FlowParams.build()
-            .handler(completeTaskBo.getHandler())
-            .variable(variables)
-            // 超管可介入他人的待办，办理人仍由当前登录账号记录。
-            // Allow a super administrator to intervene while retaining the real operator.
-            .ignore(org.dromara.common.satoken.utils.LoginHelper.isSuperAdmin() || Convert.toBool(variables.getOrDefault(VAR_IGNORE, false)))
-            .ignoreDepute(Convert.toBool(variables.getOrDefault(VAR_IGNORE_DEPUTE, false)))
-            .ignoreCooperate(Convert.toBool(variables.getOrDefault(VAR_IGNORE_COOPERATE, false)))
-            .skipType(SkipType.PASS.getKey())
-            .message(completeTaskBo.getMessage())
-            .flowStatus(BusinessStatusEnum.WAITING.getStatus())
-            .hisStatus(TaskStatusEnum.PASS.getStatus())
-            .hisTaskExt(completeTaskBo.getFileId());
-
-        context.setFlowParams(flowParams);
-        context.setAutoPass(Convert.toBool(context.getInstance().getVariableMap().getOrDefault(AUTO_PASS, false)));
-        taskService.skip(context.getFlowTask().getId(), flowParams);
+        CompleteCommand command = new CompleteCommand();
+        OperatorContext operator = new OperatorContext(completeTaskBo.getHandler());
+        // 超管可介入他人的待办；内部 ignore 标记仍只由服务端流程变量控制。
+        operator.setIgnore(LoginHelper.isSuperAdmin() || Convert.toBool(variables.getOrDefault(VAR_IGNORE, false)));
+        command.setOperator(operator);
+        command.setTaskId(context.getFlowTask().getId());
+        command.setVariables(variables);
+        command.setMessage(completeTaskBo.getMessage());
+        command.setExt(completeTaskBo.getFileId());
+        // 全局监听器用 context.taskStatus 判断「通过/退回」，才决定要不要抄送与发通知；
+        // 引擎不会把解析后的状态回填进调用上下文，办理路径不显式声明 PASS 就会静默跳过抄送。
+        command.setTaskStatus(TaskStatus.PASS.getKey());
+        FlowEngine.workflow().complete(command);
     }
 
 }

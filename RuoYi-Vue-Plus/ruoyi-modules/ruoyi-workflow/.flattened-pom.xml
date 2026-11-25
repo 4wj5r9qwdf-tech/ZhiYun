@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.dromara</groupId>
         <artifactId>ruoyi-modules</artifactId>
-        <version>6.0.0</version>
+        <version>6.1.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -86,13 +86,13 @@
 
         <!-- Warm-Flow 工作流引擎 -->
         <dependency>
-            <groupId>org.dromara.warm</groupId>
+            <groupId>io.github.sgs98</groupId>
             <artifactId>warm-flow-mybatis-plus-sb4-starter</artifactId>
         </dependency>
 
         <!-- Warm-Flow UI 插件 -->
         <dependency>
-            <groupId>org.dromara.warm</groupId>
+            <groupId>io.github.sgs98</groupId>
             <artifactId>warm-flow-plugin-ui-sb-web</artifactId>
         </dependency>
 
